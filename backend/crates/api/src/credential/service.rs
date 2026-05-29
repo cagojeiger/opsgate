@@ -3,6 +3,7 @@ use std::net::IpAddr;
 
 use opsgate_core::crypto::Sealer;
 use opsgate_core::net::ssrf::is_blocked_target_ip;
+use opsgate_core::validation::{clamp_i64, validate_reason};
 use opsgate_core::{Error, Result};
 use opsgate_db::{
     CredentialAuditAction, CredentialAuditParams, CredentialRepo, CredentialSummaryRows,
@@ -186,16 +187,12 @@ impl CredentialService {
         input: DeleteCredentialInput,
     ) -> Result<Credential> {
         let alias = input.alias.trim().to_owned();
-        validate_reason(&input.reason)?;
+        let reason = validate_reason(&input.reason)?;
         if alias.is_empty() {
             return Err(Error::validation("alias is required"));
         }
         self.repo
-            .soft_delete_credential(
-                owner_user_id,
-                &alias,
-                delete_audit(owner_user_id, input.reason),
-            )
+            .soft_delete_credential(owner_user_id, &alias, delete_audit(owner_user_id, reason))
             .await
     }
 
@@ -206,7 +203,7 @@ impl CredentialService {
         category: CredentialCategory,
     ) -> Result<CredentialUpdate> {
         let alias = input.alias.trim().to_owned();
-        validate_reason(&input.reason)?;
+        let reason = validate_reason(&input.reason)?;
         if alias.is_empty() {
             return Err(Error::validation("alias is required"));
         }
@@ -228,7 +225,7 @@ impl CredentialService {
             ));
         }
 
-        let audit = update_audit(owner_user_id, input.reason, &changed_fields);
+        let audit = update_audit(owner_user_id, reason, &changed_fields);
         let credential = self
             .repo
             .update_credential_mutable_fields(
@@ -480,17 +477,7 @@ fn secret_header_json(header: &SecretHeader) -> serde_json::Value {
 }
 
 fn normalize_limit(limit: Option<i64>) -> i64 {
-    limit.unwrap_or(50).clamp(1, 100)
-}
-
-fn validate_reason(reason: &str) -> Result<()> {
-    let reason = reason.trim();
-    if reason.len() < 8 || reason.len() > 512 || reason.contains(['\r', '\n']) {
-        return Err(Error::validation(
-            "reason must be 8-512 characters without CR/LF",
-        ));
-    }
-    Ok(())
+    clamp_i64(limit, 50, 1, 100)
 }
 
 fn changed_fields(

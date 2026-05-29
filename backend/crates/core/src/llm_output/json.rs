@@ -161,6 +161,11 @@ pub fn validate_json_paths(paths: &[String]) -> Result<()> {
                 "jsonpath expression {trimmed:?} must start with $"
             )));
         }
+        if trimmed.contains("..") {
+            return Err(Error::validation(
+                "jsonpath recursive descent is outside the safe subset",
+            ));
+        }
         JsonPath::parse(trimmed).map_err(|error| {
             Error::validation(format!("invalid jsonpath expression {trimmed:?}: {error}"))
         })?;
@@ -418,8 +423,20 @@ fn score_preview_path(path: &PreviewPath) -> isize {
 }
 
 fn jsonpath_name_segment(name: &str) -> String {
+    if jsonpath_dot_name_allowed(name) {
+        return format!(".{name}");
+    }
     let escaped = name.replace('\\', "\\\\").replace('\'', "\\'");
     format!("['{escaped}']")
+}
+
+fn jsonpath_dot_name_allowed(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|char| char == '_' || char.is_ascii_alphanumeric())
 }
 
 fn value_type(value: &Value) -> &'static str {
@@ -511,7 +528,7 @@ mod tests {
             more.options
                 .suggested_jsonpath
                 .iter()
-                .any(|path| path == "$['items'][*]['metadata']['name']")
+                .any(|path| path == "$.items[*].metadata.name")
         );
         assert!(more.preview.is_some());
         Ok(())
@@ -539,6 +556,7 @@ mod tests {
         assert!(validate_json_paths(&too_many).is_err());
         assert!(validate_json_paths(&["items".to_owned()]).is_err());
         assert!(validate_json_paths(&[format!("${}", "a".repeat(513))]).is_err());
+        assert!(validate_json_paths(&["$..metadata.name".to_owned()]).is_err());
     }
 
     #[test]

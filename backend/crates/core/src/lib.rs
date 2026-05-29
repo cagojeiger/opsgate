@@ -9,6 +9,7 @@ pub mod error;
 pub mod llm_output;
 pub mod net;
 pub mod tls;
+pub mod validation;
 
 pub use config::Config;
 pub use error::{Error, Result};
