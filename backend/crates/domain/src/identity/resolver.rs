@@ -97,7 +97,11 @@ where
         if !user.is_active {
             return Err(IdentityError::Inactive);
         }
-        Ok(Caller { user, channel })
+        Ok(Caller {
+            user,
+            channel,
+            request_id: None,
+        })
     }
 }
 

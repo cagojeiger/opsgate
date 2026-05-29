@@ -238,7 +238,16 @@ async fn verify_mcp_request(
     let Some(token) = extract_bearer(&parts.headers).map(str::to_owned) else {
         return Err(AuthError::MissingToken);
     };
-    let caller = verify_bearer_mcp(state, &token).await?;
+    let request_id = parts
+        .headers
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let caller = verify_bearer_mcp(state, &token)
+        .await?
+        .with_request_id(request_id);
     parts.extensions.insert(caller);
     Ok(Request::from_parts(parts, body))
 }

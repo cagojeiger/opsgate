@@ -9,7 +9,9 @@ use opsgate_core::validation::{
     validate_max_bytes, validate_purpose,
 };
 use opsgate_core::{Error, Result};
-use opsgate_db::{ApiCallHistoryParams, ApiCallHistoryRepo, CredentialRepo};
+use opsgate_db::{
+    ApiCallHistoryParams, ApiCallHistoryRepo, AuditLogParams, AuditRepo, CredentialRepo,
+};
 use opsgate_domain::credential::{Credential, CredentialCategory, SecretHeader};
 use opsgate_domain::credential::{contains_fold, header_blocked};
 use opsgate_domain::{Caller, Channel};
@@ -34,6 +36,7 @@ const TARGET_TIMEOUT: Duration = Duration::from_secs(10);
 pub struct ApiCallService {
     credentials: CredentialRepo,
     history: ApiCallHistoryRepo,
+    audit: AuditRepo,
     sealer: opsgate_core::crypto::Sealer,
     http: reqwest::Client,
 }
@@ -42,12 +45,14 @@ impl ApiCallService {
     pub fn new(
         credentials: CredentialRepo,
         history: ApiCallHistoryRepo,
+        audit: AuditRepo,
         sealer: opsgate_core::crypto::Sealer,
         http: reqwest::Client,
     ) -> Self {
         Self {
             credentials,
             history,
+            audit,
             sealer,
             http,
         }
@@ -55,7 +60,7 @@ impl ApiCallService {
 
     pub async fn call(&self, caller: &Caller, input: ApiCallInput) -> Result<ApiCallOutput> {
         let input = normalize_input(input)?;
-        let mut recorder = HistoryRecorder::new(&self.history, caller, &input);
+        let mut recorder = CallRecorder::new(&self.history, &self.audit, caller, &input);
 
         let row = match self
             .credentials
@@ -531,21 +536,24 @@ fn filtered_response_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
     out
 }
 
-struct HistoryRecorder<'a> {
+struct CallRecorder<'a> {
     history: &'a ApiCallHistoryRepo,
+    audit: &'a AuditRepo,
     caller: &'a Caller,
     input: &'a NormalizedApiCallInput,
     credential: Option<CredentialSnapshot>,
 }
 
-impl<'a> HistoryRecorder<'a> {
+impl<'a> CallRecorder<'a> {
     fn new(
         history: &'a ApiCallHistoryRepo,
+        audit: &'a AuditRepo,
         caller: &'a Caller,
         input: &'a NormalizedApiCallInput,
     ) -> Self {
         Self {
             history,
+            audit,
             caller,
             input,
             credential: None,
@@ -575,6 +583,7 @@ impl<'a> HistoryRecorder<'a> {
         error_message: Option<&str>,
         output: Option<&ApiCallOutput>,
     ) {
+        self.record_audit(outcome, error_kind, output).await;
         let credential = self.credential.as_ref();
         let params = ApiCallHistoryParams {
             owner_user_id: credential
@@ -619,6 +628,39 @@ impl<'a> HistoryRecorder<'a> {
             tracing::error!(event = "api.call.history_failed", detail = %error);
         }
     }
+
+    async fn record_audit(
+        &self,
+        outcome: &str,
+        error_kind: Option<&str>,
+        output: Option<&ApiCallOutput>,
+    ) {
+        let credential = self.credential.as_ref();
+        let channel = channel_str(self.caller.channel).to_owned();
+        let params = AuditLogParams {
+            action: format!("{channel}.api.call"),
+            channel,
+            outcome: outcome.to_owned(),
+            severity: severity_for_outcome(outcome).to_owned(),
+            actor_user_id: Some(self.caller.user.id),
+            actor_role: Some(role_for_channel(self.caller.channel).to_owned()),
+            actor_ip: None,
+            actor_user_agent: None,
+            target_type: Some("credential".to_owned()),
+            target_id: credential.map(|credential| credential.id.to_string()),
+            target_key: Some(
+                credential
+                    .map(|credential| credential.alias.clone())
+                    .unwrap_or_else(|| self.input.alias.clone()),
+            ),
+            request_id: self.caller.request_id.clone(),
+            purpose: Some(self.input.purpose.clone()),
+            detail: audit_detail(self.input, credential, outcome, error_kind, output),
+        };
+        if let Err(error) = self.audit.append(params).await {
+            tracing::error!(event = "api.call.audit_failed", detail = %error);
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -649,6 +691,85 @@ fn channel_str(channel: Channel) -> &'static str {
         Channel::Api => "api",
         Channel::Mcp | Channel::Browser => "mcp",
     }
+}
+
+fn role_for_channel(channel: Channel) -> &'static str {
+    match channel {
+        Channel::Browser | Channel::Api | Channel::Mcp => "active",
+    }
+}
+
+fn severity_for_outcome(outcome: &str) -> &'static str {
+    if outcome == "ok" { "info" } else { "warning" }
+}
+
+fn audit_detail(
+    input: &NormalizedApiCallInput,
+    credential: Option<&CredentialSnapshot>,
+    outcome: &str,
+    error_kind: Option<&str>,
+    output: Option<&ApiCallOutput>,
+) -> Value {
+    let mut detail = serde_json::Map::new();
+    detail.insert("schema_version".to_owned(), serde_json::json!(1));
+    detail.insert("method".to_owned(), serde_json::json!(input.method));
+    detail.insert("path".to_owned(), serde_json::json!(input.path));
+    detail.insert("purpose".to_owned(), serde_json::json!(input.purpose));
+    let query_keys = input.query.keys().cloned().collect::<Vec<_>>();
+    if !query_keys.is_empty() {
+        detail.insert("query_keys".to_owned(), serde_json::json!(query_keys));
+    }
+    let header_keys = input.headers.keys().cloned().collect::<Vec<_>>();
+    if !header_keys.is_empty() {
+        detail.insert(
+            "request_header_keys".to_owned(),
+            serde_json::json!(header_keys),
+        );
+    }
+    if !input.jsonpath.is_empty() {
+        detail.insert("jsonpath".to_owned(), serde_json::json!(input.jsonpath));
+    }
+    if let Some(credential) = credential {
+        detail.insert(
+            "category".to_owned(),
+            serde_json::json!(credential.category.as_str()),
+        );
+        detail.insert(
+            "provider".to_owned(),
+            serde_json::json!(credential.provider),
+        );
+        detail.insert("env".to_owned(), serde_json::json!(credential.env));
+    }
+    if let Some(error_kind) = error_kind {
+        let key = if outcome == "denied" {
+            "denial_reason"
+        } else {
+            "error_kind"
+        };
+        detail.insert(key.to_owned(), serde_json::json!(error_kind));
+    }
+    if let Some(output) = output {
+        detail.insert(
+            "status_code".to_owned(),
+            serde_json::json!(output.status_code),
+        );
+        detail.insert(
+            "latency_ms".to_owned(),
+            serde_json::json!(output.latency_ms),
+        );
+        detail.insert(
+            "response_bytes".to_owned(),
+            serde_json::json!(output.original_bytes),
+        );
+        detail.insert(
+            "returned_bytes".to_owned(),
+            serde_json::json!(output.returned_bytes),
+        );
+        if output.more.as_ref().is_some_and(|more| more.truncated) {
+            detail.insert("truncated".to_owned(), serde_json::json!(true));
+        }
+    }
+    Value::Object(detail)
 }
 
 fn safe_history_message(value: &str) -> String {
@@ -803,6 +924,36 @@ mod tests {
         let safe = safe_history_message(&message);
         assert!(!safe.contains(['\r', '\n']));
         assert_eq!(safe.chars().count(), 512);
+    }
+
+    #[test]
+    fn audit_detail_stores_only_safe_request_facts() -> Result<()> {
+        let input = normalize_input(ApiCallInput {
+            method: "POST".to_owned(),
+            query: BTreeMap::from([("token".to_owned(), "query-secret".to_owned())]),
+            headers: BTreeMap::from([("Accept".to_owned(), "application/json".to_owned())]),
+            body: Some(serde_json::json!({"secret": "body-secret"})),
+            jsonpath: vec!["$.items[*].metadata.name".to_owned()],
+            ..base_input()
+        })?;
+        let credential = CredentialSnapshot::from(&http_credential(CredentialPolicy::default()));
+        let detail = audit_detail(
+            &input,
+            Some(&credential),
+            "denied",
+            Some("policy_denied"),
+            None,
+        );
+        let serialized = detail.to_string();
+        assert!(serialized.contains("query_keys"));
+        assert!(serialized.contains("request_header_keys"));
+        assert!(serialized.contains("denial_reason"));
+        assert!(!serialized.contains("query-secret"));
+        assert!(!serialized.contains("body-secret"));
+        assert!(!serialized.contains("endpoint"));
+        assert!(!serialized.contains("secret"));
+        assert!(!serialized.contains("\"reason\""));
+        Ok(())
     }
 
     #[tokio::test]

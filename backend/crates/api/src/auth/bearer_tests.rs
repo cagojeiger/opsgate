@@ -114,6 +114,7 @@ impl TestResolver {
             ResolverMode::Registered(_active) => Ok(Caller {
                 user: test_user(attrs),
                 channel,
+                request_id: None,
             }),
         }
     }
@@ -171,6 +172,7 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
     let api_calls = Arc::new(crate::api_call::ApiCallService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
         opsgate_db::ApiCallHistoryRepo::new(pool.clone()),
+        opsgate_db::AuditRepo::new(pool.clone()),
         sealer,
         reqwest::Client::new(),
     ));

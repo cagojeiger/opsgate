@@ -42,6 +42,7 @@ mod tests {
         let caller = Caller {
             user,
             channel: Channel::Api,
+            request_id: None,
         };
         let out = build_me(&caller);
         assert_eq!(out.id, "00000000-0000-0000-0000-000000000000");

@@ -50,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
     let resolver = opsgate_domain::Resolver::new(user_repo);
     let credential_repo = opsgate_db::CredentialRepo::new(pool.clone());
     let api_call_history = opsgate_db::ApiCallHistoryRepo::new(pool.clone());
+    let audit_repo = opsgate_db::AuditRepo::new(pool.clone());
     let cipher = opsgate_core::crypto::Cipher::new(config.master_key.expose_secret())?;
     let sealer = opsgate_core::crypto::Sealer::new(cipher);
     let credential_service = std::sync::Arc::new(crate::credential::CredentialService::new(
@@ -59,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
     let api_call_service = std::sync::Arc::new(crate::api_call::ApiCallService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
         api_call_history,
+        audit_repo,
         sealer,
         http.clone(),
     ));

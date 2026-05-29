@@ -14,4 +14,12 @@ pub enum Channel {
 pub struct Caller {
     pub user: User,
     pub channel: Channel,
+    pub request_id: Option<String>,
+}
+
+impl Caller {
+    pub fn with_request_id(mut self, request_id: Option<String>) -> Self {
+        self.request_id = request_id;
+        self
+    }
 }

@@ -186,6 +186,7 @@ mod tests {
             &Caller {
                 user,
                 channel: Channel::Mcp,
+                request_id: None,
             },
             McpToolset::Admin,
             CredentialSummary {
@@ -223,6 +224,7 @@ mod tests {
             &Caller {
                 user,
                 channel: Channel::Mcp,
+                request_id: None,
             },
             McpToolset::Runtime,
             CredentialSummary {
