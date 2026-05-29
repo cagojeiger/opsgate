@@ -47,6 +47,7 @@ fn attrs_from_claims(claims: Claims) -> ResolveAttrs {
 
 fn map_identity_error(error: IdentityError) -> AuthError {
     match error {
+        IdentityError::NotAdmin => AuthError::InsufficientRole,
         IdentityError::NotRegistered => AuthError::NotRegistered,
         IdentityError::Inactive => AuthError::Inactive,
         IdentityError::Store(_error) => AuthError::Internal,

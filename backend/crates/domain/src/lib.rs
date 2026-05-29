@@ -9,4 +9,4 @@ pub mod user;
 
 pub use credential::{Credential, CredentialCategory};
 pub use identity::{Caller, Channel, IdentityError, ResolveAttrs, Resolver, UserStore};
-pub use user::User;
+pub use user::{Role, User};

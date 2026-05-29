@@ -30,6 +30,7 @@ services:
       OPSGATE_OAUTH_CLIENT_ID: opsgate-web
       OPSGATE_OAUTH_REDIRECT_URL: http://localhost:9091/callback
       OPSGATE_RESOURCE_URL: http://localhost:9091/mcp
+      OPSGATE_ADMIN_EMAIL: ${OPSGATE_ADMIN_EMAIL:-admin@example.test}
       OPSGATE_JWKS_CACHE_TTL_SECS: 300
       OPSGATE_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     ports:

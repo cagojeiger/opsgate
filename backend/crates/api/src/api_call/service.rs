@@ -64,6 +64,7 @@ impl ApiCallService {
         // Sanitize the raw alias up front: on the bad-input path it is the only
         // request field we record, and it has not been validated yet.
         let raw_alias = safe_history_message(&input.alias);
+        require_executor(caller)?;
         let input = match normalize_input(input) {
             Ok(input) => input,
             Err(error) => {
@@ -184,7 +185,11 @@ impl ApiCallService {
     /// Record an input-validation rejection (before a normalized input exists).
     /// Mirrors the per-tool denial stream so input-shaped abuse is still audited.
     async fn record_bad_input(&self, caller: &Caller, alias: &str, error: &Error) {
-        if let Err(error) = self.audit.append(bad_input_audit_params(caller, alias)).await {
+        if let Err(error) = self
+            .audit
+            .append(bad_input_audit_params(caller, alias))
+            .await
+        {
             tracing::error!(event = "api.call.audit_failed", detail = %error);
         }
         if let Err(error) = self
@@ -613,7 +618,9 @@ impl<'a> CallRecorder<'a> {
                 .map(|credential| credential.owner_user_id)
                 .or(Some(self.caller.user.id)),
             actor_user_id: Some(self.caller.user.id),
+            actor_role: Some(self.caller.role.as_str().to_owned()),
             channel: channel_str(self.caller.channel).to_owned(),
+            request_id: self.caller.request_id.clone(),
             credential_id: credential.map(|credential| credential.id),
             credential_alias: credential
                 .map(|credential| credential.alias.clone())
@@ -666,9 +673,9 @@ impl<'a> CallRecorder<'a> {
             outcome: outcome.to_owned(),
             severity: severity_for_outcome(outcome).to_owned(),
             actor_user_id: Some(self.caller.user.id),
-            actor_role: Some(role_for_channel(self.caller.channel).to_owned()),
-            actor_ip: None,
-            actor_user_agent: None,
+            actor_role: Some(self.caller.role.as_str().to_owned()),
+            actor_ip: self.caller.remote_ip.clone(),
+            actor_user_agent: self.caller.user_agent.clone(),
             target_type: Some("credential".to_owned()),
             target_id: credential.map(|credential| credential.id.to_string()),
             target_key: Some(
@@ -716,9 +723,11 @@ fn channel_str(channel: Channel) -> &'static str {
     }
 }
 
-fn role_for_channel(channel: Channel) -> &'static str {
-    match channel {
-        Channel::Browser | Channel::Api | Channel::Mcp => "active",
+fn require_executor(caller: &Caller) -> Result<()> {
+    if caller.role.can_execute() {
+        Ok(())
+    } else {
+        Err(Error::forbidden("operator or admin role required"))
     }
 }
 
@@ -813,9 +822,9 @@ fn bad_input_audit_params(caller: &Caller, alias: &str) -> AuditLogParams {
         outcome: "denied".to_owned(),
         severity: "warning".to_owned(),
         actor_user_id: Some(caller.user.id),
-        actor_role: Some(role_for_channel(caller.channel).to_owned()),
-        actor_ip: None,
-        actor_user_agent: None,
+        actor_role: Some(caller.role.as_str().to_owned()),
+        actor_ip: caller.remote_ip.clone(),
+        actor_user_agent: caller.user_agent.clone(),
         target_type: Some("credential".to_owned()),
         target_id: None,
         target_key: Some(alias.to_owned()),
@@ -831,7 +840,9 @@ fn bad_input_history_params(caller: &Caller, alias: &str, error: &Error) -> ApiC
     ApiCallHistoryParams {
         owner_user_id: Some(caller.user.id),
         actor_user_id: Some(caller.user.id),
+        actor_role: Some(caller.role.as_str().to_owned()),
         channel: channel_str(caller.channel).to_owned(),
+        request_id: caller.request_id.clone(),
         credential_id: None,
         credential_alias: alias.to_owned(),
         credential_category: String::new(),
@@ -1055,12 +1066,16 @@ mod tests {
                 sub: "sub".to_owned(),
                 email: "user@example.test".to_owned(),
                 display_name: "User".to_owned(),
+                role: opsgate_domain::Role::Operator,
                 is_active: true,
                 created_at: now,
                 updated_at: now,
             },
             channel: opsgate_domain::Channel::Mcp,
+            role: opsgate_domain::Role::Operator,
             request_id: None,
+            remote_ip: None,
+            user_agent: None,
         }
     }
 
@@ -1085,5 +1100,19 @@ mod tests {
             audit.detail.get("denial_reason"),
             Some(&serde_json::json!("bad_input"))
         );
+    }
+
+    #[test]
+    fn api_call_requires_operator_or_admin_role() {
+        let mut caller = test_caller();
+        caller.role = opsgate_domain::Role::Viewer;
+        assert!(matches!(
+            require_executor(&caller),
+            Err(Error::Forbidden(_))
+        ));
+        caller.role = opsgate_domain::Role::Operator;
+        assert!(require_executor(&caller).is_ok());
+        caller.role = opsgate_domain::Role::Admin;
+        assert!(require_executor(&caller).is_ok());
     }
 }

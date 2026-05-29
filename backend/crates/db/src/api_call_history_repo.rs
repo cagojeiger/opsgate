@@ -19,7 +19,9 @@ impl ApiCallHistoryRepo {
             INSERT INTO api_call_history (
                 owner_user_id,
                 actor_user_id,
+                actor_role,
                 channel,
+                request_id,
                 credential_id,
                 credential_alias,
                 credential_category,
@@ -41,12 +43,14 @@ impl ApiCallHistoryRepo {
                 error_kind,
                 error_message_safe
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
             "#,
         )
         .bind(params.owner_user_id)
         .bind(params.actor_user_id)
+        .bind(params.actor_role)
         .bind(params.channel)
+        .bind(params.request_id)
         .bind(params.credential_id)
         .bind(params.credential_alias)
         .bind(params.credential_category)
@@ -78,7 +82,9 @@ impl ApiCallHistoryRepo {
 pub struct ApiCallHistoryParams {
     pub owner_user_id: Option<Uuid>,
     pub actor_user_id: Option<Uuid>,
+    pub actor_role: Option<String>,
     pub channel: String,
+    pub request_id: Option<String>,
     pub credential_id: Option<Uuid>,
     pub credential_alias: String,
     pub credential_category: String,

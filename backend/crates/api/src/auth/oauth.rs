@@ -1,5 +1,7 @@
 use axum::extract::{Query, State};
+use axum::http::HeaderMap;
 use axum::http::StatusCode;
+use axum::http::header::USER_AGENT;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum_extra::extract::CookieJar;
 use opsgate_domain::{IdentityError, ResolveAttrs};
@@ -55,8 +57,11 @@ pub async fn login(State(state): State<AppState>, jar: CookieJar) -> Response {
 pub async fn callback(
     State(state): State<AppState>,
     jar: CookieJar,
+    headers: HeaderMap,
     Query(query): Query<CallbackQuery>,
 ) -> Response {
+    let remote_ip = remote_ip(&headers);
+    let user_agent = user_agent(&headers);
     let cookie_state = jar
         .get(LOGIN_STATE_COOKIE)
         .map(|cookie| cookie.value().to_owned());
@@ -128,8 +133,7 @@ pub async fn callback(
     };
 
     let userinfo =
-        match exchange_code_for_userinfo(&state.oidc, &state.http, code, &verifier, &nonce).await
-        {
+        match exchange_code_for_userinfo(&state.oidc, &state.http, code, &verifier, &nonce).await {
             Ok(userinfo) => userinfo,
             Err(error) => {
                 tracing::warn!(event = "oauth.exchange_failed", %error);
@@ -150,12 +154,22 @@ pub async fn callback(
         name: userinfo.name.unwrap_or_default(),
     };
     match state.resolver.resolve_browser(attrs.clone()).await {
-        Ok(_caller) => {
+        Ok(caller) => {
+            let caller = caller.with_request_metadata(None, remote_ip, user_agent);
+            audit_signup(&state, Some(&caller), "ok", None, &attrs).await;
             let body = format!(
                 "You're registered, sub={}. Reconnect your MCP client to {}.",
                 attrs.sub, state.config.resource_url
             );
             (jar, html_page(StatusCode::OK, "Login complete", &body)).into_response()
+        }
+        Err(IdentityError::NotAdmin) => {
+            audit_signup(&state, None, "denied", Some("not_admin"), &attrs).await;
+            (
+                jar,
+                html_page(StatusCode::FORBIDDEN, "Login forbidden", "not allowed"),
+            )
+                .into_response()
         }
         Err(IdentityError::Inactive) => (
             jar,
@@ -174,5 +188,60 @@ pub async fn callback(
             )
                 .into_response()
         }
+    }
+}
+
+fn remote_ip(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-forwarded-for")
+        .or_else(|| headers.get("x-real-ip"))
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn user_agent(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+async fn audit_signup(
+    state: &AppState,
+    caller: Option<&opsgate_domain::Caller>,
+    outcome: &str,
+    denial_reason: Option<&str>,
+    attrs: &ResolveAttrs,
+) {
+    let mut detail = serde_json::Map::new();
+    detail.insert("schema_version".to_owned(), serde_json::json!(1));
+    detail.insert("sub".to_owned(), serde_json::json!(attrs.sub.clone()));
+    detail.insert("email".to_owned(), serde_json::json!(attrs.email.clone()));
+    if let Some(reason) = denial_reason {
+        detail.insert("denial_reason".to_owned(), serde_json::json!(reason));
+    }
+    let params = opsgate_db::AuditLogParams {
+        action: "browser.signup".to_owned(),
+        channel: "browser".to_owned(),
+        outcome: outcome.to_owned(),
+        severity: if outcome == "ok" { "info" } else { "warning" }.to_owned(),
+        actor_user_id: caller.map(|caller| caller.user.id),
+        actor_role: caller.map(|caller| caller.role.as_str().to_owned()),
+        actor_ip: caller.and_then(|caller| caller.remote_ip.clone()),
+        actor_user_agent: caller.and_then(|caller| caller.user_agent.clone()),
+        target_type: Some("identity".to_owned()),
+        target_id: caller.map(|caller| caller.user.id.to_string()),
+        target_key: Some(attrs.sub.clone()),
+        request_id: None,
+        purpose: None,
+        detail: serde_json::Value::Object(detail),
+    };
+    if let Err(error) = state.audit.append(params).await {
+        tracing::error!(event = "browser.signup.audit_failed", detail = %error);
     }
 }

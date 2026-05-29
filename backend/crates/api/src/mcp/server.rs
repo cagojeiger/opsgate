@@ -10,10 +10,14 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::State;
+use axum::http::HeaderMap;
+use axum::http::header::USER_AGENT;
 use axum::http::header::WWW_AUTHENTICATE;
 use axum::http::request::Parts;
 use axum::http::{Request, StatusCode};
 use axum::response::{IntoResponse, Response};
+use opsgate_db::AuditLogParams;
+use opsgate_domain::Caller;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{Implementation, ProtocolVersion, ServerCapabilities, ServerInfo};
@@ -56,15 +60,8 @@ impl RuntimeMcpServer {
     ) -> Result<Json<McpMeOutput>, ErrorData> {
         let started = std::time::Instant::now();
         let result = crate::mcp::tools::me::call(&self.state, &parts, McpToolset::Runtime).await;
-        crate::mcp::tools::audit::record_tool_result(
-            &self.state,
-            &parts,
-            "me",
-            "active",
-            started,
-            &result,
-        )
-        .await;
+        crate::mcp::tools::audit::record_tool_result(&self.state, &parts, "me", started, &result)
+            .await;
         result
     }
 
@@ -83,7 +80,6 @@ impl RuntimeMcpServer {
             &self.state,
             &parts,
             "credential.list",
-            "active",
             started,
             &result,
         )
@@ -106,7 +102,6 @@ impl RuntimeMcpServer {
             &self.state,
             &parts,
             "api.call",
-            "active",
             started,
             &result,
         )
@@ -129,7 +124,6 @@ impl RuntimeMcpServer {
             &self.state,
             &parts,
             "sql.query",
-            "active",
             started,
             &result,
         )
@@ -152,7 +146,6 @@ impl RuntimeMcpServer {
             &self.state,
             &parts,
             "sql.schema",
-            "active",
             started,
             &result,
         )
@@ -191,15 +184,8 @@ impl AdminMcpServer {
     ) -> Result<Json<McpMeOutput>, ErrorData> {
         let started = std::time::Instant::now();
         let result = crate::mcp::tools::me::call(&self.state, &parts, McpToolset::Admin).await;
-        crate::mcp::tools::audit::record_tool_result(
-            &self.state,
-            &parts,
-            "me",
-            "admin",
-            started,
-            &result,
-        )
-        .await;
+        crate::mcp::tools::audit::record_tool_result(&self.state, &parts, "me", started, &result)
+            .await;
         result
     }
 
@@ -218,7 +204,6 @@ impl AdminMcpServer {
             &self.state,
             &parts,
             "credential.list",
-            "admin",
             started,
             &result,
         )
@@ -242,7 +227,6 @@ impl AdminMcpServer {
             &self.state,
             &parts,
             "credential.register_http",
-            "admin",
             started,
             &result,
         )
@@ -265,7 +249,6 @@ impl AdminMcpServer {
             &self.state,
             &parts,
             "credential.register_sql",
-            "admin",
             started,
             &result,
         )
@@ -288,7 +271,6 @@ impl AdminMcpServer {
             &self.state,
             &parts,
             "credential.update_http",
-            "admin",
             started,
             &result,
         )
@@ -311,7 +293,6 @@ impl AdminMcpServer {
             &self.state,
             &parts,
             "credential.update_sql",
-            "admin",
             started,
             &result,
         )
@@ -334,7 +315,6 @@ impl AdminMcpServer {
             &self.state,
             &parts,
             "credential.delete",
-            "admin",
             started,
             &result,
         )
@@ -377,6 +357,13 @@ pub async fn mcp_admin_handler(State(state): State<AppState>, request: Request<B
         Ok(request) => request,
         Err(error) => return mcp_auth_response(&state, error),
     };
+    let Some(caller) = request.extensions().get::<Caller>() else {
+        return mcp_auth_response(&state, AuthError::Internal);
+    };
+    if !caller.role.is_admin() {
+        record_mcp_admin_denied(&state, caller).await;
+        return mcp_auth_response(&state, AuthError::InsufficientRole);
+    }
     let config = streamable_config();
     let manager = Arc::new(NeverSessionManager::default());
     let service_state = state.clone();
@@ -397,18 +384,72 @@ async fn verify_mcp_request(
     let Some(token) = extract_bearer(&parts.headers).map(str::to_owned) else {
         return Err(AuthError::MissingToken);
     };
-    let request_id = parts
-        .headers
+    let request_id = request_id(&parts.headers);
+    let remote_ip = remote_ip(&parts.headers);
+    let user_agent = user_agent(&parts.headers);
+    let caller = verify_bearer_mcp(state, &token)
+        .await?
+        .with_request_metadata(request_id, remote_ip, user_agent);
+    parts.extensions.insert(caller);
+    Ok(Request::from_parts(parts, body))
+}
+
+fn request_id(headers: &HeaderMap) -> Option<String> {
+    headers
         .get("x-request-id")
         .and_then(|value| value.to_str().ok())
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(str::to_owned);
-    let caller = verify_bearer_mcp(state, &token)
-        .await?
-        .with_request_id(request_id);
-    parts.extensions.insert(caller);
-    Ok(Request::from_parts(parts, body))
+        .map(str::to_owned)
+}
+
+fn remote_ip(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-forwarded-for")
+        .or_else(|| headers.get("x-real-ip"))
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn user_agent(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+async fn record_mcp_admin_denied(state: &AppState, caller: &Caller) {
+    let detail = serde_json::json!({
+        "schema_version": 1,
+        "denial_reason": "required_role",
+        "required_role": "admin",
+        "actor_role": caller.role.as_str(),
+        "sub": caller.user.sub.clone(),
+    });
+    let params = AuditLogParams {
+        action: "mcp.auth.denied".to_owned(),
+        channel: "mcp".to_owned(),
+        outcome: "denied".to_owned(),
+        severity: "warning".to_owned(),
+        actor_user_id: Some(caller.user.id),
+        actor_role: Some(caller.role.as_str().to_owned()),
+        actor_ip: caller.remote_ip.clone(),
+        actor_user_agent: caller.user_agent.clone(),
+        target_type: Some("identity".to_owned()),
+        target_id: Some(caller.user.id.to_string()),
+        target_key: Some(caller.user.sub.clone()),
+        request_id: caller.request_id.clone(),
+        purpose: None,
+        detail,
+    };
+    if let Err(error) = state.audit.append(params).await {
+        tracing::error!(event = "mcp.auth.audit_failed", detail = %error);
+    }
 }
 
 fn streamable_config() -> StreamableHttpServerConfig {

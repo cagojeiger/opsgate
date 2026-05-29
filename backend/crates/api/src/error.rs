@@ -30,6 +30,10 @@ impl ApiError {
         Self::new(StatusCode::BAD_REQUEST, "invalid_field", message)
     }
 
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::FORBIDDEN, "forbidden", message)
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", message)
     }
@@ -41,6 +45,7 @@ impl From<CoreError> for ApiError {
     fn from(error: CoreError) -> Self {
         match error {
             CoreError::NotFound(msg) => Self::not_found(msg),
+            CoreError::Forbidden(msg) => Self::forbidden(msg),
             CoreError::Validation(msg) => Self::invalid_field(msg),
             CoreError::Internal(msg) => {
                 tracing::error!(event = "error.internal", detail = %msg);

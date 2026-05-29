@@ -10,7 +10,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, encode};
-use opsgate_domain::{Caller, Channel, IdentityError, ResolveAttrs, User};
+use opsgate_domain::{Caller, Channel, IdentityError, ResolveAttrs, Role, User};
 use serde::Serialize;
 use serde_json::{Value, json};
 use sqlx::postgres::PgPoolOptions;
@@ -80,6 +80,7 @@ struct TestResolver {
 #[derive(Clone)]
 enum ResolverMode {
     Registered(bool),
+    RegisteredRole { active: bool, role: Role },
     Missing,
 }
 
@@ -111,22 +112,32 @@ impl TestResolver {
         match self.mode {
             ResolverMode::Missing => Err(IdentityError::NotRegistered),
             ResolverMode::Registered(active) if !active => Err(IdentityError::Inactive),
-            ResolverMode::Registered(_active) => Ok(Caller {
-                user: test_user(attrs),
-                channel,
-                request_id: None,
-            }),
+            ResolverMode::Registered(_active) => Ok(caller(attrs, channel, Role::Operator)),
+            ResolverMode::RegisteredRole { active, .. } if !active => Err(IdentityError::Inactive),
+            ResolverMode::RegisteredRole { role, .. } => Ok(caller(attrs, channel, role)),
         }
     }
 }
 
-fn test_user(attrs: ResolveAttrs) -> User {
+fn caller(attrs: ResolveAttrs, channel: Channel, role: Role) -> Caller {
+    Caller {
+        user: test_user(attrs, role),
+        channel,
+        role,
+        request_id: None,
+        remote_ip: None,
+        user_agent: None,
+    }
+}
+
+fn test_user(attrs: ResolveAttrs, role: Role) -> User {
     let now = Utc::now();
     User {
         id: Uuid::nil(),
         sub: attrs.sub,
         email: attrs.email,
         display_name: attrs.name,
+        role,
         is_active: true,
         created_at: now,
         updated_at: now,
@@ -149,6 +160,7 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
         oauth_client_id: "client".to_owned(),
         oauth_redirect_url: "http://localhost:9091/callback".to_owned(),
         resource_url: "https://api.example.test".to_owned(),
+        admin_email: "admin@example.test".to_owned(),
         master_key: SecretString::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
         jwks_cache_ttl: Duration::from_secs(300),
         secure_cookies: false,
@@ -202,6 +214,10 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
         audit,
         http: reqwest::Client::new(),
     }))
+}
+
+fn state_with_role(role: Role) -> Result<AppState, Box<dyn std::error::Error>> {
+    state(ResolverMode::RegisteredRole { active: true, role })
 }
 
 fn token(
@@ -364,6 +380,60 @@ async fn api_routes_accept_valid_bearer() -> Result<(), Box<dyn std::error::Erro
         .await?;
 
     assert_eq!(response.status(), StatusCode::OK);
+    Ok(())
+}
+
+#[tokio::test]
+async fn mcp_runtime_accepts_registered_operator_before_protocol_handling()
+-> Result<(), Box<dyn std::error::Error>> {
+    let app = crate::routes::app(state_with_role(Role::Operator)?);
+    let valid = token(
+        "sub-1",
+        "https://auth.example.test",
+        json!("https://api.example.test"),
+        future_exp(),
+        "kid-1",
+    )?;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/mcp")
+                .header("authorization", format!("Bearer {valid}"))
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))?,
+        )
+        .await?;
+
+    assert_ne!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_ne!(response.status(), StatusCode::FORBIDDEN);
+    Ok(())
+}
+
+#[tokio::test]
+async fn mcp_admin_rejects_registered_operator() -> Result<(), Box<dyn std::error::Error>> {
+    let app = crate::routes::app(state_with_role(Role::Operator)?);
+    let valid = token(
+        "sub-1",
+        "https://auth.example.test",
+        json!("https://api.example.test"),
+        future_exp(),
+        "kid-1",
+    )?;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/mcp/admin")
+                .header("authorization", format!("Bearer {valid}"))
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))?,
+        )
+        .await?;
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
     Ok(())
 }
 

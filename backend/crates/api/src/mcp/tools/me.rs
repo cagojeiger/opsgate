@@ -60,7 +60,6 @@ pub async fn call(
 }
 
 fn build_me(caller: &Caller, toolset: McpToolset, summary: CredentialSummary) -> McpMeOutput {
-    let role = role_for_toolset(toolset).to_owned();
     McpMeOutput {
         service: ServiceInfo {
             name: "opsgate".to_owned(),
@@ -74,69 +73,74 @@ fn build_me(caller: &Caller, toolset: McpToolset, summary: CredentialSummary) ->
         sub: caller.user.sub.clone(),
         email: caller.user.email.clone(),
         name: caller.user.display_name.clone(),
-        role,
-        is_admin: matches!(toolset, McpToolset::Admin),
-    }
-}
-
-fn role_for_toolset(toolset: McpToolset) -> &'static str {
-    match toolset {
-        McpToolset::Runtime => "active",
-        McpToolset::Admin => "admin",
+        role: caller.role.as_str().to_owned(),
+        is_admin: caller.role.is_admin(),
     }
 }
 
 fn capabilities_for_toolset(toolset: McpToolset) -> Vec<Capability> {
-    let role = role_for_toolset(toolset).to_owned();
     let specs = match toolset {
         McpToolset::Runtime => vec![
             (
                 "credential.list",
                 "등록된 credential의 alias, metadata, policy를 조회합니다.",
+                "viewer",
             ),
-            ("api.call", "HTTP credential alias로 JSON API를 호출합니다."),
+            (
+                "api.call",
+                "HTTP credential alias로 JSON API를 호출합니다.",
+                "operator",
+            ),
             (
                 "sql.schema",
                 "SQL credential alias로 Postgres schema metadata를 조회합니다.",
+                "operator",
             ),
             (
                 "sql.query",
                 "SQL credential alias로 읽기 전용 Postgres 쿼리를 실행합니다.",
+                "operator",
             ),
         ],
         McpToolset::Admin => vec![
             (
                 "credential.list",
                 "등록된 credential의 alias, metadata, policy를 조회합니다.",
+                "viewer",
             ),
             (
                 "credential.register_http",
                 "HTTPS API credential을 등록하고 secret header를 봉인합니다.",
+                "admin",
             ),
             (
                 "credential.register_sql",
                 "Postgres credential을 등록하고 username/password를 봉인합니다.",
+                "admin",
             ),
             (
                 "credential.update_http",
                 "HTTP credential의 metadata와 policy를 수정합니다.",
+                "admin",
             ),
             (
                 "credential.update_sql",
                 "SQL credential의 metadata와 policy를 수정합니다.",
+                "admin",
             ),
             (
                 "credential.delete",
                 "credential을 소프트 삭제하고 봉인된 secret을 파기합니다.",
+                "admin",
             ),
         ],
     };
     specs
         .into_iter()
-        .map(|(tool, description)| Capability {
+        .map(|(tool, description, role)| Capability {
             tool: tool.to_owned(),
             description: description.to_owned(),
-            role: role.clone(),
+            role: role.to_owned(),
         })
         .collect()
 }
@@ -159,6 +163,7 @@ fn workflow_for_toolset(toolset: McpToolset) -> Vec<String> {
 
 fn map_error(error: opsgate_core::Error) -> ErrorData {
     match error {
+        opsgate_core::Error::Forbidden(message) => ErrorData::invalid_params(message, None),
         opsgate_core::Error::Validation(message) => ErrorData::invalid_params(message, None),
         opsgate_core::Error::NotFound(message) => ErrorData::invalid_params(message, None),
         opsgate_core::Error::Internal(message) => {
@@ -171,7 +176,7 @@ fn map_error(error: opsgate_core::Error) -> ErrorData {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use opsgate_domain::{Caller, Channel, User};
+    use opsgate_domain::{Caller, Channel, Role, User};
     use std::collections::BTreeMap;
     use uuid::Uuid;
 
@@ -186,6 +191,7 @@ mod tests {
             sub: "sub-1".to_owned(),
             email: "user@example.test".to_owned(),
             display_name: "Test User".to_owned(),
+            role: Role::Viewer,
             is_active: true,
             created_at: now,
             updated_at: now,
@@ -194,7 +200,10 @@ mod tests {
             &Caller {
                 user,
                 channel: Channel::Mcp,
+                role: Role::Admin,
                 request_id: None,
+                remote_ip: None,
+                user_agent: None,
             },
             McpToolset::Admin,
             CredentialSummary {
@@ -222,6 +231,7 @@ mod tests {
             sub: "sub-1".to_owned(),
             email: "user@example.test".to_owned(),
             display_name: "Test User".to_owned(),
+            role: Role::Viewer,
             is_active: true,
             created_at: now,
             updated_at: now,
@@ -232,7 +242,10 @@ mod tests {
             &Caller {
                 user,
                 channel: Channel::Mcp,
+                role: Role::Operator,
                 request_id: None,
+                remote_ip: None,
+                user_agent: None,
             },
             McpToolset::Runtime,
             CredentialSummary {
@@ -244,7 +257,7 @@ mod tests {
         );
         let json = serde_json::to_string(&out)?;
 
-        assert_eq!(out.role, "active");
+        assert_eq!(out.role, "operator");
         assert!(!out.is_admin);
         assert!(
             out.capabilities

@@ -3,7 +3,7 @@ use std::future::Future;
 
 use opsgate_core::Error;
 
-use crate::{Caller, Channel, User};
+use crate::{Caller, Channel, Role, User};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolveAttrs {
@@ -28,6 +28,7 @@ pub trait UserStore: Clone + Send + Sync + 'static {
 
 #[derive(Debug)]
 pub enum IdentityError {
+    NotAdmin,
     NotRegistered,
     Inactive,
     Store(Error),
@@ -36,6 +37,7 @@ pub enum IdentityError {
 impl fmt::Display for IdentityError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::NotAdmin => f.write_str("email not on admin allowlist"),
             Self::NotRegistered => f.write_str("user not registered"),
             Self::Inactive => f.write_str("user is inactive"),
             Self::Store(error) => write!(f, "identity store error: {error}"),
@@ -54,17 +56,24 @@ impl From<Error> for IdentityError {
 #[derive(Debug, Clone)]
 pub struct Resolver<S> {
     users: S,
+    admin_email: String,
 }
 
 impl<S> Resolver<S>
 where
     S: UserStore,
 {
-    pub fn new(users: S) -> Self {
-        Self { users }
+    pub fn new(users: S, admin_email: impl Into<String>) -> Self {
+        Self {
+            users,
+            admin_email: admin_email.into(),
+        }
     }
 
     pub async fn resolve_browser(&self, attrs: ResolveAttrs) -> Result<Caller, IdentityError> {
+        if attrs.email != self.admin_email {
+            return Err(IdentityError::NotAdmin);
+        }
         let user = self
             .users
             .upsert_by_sub(&attrs.sub, &attrs.email, &attrs.name)
@@ -97,11 +106,23 @@ where
         if !user.is_active {
             return Err(IdentityError::Inactive);
         }
+        let role = self.derive_role(&user);
         Ok(Caller {
             user,
             channel,
+            role,
             request_id: None,
+            remote_ip: None,
+            user_agent: None,
         })
+    }
+
+    fn derive_role(&self, user: &User) -> Role {
+        if user.email == self.admin_email {
+            Role::Admin
+        } else {
+            user.role
+        }
     }
 }
 
@@ -132,7 +153,7 @@ mod tests {
                 .map_err(|error| Error::internal(format!("test lock failed: {error}")))?;
             let existing = guard.take();
             let user = existing.map_or_else(
-                || user(sub, email, name, true),
+                || user(sub, email, name, Role::Viewer, true),
                 |mut existing| {
                     existing.display_name = name.to_owned();
                     existing
@@ -151,13 +172,14 @@ mod tests {
         }
     }
 
-    fn user(sub: &str, email: &str, name: &str, is_active: bool) -> User {
+    fn user(sub: &str, email: &str, name: &str, role: Role, is_active: bool) -> User {
         let now = Utc::now();
         User {
             id: Uuid::nil(),
             sub: sub.to_owned(),
             email: email.to_owned(),
             display_name: name.to_owned(),
+            role,
             is_active,
             created_at: now,
             updated_at: now,
@@ -166,7 +188,7 @@ mod tests {
 
     #[tokio::test]
     async fn api_requires_registered_active_user() {
-        let resolver = Resolver::new(MemoryUsers::default());
+        let resolver = Resolver::new(MemoryUsers::default(), "admin@example.test");
         let err = resolver
             .resolve_api(ResolveAttrs {
                 sub: "missing".to_owned(),
@@ -186,9 +208,9 @@ mod tests {
                 .user
                 .lock()
                 .map_err(|error| Error::internal(format!("test lock failed: {error}")))?;
-            *guard = Some(user("s1", "user@example.test", "User", false));
+            *guard = Some(user("s1", "user@example.test", "User", Role::Viewer, false));
         }
-        let resolver = Resolver::new(users);
+        let resolver = Resolver::new(users, "admin@example.test");
         let err = resolver
             .resolve_mcp(ResolveAttrs {
                 sub: "s1".to_owned(),
@@ -204,18 +226,33 @@ mod tests {
     #[tokio::test]
     async fn browser_login_upserts_authenticated_user() -> opsgate_core::Result<()> {
         let users = MemoryUsers::default();
-        let resolver = Resolver::new(users.clone());
+        let resolver = Resolver::new(users.clone(), "admin@example.test");
         let caller = resolver
+            .resolve_browser(ResolveAttrs {
+                sub: "s1".to_owned(),
+                email: "admin@example.test".to_owned(),
+                name: "Admin".to_owned(),
+            })
+            .await
+            .map_err(Error::internal)?;
+        assert_eq!(caller.user.email, "admin@example.test");
+        assert_eq!(caller.channel, Channel::Browser);
+        assert_eq!(caller.role, Role::Admin);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn browser_login_rejects_non_admin_email() {
+        let resolver = Resolver::new(MemoryUsers::default(), "admin@example.test");
+        let err = resolver
             .resolve_browser(ResolveAttrs {
                 sub: "s1".to_owned(),
                 email: "user@example.test".to_owned(),
                 name: "User".to_owned(),
             })
             .await
-            .map_err(Error::internal)?;
-        assert_eq!(caller.user.email, "user@example.test");
-        assert_eq!(caller.channel, Channel::Browser);
-        Ok(())
+            .err();
+        assert!(matches!(err, Some(IdentityError::NotAdmin)));
     }
 
     #[tokio::test]
@@ -226,18 +263,54 @@ mod tests {
                 .user
                 .lock()
                 .map_err(|error| Error::internal(format!("test lock failed: {error}")))?;
-            *guard = Some(user("s1", "user@example.test", "User", true));
+            *guard = Some(user(
+                "s1",
+                "operator@example.test",
+                "Operator",
+                Role::Operator,
+                true,
+            ));
         }
-        let resolver = Resolver::new(users);
+        let resolver = Resolver::new(users, "admin@example.test");
         let caller = resolver
             .resolve_api(ResolveAttrs {
                 sub: "s1".to_owned(),
-                email: "user@example.test".to_owned(),
-                name: "User".to_owned(),
+                email: "ignored@example.test".to_owned(),
+                name: "Ignored".to_owned(),
             })
             .await
             .map_err(Error::internal)?;
         assert_eq!(caller.channel, Channel::Api);
+        assert_eq!(caller.role, Role::Operator);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn admin_email_overrides_stored_role_for_api() -> opsgate_core::Result<()> {
+        let users = MemoryUsers::default();
+        {
+            let mut guard = users
+                .user
+                .lock()
+                .map_err(|error| Error::internal(format!("test lock failed: {error}")))?;
+            *guard = Some(user(
+                "s1",
+                "admin@example.test",
+                "Admin",
+                Role::Viewer,
+                true,
+            ));
+        }
+        let resolver = Resolver::new(users, "admin@example.test");
+        let caller = resolver
+            .resolve_api(ResolveAttrs {
+                sub: "s1".to_owned(),
+                email: String::new(),
+                name: String::new(),
+            })
+            .await
+            .map_err(Error::internal)?;
+        assert_eq!(caller.role, Role::Admin);
         Ok(())
     }
 }

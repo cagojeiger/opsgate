@@ -1683,6 +1683,7 @@ dependencies = [
  "opsgate-domain",
  "serde_json",
  "sqlx",
+ "tokio",
  "tracing",
  "uuid",
 ]

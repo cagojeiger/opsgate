@@ -50,6 +50,7 @@ impl SqlSchemaService {
     }
 
     pub async fn execute(&self, caller: &Caller, input: SqlSchemaInput) -> Result<SqlSchemaOutput> {
+        require_executor(caller)?;
         let input = normalize_input(input)?;
         let mut recorder = SchemaRecorder::new(&self.audit, caller, &input);
 
@@ -775,9 +776,9 @@ impl<'a> SchemaRecorder<'a> {
             outcome: outcome.to_owned(),
             severity: if outcome == "ok" { "info" } else { "warning" }.to_owned(),
             actor_user_id: Some(self.caller.user.id),
-            actor_role: Some("active".to_owned()),
-            actor_ip: None,
-            actor_user_agent: None,
+            actor_role: Some(self.caller.role.as_str().to_owned()),
+            actor_ip: self.caller.remote_ip.clone(),
+            actor_user_agent: self.caller.user_agent.clone(),
             target_type: Some("credential".to_owned()),
             target_id: credential.map(|credential| credential.id.to_string()),
             target_key: Some(
@@ -911,8 +912,20 @@ fn channel_str(channel: Channel) -> &'static str {
     }
 }
 
+fn require_executor(caller: &Caller) -> Result<()> {
+    if caller.role.can_execute() {
+        Ok(())
+    } else {
+        Err(Error::forbidden("operator or admin role required"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use chrono::Utc;
+    use opsgate_domain::{Channel, Role, User};
+    use uuid::Uuid;
+
     use super::*;
 
     fn base_input() -> SqlSchemaInput {
@@ -927,6 +940,27 @@ mod tests {
             max_bytes: None,
             timeout_ms: None,
             include_indexes: false,
+        }
+    }
+
+    fn caller(role: Role) -> Caller {
+        let now = Utc::now();
+        Caller {
+            user: User {
+                id: Uuid::nil(),
+                sub: "sub".to_owned(),
+                email: "user@example.test".to_owned(),
+                display_name: "User".to_owned(),
+                role,
+                is_active: true,
+                created_at: now,
+                updated_at: now,
+            },
+            channel: Channel::Mcp,
+            role,
+            request_id: None,
+            remote_ip: None,
+            user_agent: None,
         }
     }
 
@@ -982,5 +1016,15 @@ mod tests {
         assert!(!serialized.contains("password"));
         assert!(!serialized.contains("\"reason\""));
         Ok(())
+    }
+
+    #[test]
+    fn sql_schema_requires_operator_or_admin_role() {
+        assert!(matches!(
+            require_executor(&caller(Role::Viewer)),
+            Err(Error::Forbidden(_))
+        ));
+        assert!(require_executor(&caller(Role::Operator)).is_ok());
+        assert!(require_executor(&caller(Role::Admin)).is_ok());
     }
 }

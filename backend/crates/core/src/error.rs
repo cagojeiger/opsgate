@@ -13,6 +13,10 @@ pub enum Error {
     #[error("not found: {0}")]
     NotFound(String),
 
+    /// The caller is authenticated but not allowed to perform this action.
+    #[error("forbidden: {0}")]
+    Forbidden(String),
+
     /// The caller sent something invalid.
     #[error("invalid input: {0}")]
     Validation(String),
@@ -25,6 +29,10 @@ pub enum Error {
 impl Error {
     pub fn not_found(msg: impl fmt::Display) -> Self {
         Self::NotFound(msg.to_string())
+    }
+
+    pub fn forbidden(msg: impl fmt::Display) -> Self {
+        Self::Forbidden(msg.to_string())
     }
 
     pub fn validation(msg: impl fmt::Display) -> Self {

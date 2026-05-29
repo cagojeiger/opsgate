@@ -8,6 +8,7 @@ use opsgate_core::{Error, Result};
 use opsgate_db::{
     CredentialAuditAction, CredentialAuditParams, CredentialRepo, CredentialSummaryRows,
 };
+use opsgate_domain::Caller;
 use opsgate_domain::credential::{
     Credential, CredentialCategory, CredentialListParams, CredentialPolicy, CredentialSecret,
     InsertCredentialParams, RegisterCredentialInput, SecretHeader, UpdateCredentialParams,
@@ -47,9 +48,10 @@ impl CredentialService {
 
     pub async fn register_http(
         &self,
-        owner_user_id: Uuid,
+        caller: &Caller,
         input: RegisterHttpCredentialInput,
     ) -> Result<Credential> {
+        let owner_user_id = require_admin(caller)?;
         let input = normalize_register_input(input.into_domain());
         validate_register_input(&input)?;
         self.validate_register_endpoint_ips(&input).await?;
@@ -85,9 +87,10 @@ impl CredentialService {
 
     pub async fn register_sql(
         &self,
-        owner_user_id: Uuid,
+        caller: &Caller,
         input: RegisterSqlCredentialInput,
     ) -> Result<Credential> {
+        let owner_user_id = require_admin(caller)?;
         let input = normalize_register_input(input.into_domain());
         validate_register_input(&input)?;
         self.validate_register_endpoint_ips(&input).await?;
@@ -165,27 +168,26 @@ impl CredentialService {
 
     pub async fn update_http(
         &self,
-        owner_user_id: Uuid,
+        caller: &Caller,
         input: UpdateCredentialInput,
     ) -> Result<CredentialUpdate> {
-        self.update(owner_user_id, input, CredentialCategory::Http)
-            .await
+        self.update(caller, input, CredentialCategory::Http).await
     }
 
     pub async fn update_sql(
         &self,
-        owner_user_id: Uuid,
+        caller: &Caller,
         input: UpdateCredentialInput,
     ) -> Result<CredentialUpdate> {
-        self.update(owner_user_id, input, CredentialCategory::Sql)
-            .await
+        self.update(caller, input, CredentialCategory::Sql).await
     }
 
     pub async fn delete(
         &self,
-        owner_user_id: Uuid,
+        caller: &Caller,
         input: DeleteCredentialInput,
     ) -> Result<Credential> {
+        let owner_user_id = require_admin(caller)?;
         let alias = input.alias.trim().to_owned();
         let reason = validate_reason(&input.reason)?;
         if alias.is_empty() {
@@ -198,10 +200,11 @@ impl CredentialService {
 
     async fn update(
         &self,
-        owner_user_id: Uuid,
+        caller: &Caller,
         input: UpdateCredentialInput,
         category: CredentialCategory,
     ) -> Result<CredentialUpdate> {
+        let owner_user_id = require_admin(caller)?;
         let alias = input.alias.trim().to_owned();
         let reason = validate_reason(&input.reason)?;
         if alias.is_empty() {
@@ -245,6 +248,14 @@ impl CredentialService {
             credential,
             changed_fields,
         })
+    }
+}
+
+fn require_admin(caller: &Caller) -> Result<Uuid> {
+    if caller.role.is_admin() {
+        Ok(caller.user.id)
+    } else {
+        Err(Error::forbidden("admin role required"))
     }
 }
 
@@ -578,6 +589,8 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr};
 
     use base64::Engine;
+    use chrono::Utc;
+    use opsgate_domain::{Channel, Role, User};
     use sqlx::postgres::PgPoolOptions;
 
     use super::*;
@@ -612,6 +625,27 @@ mod tests {
             tls_server_ca: String::new(),
         }
         .into_domain()
+    }
+
+    fn caller(role: Role) -> Caller {
+        let now = Utc::now();
+        Caller {
+            user: User {
+                id: Uuid::nil(),
+                sub: "sub".to_owned(),
+                email: "user@example.test".to_owned(),
+                display_name: "User".to_owned(),
+                role,
+                is_active: true,
+                created_at: now,
+                updated_at: now,
+            },
+            channel: Channel::Mcp,
+            role,
+            request_id: None,
+            remote_ip: None,
+            user_agent: None,
+        }
     }
 
     #[tokio::test]
@@ -692,5 +726,18 @@ mod tests {
         assert!(matches!(delete.action, CredentialAuditAction::Delete));
         assert_eq!(delete.reason.as_deref(), Some("Retire old credential"));
         assert!(!delete.detail.to_string().contains("secret-token"));
+    }
+
+    #[test]
+    fn credential_mutation_requires_admin_role() {
+        assert!(require_admin(&caller(Role::Admin)).is_ok());
+        assert!(matches!(
+            require_admin(&caller(Role::Operator)),
+            Err(Error::Forbidden(_))
+        ));
+        assert!(matches!(
+            require_admin(&caller(Role::Viewer)),
+            Err(Error::Forbidden(_))
+        ));
     }
 }

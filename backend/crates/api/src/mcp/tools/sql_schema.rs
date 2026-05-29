@@ -25,6 +25,7 @@ pub async fn call(
 
 fn map_error(error: opsgate_core::Error) -> ErrorData {
     match error {
+        opsgate_core::Error::Forbidden(message) => ErrorData::invalid_params(message, None),
         opsgate_core::Error::Validation(message) => ErrorData::invalid_params(message, None),
         opsgate_core::Error::NotFound(message) => ErrorData::invalid_params(message, None),
         opsgate_core::Error::Internal(message) => {

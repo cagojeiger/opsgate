@@ -54,12 +54,17 @@ impl OidcProvider {
     /// Build an OIDC client from cached (or freshly discovered) provider metadata.
     pub(crate) async fn client(&self) -> opsgate_core::Result<OidcClient> {
         let metadata = self.metadata().await?;
-        let client =
-            CoreClient::from_provider_metadata(metadata, ClientId::new(self.client_id.clone()), None)
-                .set_redirect_uri(RedirectUrl::new(self.redirect_url.clone()).map_err(|error| {
-                    opsgate_core::Error::validation(format!("invalid redirect URL: {error}"))
-                })?)
-                .set_auth_type(AuthType::RequestBody);
+        let client = CoreClient::from_provider_metadata(
+            metadata,
+            ClientId::new(self.client_id.clone()),
+            None,
+        )
+        .set_redirect_uri(
+            RedirectUrl::new(self.redirect_url.clone()).map_err(|error| {
+                opsgate_core::Error::validation(format!("invalid redirect URL: {error}"))
+            })?,
+        )
+        .set_auth_type(AuthType::RequestBody);
         Ok(client)
     }
 
@@ -86,8 +91,9 @@ impl OidcProvider {
     }
 
     async fn refresh(&self) -> opsgate_core::Result<CoreProviderMetadata> {
-        let issuer = IssuerUrl::new(self.issuer.clone())
-            .map_err(|error| opsgate_core::Error::validation(format!("invalid issuer URL: {error}")))?;
+        let issuer = IssuerUrl::new(self.issuer.clone()).map_err(|error| {
+            opsgate_core::Error::validation(format!("invalid issuer URL: {error}"))
+        })?;
         let metadata = CoreProviderMetadata::discover_async(issuer, &self.http)
             .await
             .map_err(|error| {

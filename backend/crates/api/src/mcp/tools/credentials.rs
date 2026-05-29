@@ -114,7 +114,7 @@ pub async fn register_http(
     let caller = caller(parts)?;
     let credential = state
         .credentials
-        .register_http(caller.user.id, input)
+        .register_http(caller, input)
         .await
         .map_err(map_error)?;
     Ok(Json(RegisterCredentialOutput::created(credential)))
@@ -128,7 +128,7 @@ pub async fn register_sql(
     let caller = caller(parts)?;
     let credential = state
         .credentials
-        .register_sql(caller.user.id, input)
+        .register_sql(caller, input)
         .await
         .map_err(map_error)?;
     Ok(Json(RegisterCredentialOutput::created(credential)))
@@ -142,7 +142,7 @@ pub async fn update_http(
     let caller = caller(parts)?;
     let update = state
         .credentials
-        .update_http(caller.user.id, input)
+        .update_http(caller, input)
         .await
         .map_err(map_error)?;
     Ok(Json(UpdateCredentialOutput::from_update(update)))
@@ -156,7 +156,7 @@ pub async fn update_sql(
     let caller = caller(parts)?;
     let update = state
         .credentials
-        .update_sql(caller.user.id, input)
+        .update_sql(caller, input)
         .await
         .map_err(map_error)?;
     Ok(Json(UpdateCredentialOutput::from_update(update)))
@@ -170,7 +170,7 @@ pub async fn delete(
     let caller = caller(parts)?;
     let credential = state
         .credentials
-        .delete(caller.user.id, input)
+        .delete(caller, input)
         .await
         .map_err(map_error)?;
     Ok(Json(DeleteCredentialOutput {
@@ -246,6 +246,7 @@ fn caller(parts: &Parts) -> Result<&Caller, ErrorData> {
 
 fn map_error(error: opsgate_core::Error) -> ErrorData {
     match error {
+        opsgate_core::Error::Forbidden(message) => ErrorData::invalid_params(message, None),
         opsgate_core::Error::Validation(message) => ErrorData::invalid_params(message, None),
         opsgate_core::Error::NotFound(message) => ErrorData::invalid_params(message, None),
         opsgate_core::Error::Internal(message) => {
