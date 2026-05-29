@@ -140,7 +140,8 @@ impl CredentialRepo {
                 tls_ca IS NOT NULL AS has_tls_ca,
                 created_at,
                 updated_at,
-                secret_ciphertext
+                secret_ciphertext,
+                tls_ca
             FROM credentials
             WHERE owner_user_id = $1
               AND alias = $2
@@ -498,10 +499,17 @@ pub struct CredentialSecretRow {
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     pub secret_ciphertext: Option<Vec<u8>>,
+    pub tls_ca: Option<Vec<u8>>,
+}
+
+pub struct CredentialSecretMaterial {
+    pub credential: Credential,
+    pub secret_ciphertext: Option<Vec<u8>>,
+    pub tls_ca: Option<Vec<u8>>,
 }
 
 impl CredentialSecretRow {
-    pub fn into_credential(self) -> Result<(Credential, Option<Vec<u8>>)> {
+    pub fn into_credential(self) -> Result<CredentialSecretMaterial> {
         let credential = CredentialRow {
             id: self.id,
             owner_user_id: self.owner_user_id,
@@ -519,7 +527,11 @@ impl CredentialSecretRow {
             updated_at: self.updated_at,
         }
         .into_credential()?;
-        Ok((credential, self.secret_ciphertext))
+        Ok(CredentialSecretMaterial {
+            credential,
+            secret_ciphertext: self.secret_ciphertext,
+            tls_ca: self.tls_ca,
+        })
     }
 }
 

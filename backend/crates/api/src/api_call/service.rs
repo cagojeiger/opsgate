@@ -22,6 +22,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use super::target::TargetHttpClients;
+
 const DEFAULT_METHOD: &str = "GET";
 const DEFAULT_MAX_BYTES: usize = 4096;
 const MIN_MAX_BYTES: usize = 256;
@@ -38,7 +40,7 @@ pub struct ApiCallService {
     history: ApiCallHistoryRepo,
     audit: AuditRepo,
     sealer: opsgate_core::crypto::Sealer,
-    http: reqwest::Client,
+    target_clients: TargetHttpClients,
 }
 
 impl ApiCallService {
@@ -54,7 +56,7 @@ impl ApiCallService {
             history,
             audit,
             sealer,
-            http,
+            target_clients: TargetHttpClients::new(http, TARGET_TIMEOUT),
         }
     }
 
@@ -75,7 +77,10 @@ impl ApiCallService {
                 return Err(Error::not_found("credential not found"));
             }
         };
-        let (credential, secret_ciphertext) = row.into_credential()?;
+        let material = row.into_credential()?;
+        let credential = material.credential;
+        let secret_ciphertext = material.secret_ciphertext;
+        let tls_ca = material.tls_ca;
         recorder.set_credential(&credential);
 
         if credential.category != CredentialCategory::Http {
@@ -116,7 +121,14 @@ impl ApiCallService {
 
         let started = Instant::now();
         let response = match self
-            .execute_target(&url, &input, &secret, guarded_addrs.as_deref())
+            .execute_target(
+                &credential,
+                tls_ca.as_deref(),
+                &url,
+                &input,
+                &secret,
+                guarded_addrs.as_deref(),
+            )
             .await
         {
             Ok(response) => response,
@@ -176,6 +188,8 @@ impl ApiCallService {
 
     async fn execute_target(
         &self,
+        credential: &Credential,
+        tls_ca: Option<&[u8]>,
         url: &url::Url,
         input: &NormalizedApiCallInput,
         secret: &[SecretHeader],
@@ -183,7 +197,9 @@ impl ApiCallService {
     ) -> Result<TargetResponse> {
         let method = reqwest::Method::from_bytes(input.method.as_bytes())
             .map_err(|error| Error::validation(format!("invalid method: {error}")))?;
-        let http = self.target_http_client(url, guarded_addrs)?;
+        let http = self
+            .target_clients
+            .client_for(credential, tls_ca, guarded_addrs, url)?;
         let mut request = http.request(method, url.clone());
         let mut headers = HeaderMap::new();
         if !input
@@ -231,25 +247,6 @@ impl ApiCallService {
             original_bytes,
             truncated,
         })
-    }
-
-    fn target_http_client(
-        &self,
-        url: &url::Url,
-        guarded_addrs: Option<&[SocketAddr]>,
-    ) -> Result<reqwest::Client> {
-        let Some(addrs) = guarded_addrs else {
-            return Ok(self.http.clone());
-        };
-        let host = url
-            .host_str()
-            .ok_or_else(|| Error::validation("credential endpoint requires host"))?;
-        reqwest::Client::builder()
-            .timeout(TARGET_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::none())
-            .resolve_to_addrs(host, addrs)
-            .build()
-            .map_err(|error| Error::internal(format!("build guarded target client: {error}")))
     }
 }
 
