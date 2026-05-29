@@ -21,6 +21,7 @@ use rmcp::transport::streamable_http_server::session::never::NeverSessionManager
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::{ErrorData, Json, ServerHandler, tool, tool_handler, tool_router};
 
+use crate::api_call::{ApiCallInput, ApiCallOutput};
 use crate::auth::bearer::{
     AuthError, auth_error_body, extract_bearer, shared_challenge_header, status_for_error,
     verify_bearer_mcp,
@@ -64,6 +65,18 @@ impl RuntimeMcpServer {
         input: Parameters<ListCredentialsInput>,
     ) -> Result<Json<CredentialListOutput>, ErrorData> {
         crate::mcp::tools::credentials::list(&self.state, &parts, input).await
+    }
+
+    #[tool(
+        name = "api.call",
+        description = "Invoke a registered category=http credential by alias without exposing endpoint or secrets. Returns JSON only."
+    )]
+    pub async fn api_call(
+        &self,
+        Extension(parts): Extension<Parts>,
+        input: Parameters<ApiCallInput>,
+    ) -> Result<Json<ApiCallOutput>, ErrorData> {
+        crate::mcp::tools::api_call::call(&self.state, &parts, input).await
     }
 }
 

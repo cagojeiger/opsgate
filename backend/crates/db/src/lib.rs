@@ -3,9 +3,11 @@
 use opsgate_core::{Config, Error, Result};
 use sqlx::postgres::PgPoolOptions;
 
+pub mod api_call_history_repo;
 pub mod credential_repo;
 pub mod user_repo;
 
+pub use api_call_history_repo::{ApiCallHistoryParams, ApiCallHistoryRepo};
 pub use credential_repo::{
     CredentialAuditAction, CredentialAuditParams, CredentialRepo, CredentialSummaryRows,
 };

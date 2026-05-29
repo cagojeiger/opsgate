@@ -89,10 +89,13 @@ fn role_for_toolset(toolset: McpToolset) -> &'static str {
 fn capabilities_for_toolset(toolset: McpToolset) -> Vec<Capability> {
     let role = role_for_toolset(toolset).to_owned();
     let specs = match toolset {
-        McpToolset::Runtime => vec![(
-            "credential.list",
-            "등록된 credential의 alias, metadata, policy를 조회합니다.",
-        )],
+        McpToolset::Runtime => vec![
+            (
+                "credential.list",
+                "등록된 credential의 alias, metadata, policy를 조회합니다.",
+            ),
+            ("api.call", "HTTP credential alias로 JSON API를 호출합니다."),
+        ],
         McpToolset::Admin => vec![
             (
                 "credential.list",

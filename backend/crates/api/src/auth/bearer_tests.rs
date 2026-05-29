@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::auth::jwks::JwksCache;
 use crate::identity::CallerResolver;
-use crate::state::AppState;
+use crate::state::{AppState, AppStateDeps};
 
 use crate::auth::bearer::{AuthError, verify_bearer};
 
@@ -166,17 +166,24 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
     let sealer = opsgate_core::crypto::Sealer::new(cipher);
     let credentials = Arc::new(crate::credential::CredentialService::new(
         credential_repo,
-        sealer,
+        sealer.clone(),
     ));
-    Ok(AppState::new(
-        pool,
+    let api_calls = Arc::new(crate::api_call::ApiCallService::new(
+        opsgate_db::CredentialRepo::new(pool.clone()),
+        opsgate_db::ApiCallHistoryRepo::new(pool.clone()),
+        sealer,
+        reqwest::Client::new(),
+    ));
+    Ok(AppState::new(AppStateDeps {
+        db: pool,
         config,
         jwks,
         oidc,
-        Arc::new(TestResolver { mode }),
+        resolver: Arc::new(TestResolver { mode }),
         credentials,
-        reqwest::Client::new(),
-    ))
+        api_calls,
+        http: reqwest::Client::new(),
+    }))
 }
 
 fn token(

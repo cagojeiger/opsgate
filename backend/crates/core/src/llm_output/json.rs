@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use serde_json_path::JsonPath;
@@ -35,7 +36,7 @@ impl Default for JsonOutputOptions {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct JsonOutput {
     pub body: Value,
     pub original_bytes: usize,
@@ -45,7 +46,7 @@ pub struct JsonOutput {
     pub more: Option<More>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct More {
     pub truncated: bool,
     pub options: MoreOptions,
@@ -55,7 +56,7 @@ pub struct More {
     pub preview: Option<Preview>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
 pub struct MoreOptions {
     #[serde(skip_serializing_if = "String::is_empty", default)]
     pub preferred_next: String,
@@ -65,7 +66,7 @@ pub struct MoreOptions {
     pub suggested_max_bytes: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct Preview {
     pub path_count: usize,
     pub returned_paths: usize,
@@ -73,7 +74,7 @@ pub struct Preview {
     pub paths: Vec<PreviewPath>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct PreviewPath {
     pub path: String,
     #[serde(rename = "type")]

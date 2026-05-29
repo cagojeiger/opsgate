@@ -1644,6 +1644,7 @@ dependencies = [
  "config",
  "ipnet",
  "rustls-pemfile",
+ "schemars 1.2.1",
  "secrecy",
  "serde",
  "serde_json",

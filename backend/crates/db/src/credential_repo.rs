@@ -118,6 +118,43 @@ impl CredentialRepo {
         row.map(CredentialRow::into_credential).transpose()
     }
 
+    pub async fn find_credential_secret_by_alias(
+        &self,
+        owner_user_id: Uuid,
+        alias: &str,
+    ) -> Result<Option<CredentialSecretRow>> {
+        let row = sqlx::query_as::<_, CredentialSecretRow>(
+            r#"
+            SELECT
+                id,
+                owner_user_id,
+                category,
+                provider,
+                alias,
+                endpoint,
+                description,
+                env,
+                tags,
+                policy,
+                allow_private_network,
+                tls_ca IS NOT NULL AS has_tls_ca,
+                created_at,
+                updated_at,
+                secret_ciphertext
+            FROM credentials
+            WHERE owner_user_id = $1
+              AND alias = $2
+              AND deleted_at IS NULL
+            "#,
+        )
+        .bind(owner_user_id)
+        .bind(alias)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+        Ok(row)
+    }
+
     pub async fn update_credential_mutable_fields(
         &self,
         params: UpdateCredentialParams,
@@ -442,6 +479,48 @@ struct CredentialRow {
     has_tls_ca: bool,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+pub struct CredentialSecretRow {
+    id: Uuid,
+    owner_user_id: Uuid,
+    category: String,
+    provider: String,
+    alias: String,
+    endpoint: String,
+    description: String,
+    env: String,
+    tags: Vec<String>,
+    policy: Value,
+    allow_private_network: bool,
+    has_tls_ca: bool,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    pub secret_ciphertext: Option<Vec<u8>>,
+}
+
+impl CredentialSecretRow {
+    pub fn into_credential(self) -> Result<(Credential, Option<Vec<u8>>)> {
+        let credential = CredentialRow {
+            id: self.id,
+            owner_user_id: self.owner_user_id,
+            category: self.category,
+            provider: self.provider,
+            alias: self.alias,
+            endpoint: self.endpoint,
+            description: self.description,
+            env: self.env,
+            tags: self.tags,
+            policy: self.policy,
+            allow_private_network: self.allow_private_network,
+            has_tls_ca: self.has_tls_ca,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+        .into_credential()?;
+        Ok((credential, self.secret_ciphertext))
+    }
 }
 
 impl CredentialRow {

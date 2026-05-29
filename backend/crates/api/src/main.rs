@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+mod api_call;
 mod auth;
 mod credential;
 mod error;
@@ -18,7 +19,7 @@ mod rest;
 mod routes;
 mod state;
 
-use state::AppState;
+use state::{AppState, AppStateDeps};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -48,11 +49,18 @@ async fn main() -> anyhow::Result<()> {
     let user_repo = opsgate_db::UserRepo::new(pool.clone());
     let resolver = opsgate_domain::Resolver::new(user_repo);
     let credential_repo = opsgate_db::CredentialRepo::new(pool.clone());
+    let api_call_history = opsgate_db::ApiCallHistoryRepo::new(pool.clone());
     let cipher = opsgate_core::crypto::Cipher::new(config.master_key.expose_secret())?;
     let sealer = opsgate_core::crypto::Sealer::new(cipher);
     let credential_service = std::sync::Arc::new(crate::credential::CredentialService::new(
         credential_repo,
+        sealer.clone(),
+    ));
+    let api_call_service = std::sync::Arc::new(crate::api_call::ApiCallService::new(
+        opsgate_db::CredentialRepo::new(pool.clone()),
+        api_call_history,
         sealer,
+        http.clone(),
     ));
     let config = std::sync::Arc::new(config);
     let jwks = std::sync::Arc::new(auth::jwks::JwksCache::new(
@@ -63,15 +71,16 @@ async fn main() -> anyhow::Result<()> {
         http.clone(),
     ));
     let oidc = std::sync::Arc::new(auth::oidc::OidcProvider::new(&config, http.clone()));
-    let state = AppState::new(
-        pool.clone(),
-        config.clone(),
+    let state = AppState::new(AppStateDeps {
+        db: pool.clone(),
+        config: config.clone(),
         jwks,
         oidc,
-        std::sync::Arc::new(resolver),
-        credential_service,
+        resolver: std::sync::Arc::new(resolver),
+        credentials: credential_service,
+        api_calls: api_call_service,
         http,
-    );
+    });
 
     let listener = TcpListener::bind(bind_addr).await?;
     info!(event = "server.listening", addr = %bind_addr);

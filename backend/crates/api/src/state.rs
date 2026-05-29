@@ -5,6 +5,7 @@ use std::sync::Arc;
 use opsgate_core::Config;
 use opsgate_db::PgPool;
 
+use crate::api_call::ApiCallService;
 use crate::credential::CredentialService;
 use crate::identity::CallerResolver;
 
@@ -19,27 +20,32 @@ pub struct AppState {
     pub oidc: Arc<OidcProvider>,
     pub resolver: Arc<dyn CallerResolver>,
     pub credentials: Arc<CredentialService>,
+    pub api_calls: Arc<ApiCallService>,
+    pub http: reqwest::Client,
+}
+
+pub struct AppStateDeps {
+    pub db: PgPool,
+    pub config: Arc<Config>,
+    pub jwks: Arc<JwksCache>,
+    pub oidc: Arc<OidcProvider>,
+    pub resolver: Arc<dyn CallerResolver>,
+    pub credentials: Arc<CredentialService>,
+    pub api_calls: Arc<ApiCallService>,
     pub http: reqwest::Client,
 }
 
 impl AppState {
-    pub fn new(
-        db: PgPool,
-        config: Arc<Config>,
-        jwks: Arc<JwksCache>,
-        oidc: Arc<OidcProvider>,
-        resolver: Arc<dyn CallerResolver>,
-        credentials: Arc<CredentialService>,
-        http: reqwest::Client,
-    ) -> Self {
+    pub fn new(deps: AppStateDeps) -> Self {
         Self {
-            db,
-            config,
-            jwks,
-            oidc,
-            resolver,
-            credentials,
-            http,
+            db: deps.db,
+            config: deps.config,
+            jwks: deps.jwks,
+            oidc: deps.oidc,
+            resolver: deps.resolver,
+            credentials: deps.credentials,
+            api_calls: deps.api_calls,
+            http: deps.http,
         }
     }
 }
