@@ -75,7 +75,7 @@ subtle = "2"
 rmcp = { version = "1.7.0", features = ["transport-streamable-http-server"] }
 schemars = { version = "1", features = ["derive"] }
 time = "0.3"
-sqlparser = "0.62.0"
+sqlparser = { version = "0.62.0", features = ["visitor"] }
 
 # Lints applied to every crate via `[lints] workspace = true`.
 # Mirrors the house style: deny-by-warning the panic-prone patterns so they

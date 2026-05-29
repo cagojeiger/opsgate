@@ -17,7 +17,9 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use sqlparser::ast::{Query, SetExpr, Statement};
+use std::ops::ControlFlow;
+
+use sqlparser::ast::{Expr, ObjectName, Query, SetExpr, Statement, Visit, Visitor};
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
 use sqlx::postgres::PgConnectOptions;
@@ -404,7 +406,7 @@ fn enforce_sql_policy(query: &str, policy: &CredentialPolicy) -> Result<()> {
             "query must be a single SELECT/WITH statement or policy-approved EXPLAIN",
         )),
     }?;
-    validate_text_policy(query, policy)
+    enforce_ast_policy(statement, policy)
 }
 
 fn validate_query_ast(query: &Query) -> Result<()> {
@@ -433,72 +435,114 @@ fn validate_set_expr(expr: &SetExpr) -> Result<()> {
     }
 }
 
-fn validate_text_policy(query: &str, policy: &CredentialPolicy) -> Result<()> {
-    let lower = query.to_ascii_lowercase();
-    if !policy.allow_metadata && contains_metadata_access(&lower) {
-        return Err(Error::validation(
-            "Postgres metadata access is not allowed by credential policy",
-        ));
+/// Enforce metadata/function denials on the parsed AST rather than the raw
+/// query text. Walking real syntax nodes is immune to whitespace/quoting
+/// evasions (e.g. `pg_sleep (10)`, `pg_catalog .pg_tables`) and avoids false
+/// positives on legitimate `pg_`-prefixed identifiers used outside relations.
+fn enforce_ast_policy(statement: &Statement, policy: &CredentialPolicy) -> Result<()> {
+    let mut visitor = SqlPolicyVisitor {
+        policy,
+        violation: None,
+    };
+    let _ = statement.visit(&mut visitor);
+    match visitor.violation {
+        Some(message) => Err(Error::validation(message)),
+        None => Ok(()),
     }
-    if contains_locking_clause(&lower) {
-        return Err(Error::validation("SELECT locking clauses are not allowed"));
-    }
-    for function in BUILTIN_DENIED_FUNCTIONS {
-        if contains_function(&lower, function) {
-            return Err(Error::validation(format!(
-                "function {function:?} is blocked by built-in SQL policy"
-            )));
+}
+
+struct SqlPolicyVisitor<'a> {
+    policy: &'a CredentialPolicy,
+    violation: Option<String>,
+}
+
+impl Visitor for SqlPolicyVisitor<'_> {
+    type Break = ();
+
+    fn pre_visit_relation(&mut self, name: &ObjectName) -> ControlFlow<Self::Break> {
+        if !self.policy.allow_metadata && is_metadata_relation(name) {
+            self.violation = Some(
+                "Postgres metadata access is not allowed by credential policy".to_owned(),
+            );
+            return ControlFlow::Break(());
         }
+        ControlFlow::Continue(())
     }
-    for function in &policy.denied_functions {
-        let denied = function.trim().to_ascii_lowercase();
-        if !denied.is_empty()
-            && (contains_function(&lower, &denied) || contains_sql_value_function(&lower, &denied))
+
+    fn pre_visit_expr(&mut self, expr: &Expr) -> ControlFlow<Self::Break> {
+        let candidate = match expr {
+            // Function calls (`pg_sleep(...)`): match on the parsed call name.
+            Expr::Function(function) => object_name_last(&function.name),
+            // Niladic value functions (`current_user`) parse as identifiers.
+            Expr::Identifier(ident) => Some(ident.value.to_ascii_lowercase()),
+            Expr::CompoundIdentifier(parts) => parts
+                .last()
+                .map(|ident| ident.value.to_ascii_lowercase()),
+            _ => None,
+        };
+        let Some(candidate) = candidate else {
+            return ControlFlow::Continue(());
+        };
+
+        if matches!(expr, Expr::Function(_))
+            && BUILTIN_DENIED_FUNCTIONS
+                .iter()
+                .any(|denied| denied.eq_ignore_ascii_case(&candidate))
         {
-            return Err(Error::validation(format!(
-                "function {denied:?} is denied by credential policy"
-            )));
+            self.violation = Some(format!(
+                "function {candidate:?} is blocked by built-in SQL policy"
+            ));
+            return ControlFlow::Break(());
         }
+        if let Some(denied) = self.denied_policy_function(&candidate) {
+            self.violation = Some(format!("function {denied:?} is denied by credential policy"));
+            return ControlFlow::Break(());
+        }
+        ControlFlow::Continue(())
     }
-    Ok(())
 }
 
-fn contains_metadata_access(lower: &str) -> bool {
-    lower.contains("pg_catalog.")
-        || lower.contains("information_schema.")
-        || lower.contains("from pg_")
-        || lower.contains("join pg_")
-}
-
-fn contains_locking_clause(lower: &str) -> bool {
-    lower.contains(" for update")
-        || lower.contains(" for no key update")
-        || lower.contains(" for share")
-        || lower.contains(" for key share")
-}
-
-fn contains_function(lower: &str, name: &str) -> bool {
-    let short = name.rsplit('.').next().unwrap_or(name);
-    contains_function_like(lower, short)
-        || (name.contains('.') && contains_function_like(lower, name))
-}
-
-fn contains_function_like(lower: &str, name: &str) -> bool {
-    if name.is_empty() {
-        return false;
+impl SqlPolicyVisitor<'_> {
+    /// Return the matching denied-function entry (its short form) if `candidate`
+    /// matches a policy-denied function by full or unqualified name.
+    fn denied_policy_function(&self, candidate: &str) -> Option<String> {
+        self.policy
+            .denied_functions
+            .iter()
+            .map(|denied| denied.trim().to_ascii_lowercase())
+            .find(|denied| {
+                !denied.is_empty()
+                    && (denied == candidate
+                        || denied
+                            .rsplit('.')
+                            .next()
+                            .is_some_and(|short| short == candidate))
+            })
+            .map(|denied| denied.rsplit('.').next().unwrap_or(&denied).to_owned())
     }
-    let needle = format!("{name}(");
-    lower.contains(&needle)
 }
 
-fn contains_sql_value_function(lower: &str, name: &str) -> bool {
-    let needles = [
-        format!("select {name}"),
-        format!(", {name}"),
-        format!("({name}"),
-        format!(" {name} "),
-    ];
-    needles.iter().any(|needle| lower.contains(needle))
+/// Postgres catalog/metadata relation: schema-qualified `pg_catalog`/
+/// `information_schema`, or an unqualified `pg_`-prefixed catalog table.
+fn is_metadata_relation(name: &ObjectName) -> bool {
+    let parts: Vec<String> = name
+        .0
+        .iter()
+        .filter_map(|part| part.as_ident())
+        .map(|ident| ident.value.to_ascii_lowercase())
+        .collect();
+    match parts.as_slice() {
+        [] => false,
+        [table] => table.starts_with("pg_"),
+        [.., schema, _table] => schema == "pg_catalog" || schema == "information_schema",
+    }
+}
+
+fn object_name_last(name: &ObjectName) -> Option<String> {
+    name.0
+        .last()?
+        .as_ident()
+        .map(|ident| ident.value.to_ascii_lowercase())
 }
 
 async fn execute_postgres(
@@ -1304,6 +1348,23 @@ mod tests {
         assert!(enforce_sql_policy("select * from users for update", &policy).is_err());
         assert!(enforce_sql_policy("select pg_sleep(10)", &policy).is_err());
         assert!(enforce_sql_policy("select * from pg_catalog.pg_tables", &policy).is_err());
+    }
+
+    #[test]
+    fn ast_policy_blocks_whitespace_and_quoting_evasions() {
+        let policy = CredentialPolicy::default();
+        // Whitespace between function name and `(` defeated the old substring needle.
+        assert!(enforce_sql_policy("select pg_sleep (10)", &policy).is_err());
+        // Unqualified catalog table (no `pg_catalog.` prefix to substring-match).
+        assert!(enforce_sql_policy("select * from pg_stat_activity", &policy).is_err());
+        assert!(enforce_sql_policy("select * from information_schema.tables", &policy).is_err());
+    }
+
+    #[test]
+    fn ast_policy_no_false_positive_on_pg_prefixed_alias() {
+        // `pg_total` is a column alias, not a relation or denied function: allowed.
+        let policy = CredentialPolicy::default();
+        assert!(enforce_sql_policy("select count(*) as pg_total from payments", &policy).is_ok());
     }
 
     #[test]
