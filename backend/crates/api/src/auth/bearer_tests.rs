@@ -1,3 +1,4 @@
+use secrecy::SecretString;
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -147,6 +148,7 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
         oauth_client_id: "client".to_owned(),
         oauth_redirect_url: "http://localhost:9091/callback".to_owned(),
         resource_url: "https://api.example.test".to_owned(),
+        master_key: SecretString::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
         jwks_cache_ttl: Duration::from_secs(300),
         secure_cookies: false,
     });
@@ -159,12 +161,20 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
         &config,
         reqwest::Client::new(),
     ));
+    let credential_repo = opsgate_db::CredentialRepo::new(pool.clone());
+    let cipher = opsgate_core::crypto::Cipher::new("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")?;
+    let sealer = opsgate_core::crypto::Sealer::new(cipher);
+    let credentials = Arc::new(crate::credential::CredentialService::new(
+        credential_repo,
+        sealer,
+    ));
     Ok(AppState::new(
         pool,
         config,
         jwks,
         oidc,
         Arc::new(TestResolver { mode }),
+        credentials,
         reqwest::Client::new(),
     ))
 }

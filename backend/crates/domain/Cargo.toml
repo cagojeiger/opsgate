@@ -12,6 +12,7 @@ uuid.workspace = true
 chrono.workspace = true
 secrecy.workspace = true
 url.workspace = true
+schemars.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

@@ -1,6 +1,7 @@
 use std::io;
 
 use opsgate_core::Config;
+use secrecy::ExposeSecret;
 use tokio::net::TcpListener;
 #[cfg(unix)]
 use tokio::signal::unix::{SignalKind, signal};
@@ -9,6 +10,7 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod auth;
+mod credential;
 mod error;
 mod identity;
 mod mcp;
@@ -45,6 +47,13 @@ async fn main() -> anyhow::Result<()> {
     let jwks_url = format!("{}/keys", config.authgate_url);
     let user_repo = opsgate_db::UserRepo::new(pool.clone());
     let resolver = opsgate_domain::Resolver::new(user_repo);
+    let credential_repo = opsgate_db::CredentialRepo::new(pool.clone());
+    let cipher = opsgate_core::crypto::Cipher::new(config.master_key.expose_secret())?;
+    let sealer = opsgate_core::crypto::Sealer::new(cipher);
+    let credential_service = std::sync::Arc::new(crate::credential::CredentialService::new(
+        credential_repo,
+        sealer,
+    ));
     let config = std::sync::Arc::new(config);
     let jwks = std::sync::Arc::new(auth::jwks::JwksCache::new(
         jwks_url,
@@ -60,6 +69,7 @@ async fn main() -> anyhow::Result<()> {
         jwks,
         oidc,
         std::sync::Arc::new(resolver),
+        credential_service,
         http,
     );
 

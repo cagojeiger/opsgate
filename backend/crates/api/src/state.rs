@@ -5,6 +5,7 @@ use std::sync::Arc;
 use opsgate_core::Config;
 use opsgate_db::PgPool;
 
+use crate::credential::CredentialService;
 use crate::identity::CallerResolver;
 
 use crate::auth::jwks::JwksCache;
@@ -17,6 +18,7 @@ pub struct AppState {
     pub jwks: Arc<JwksCache>,
     pub oidc: Arc<OidcProvider>,
     pub resolver: Arc<dyn CallerResolver>,
+    pub credentials: Arc<CredentialService>,
     pub http: reqwest::Client,
 }
 
@@ -27,6 +29,7 @@ impl AppState {
         jwks: Arc<JwksCache>,
         oidc: Arc<OidcProvider>,
         resolver: Arc<dyn CallerResolver>,
+        credentials: Arc<CredentialService>,
         http: reqwest::Client,
     ) -> Self {
         Self {
@@ -35,6 +38,7 @@ impl AppState {
             jwks,
             oidc,
             resolver,
+            credentials,
             http,
         }
     }

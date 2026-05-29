@@ -18,7 +18,7 @@ use crate::auth::bearer::require_bearer;
 use crate::auth::metadata::{protected_resource_metadata, protected_resource_metadata_url};
 use crate::auth::oauth::{callback, login};
 use crate::error::ApiError;
-use crate::mcp::server::mcp_handler;
+use crate::mcp::server::{mcp_admin_handler, mcp_handler};
 use crate::state::AppState;
 
 pub fn app(state: AppState) -> Router {
@@ -30,6 +30,7 @@ pub fn app(state: AppState) -> Router {
         .merge(metadata_routes(&state))
         .nest("/api", rest_api_routes(state.clone()))
         .route("/mcp", any(mcp_handler))
+        .route("/mcp/admin", any(mcp_admin_handler))
         .with_state(state)
         .layer(
             ServiceBuilder::new()

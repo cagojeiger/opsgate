@@ -8,6 +8,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use config::{Config as LayeredConfig, Environment, File, FileFormat};
+use secrecy::SecretString;
 use serde::{Deserialize, Deserializer};
 use url::Url;
 use validator::{Validate, ValidationError};
@@ -46,6 +47,8 @@ pub struct Config {
     /// Resource/audience URL for REST and MCP, with trailing slash trimmed.
     #[validate(custom(function = "validate_http_url_value"))]
     pub resource_url: String,
+    /// Base64-encoded 32-byte master key for sealing credential secrets.
+    pub master_key: SecretString,
     /// Shared JWKS cache TTL.
     #[serde(
         rename = "jwks_cache_ttl_secs",
@@ -172,6 +175,7 @@ mod tests {
     use std::time::Duration;
 
     use config::Environment;
+    use secrecy::SecretString;
     use validator::Validate;
 
     use super::{Config, load_from_sources};
@@ -186,6 +190,9 @@ mod tests {
             oauth_client_id: "opsgate-web".to_owned(),
             oauth_redirect_url: "http://localhost:9091/callback".to_owned(),
             resource_url: "http://localhost:9091/mcp".to_owned(),
+            master_key: SecretString::from(
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned(),
+            ),
             jwks_cache_ttl: Duration::from_secs(300),
             secure_cookies: false,
         }
@@ -213,6 +220,10 @@ mod tests {
                     "http://localhost:9091/callback",
                 ),
                 ("OPSGATE_RESOURCE_URL", "http://localhost:9091/mcp"),
+                (
+                    "OPSGATE_MASTER_KEY",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                ),
                 ("OPSGATE_DB_MAX_CONNECTIONS", "7"),
                 ("PATH", "/bin"),
                 ("DATABASE_URL", "postgres://ignored"),

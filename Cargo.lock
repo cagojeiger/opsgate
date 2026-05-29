@@ -1592,6 +1592,7 @@ dependencies = [
  "reqwest",
  "rmcp",
  "schemars 1.2.1",
+ "secrecy",
  "serde",
  "serde_json",
  "sha2",
@@ -1618,6 +1619,7 @@ dependencies = [
  "config",
  "ipnet",
  "rustls-pemfile",
+ "secrecy",
  "serde",
  "thiserror 2.0.18",
  "url",
@@ -1644,6 +1646,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "opsgate-core",
+ "schemars 1.2.1",
  "secrecy",
  "serde",
  "serde_json",

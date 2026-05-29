@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use opsgate_core::{Error, Result};
@@ -5,7 +6,7 @@ use opsgate_core::{Error, Result};
 use super::header::{canonical_header_name, header_blocked, valid_header_name};
 use super::model::CredentialCategory;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct CredentialPolicy {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_methods: Vec<String>,

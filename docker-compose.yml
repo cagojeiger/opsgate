@@ -31,6 +31,7 @@ services:
       OPSGATE_OAUTH_REDIRECT_URL: http://localhost:9091/callback
       OPSGATE_RESOURCE_URL: http://localhost:9091/mcp
       OPSGATE_JWKS_CACHE_TTL_SECS: 300
+      OPSGATE_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     ports:
       - "9091:9091"
     depends_on:
