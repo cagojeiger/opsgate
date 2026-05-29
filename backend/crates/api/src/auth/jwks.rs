@@ -6,7 +6,6 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct Claims {
     pub sub: String,
@@ -14,11 +13,7 @@ pub struct Claims {
     pub email: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
-    pub iss: String,
     pub aud: Value,
-    pub exp: usize,
-    #[serde(default)]
-    pub scope: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]

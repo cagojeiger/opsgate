@@ -3,13 +3,7 @@ use opsgate_domain::{Caller, IdentityError, ResolveAttrs};
 use crate::auth::bearer_error::AuthError;
 use crate::state::AppState;
 
-#[allow(dead_code)]
-#[derive(Debug, Clone, Default)]
-pub struct RequestMeta {
-    pub remote_ip: Option<String>,
-    pub user_agent: Option<String>,
-    pub request_id: Option<String>,
-}
+pub struct RequestMeta;
 
 pub async fn verify_bearer(
     state: &AppState,

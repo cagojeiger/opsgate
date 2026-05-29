@@ -14,34 +14,27 @@ use axum::http::header::WWW_AUTHENTICATE;
 use axum::http::request::Parts;
 use axum::http::{Request, StatusCode};
 use axum::response::{IntoResponse, Response};
-use rmcp::handler::server::tool::{Extension, ToolRouter};
+use rmcp::handler::server::tool::Extension;
 use rmcp::model::{Implementation, ProtocolVersion, ServerCapabilities, ServerInfo};
 use rmcp::transport::streamable_http_server::session::never::NeverSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::{ErrorData, Json, ServerHandler, tool, tool_handler, tool_router};
 
-use crate::auth::bearer::verify_bearer_mcp;
+use crate::auth::bearer::{RequestMeta, verify_bearer_mcp};
 use crate::auth::bearer_error::{
     AuthError, auth_error_body, shared_challenge_header, status_for_error,
 };
-use crate::auth::bearer_extractor::{extract_bearer, request_meta_from_parts};
+use crate::auth::bearer_extractor::extract_bearer;
 use crate::me::MeOutput;
 use crate::state::AppState;
 
-#[allow(dead_code)]
 #[derive(Clone)]
-pub struct McpServer {
-    pub state: AppState,
-    tool_router: ToolRouter<Self>,
-}
+pub struct McpServer;
 
 #[tool_router]
 impl McpServer {
-    pub fn new(state: AppState) -> Self {
-        Self {
-            state,
-            tool_router: Self::tool_router(),
-        }
+    pub fn new() -> Self {
+        Self
     }
 
     #[tool(name = "me", description = "Return the authenticated caller identity.")]
@@ -70,8 +63,7 @@ pub async fn mcp_handler(State(state): State<AppState>, mut request: Request<Bod
     let Some(token) = extract_bearer(&parts.headers).map(str::to_owned) else {
         return mcp_auth_response(&state, AuthError::MissingToken);
     };
-    let meta = request_meta_from_parts(&parts);
-    let caller = match verify_bearer_mcp(&state, &token, meta).await {
+    let caller = match verify_bearer_mcp(&state, &token, RequestMeta).await {
         Ok(caller) => caller,
         Err(error) => return mcp_auth_response(&state, error),
     };
@@ -83,14 +75,7 @@ pub async fn mcp_handler(State(state): State<AppState>, mut request: Request<Bod
         .with_json_response(true)
         .disable_allowed_hosts();
     let manager = Arc::new(NeverSessionManager::default());
-    let service = StreamableHttpService::new(
-        {
-            let state = state.clone();
-            move || Ok(McpServer::new(state.clone()))
-        },
-        manager,
-        config,
-    );
+    let service = StreamableHttpService::new(|| Ok(McpServer::new()), manager, config);
     let response = service.handle(request).await;
     response.map(Body::new).into_response()
 }

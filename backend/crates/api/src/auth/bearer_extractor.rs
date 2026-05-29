@@ -1,7 +1,7 @@
 use axum::extract::FromRequestParts;
+use axum::http::HeaderMap;
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
-use axum::http::{HeaderMap, HeaderName};
 use axum::response::Response;
 use opsgate_domain::Caller;
 
@@ -27,27 +27,11 @@ impl FromRequestParts<AppState> for AuthenticatedCaller {
     ) -> Result<Self, Self::Rejection> {
         let token = extract_bearer(&parts.headers)
             .ok_or_else(|| auth_error_response(state, AuthError::MissingToken))?;
-        let meta = request_meta_from_parts(parts);
-        verify_bearer(state, token, meta)
+        verify_bearer(state, token, RequestMeta)
             .await
             .map(Self)
             .map_err(|error| auth_error_response(state, error))
     }
-}
-
-pub fn request_meta_from_parts(parts: &Parts) -> RequestMeta {
-    RequestMeta {
-        remote_ip: None,
-        user_agent: header_to_string(&parts.headers, axum::http::header::USER_AGENT),
-        request_id: header_to_string(&parts.headers, HeaderName::from_static("x-request-id")),
-    }
-}
-
-fn header_to_string(headers: &HeaderMap, name: HeaderName) -> Option<String> {
-    headers
-        .get(name)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned)
 }
 
 #[cfg(test)]
