@@ -14,7 +14,7 @@ opsgate/
 │  ├─ domain/              # pure business logic (no HTTP / no sqlx)
 │  ├─ db/                  # sqlx pool + migrations
 │  └─ core/                # config + shared error type
-├─ Dockerfile              # cargo-chef multi-stage, non-root alpine
+├─ backend/Dockerfile      # cargo-chef multi-stage, non-root Debian runtime
 ├─ docker-compose.yml      # postgres + api (hardened)
 └─ frontend/               # Next.js (later)
 ```
@@ -37,18 +37,18 @@ Health checks:
 ```sh
 curl localhost:9091/health   # liveness
 curl localhost:9091/ready    # readiness (pings the database)
+```
 
 Auth/MCP local defaults are configured in `.env.example`:
 
-- `AUTHGATE_URL=https://authgate.project-jelly.io`
+- `OPSGATE_AUTHGATE_URL=https://authgate.project-jelly.io`
 - `OPSGATE_PUBLIC_URL=http://localhost:9091` (builds first-time `login_url`)
-- `OAUTH_CLIENT_ID=opsgate-web`
-- `OAUTH_REDIRECT_URL=http://localhost:9091/callback`
-- `RESOURCE_URL=http://localhost:9091/mcp` (MCP URL/audience)
+- `OPSGATE_OAUTH_CLIENT_ID=opsgate-web`
+- `OPSGATE_OAUTH_REDIRECT_URL=http://localhost:9091/callback`
+- `OPSGATE_RESOURCE_URL=http://localhost:9091/mcp` (MCP URL/audience)
 
 First-time MCP users must open `${OPSGATE_PUBLIC_URL}/login` once to create the
-local opsgate user row, then reconnect the MCP client to `RESOURCE_URL`.
-```
+local opsgate user row, then reconnect the MCP client to `OPSGATE_RESOURCE_URL`.
 
 ## Checks
 

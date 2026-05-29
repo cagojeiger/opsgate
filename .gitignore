@@ -6,6 +6,10 @@ target
 # Local environment / secrets
 .env
 .env.local
+config/local.toml
+
+# Local repository research clones
+.repos/
 
 # OMC tooling
 .omc/

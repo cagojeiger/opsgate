@@ -24,7 +24,7 @@ async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
     init_tracing();
 
-    let config = Config::from_env()?;
+    let config = Config::load()?;
 
     // fail-fast: install the SIGTERM handler during boot so a failure here
     // aborts startup instead of leaving us without graceful shutdown.

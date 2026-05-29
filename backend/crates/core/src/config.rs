@@ -1,124 +1,141 @@
-//! Runtime configuration loaded and validated from environment variables.
+//! Runtime configuration loaded and validated from layered sources.
 //!
+//! Load order is: built-in defaults < optional TOML files < environment.
 //! Validation is fail-fast: a bad value aborts boot with a precise message
 //! rather than surfacing as a confusing runtime error later.
 
-use std::env;
 use std::net::SocketAddr;
 use std::time::Duration;
+
+use config::{Config as LayeredConfig, Environment, File, FileFormat};
+use serde::{Deserialize, Deserializer};
+use url::Url;
+use validator::{Validate, ValidationError};
 
 use crate::error::{Error, Result};
 
 const DEFAULT_BIND_ADDR: &str = "0.0.0.0:9091";
 const DEFAULT_DB_MAX_CONNECTIONS: u32 = 10;
-const DB_MAX_CONNECTIONS_LIMIT: u32 = 256;
 const DEFAULT_JWKS_CACHE_TTL_SECS: u64 = 300;
-const MIN_JWKS_CACHE_TTL_SECS: u64 = 30;
-const MAX_JWKS_CACHE_TTL_SECS: u64 = 3600;
 
 /// Server + database configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     /// Address the HTTP server binds to.
     pub bind_addr: SocketAddr,
     /// Postgres connection string.
+    #[validate(length(min = 1))]
     pub database_url: String,
     /// Max connections in the sqlx pool.
+    #[validate(range(min = 1, max = 256))]
     pub db_max_connections: u32,
     /// Base URL for authgate, with trailing slash trimmed.
+    #[validate(custom(function = "validate_http_url_value"))]
     pub authgate_url: String,
     /// Public URL for opsgate as seen by browsers/MCP clients, with trailing slash trimmed.
+    #[serde(rename = "public_url")]
+    #[validate(custom(function = "validate_http_url_value"))]
     pub opsgate_public_url: String,
     /// Public OAuth client id registered in authgate.
+    #[validate(length(min = 1))]
     pub oauth_client_id: String,
     /// Exact redirect URL registered in authgate.
+    #[validate(custom(function = "validate_http_url_value"))]
     pub oauth_redirect_url: String,
     /// Resource/audience URL for REST and MCP, with trailing slash trimmed.
+    #[validate(custom(function = "validate_http_url_value"))]
     pub resource_url: String,
     /// Shared JWKS cache TTL.
+    #[serde(
+        rename = "jwks_cache_ttl_secs",
+        deserialize_with = "duration_from_secs"
+    )]
+    #[validate(custom(function = "validate_jwks_cache_ttl"))]
     pub jwks_cache_ttl: Duration,
     /// Whether login flow cookies must carry the Secure flag.
+    #[serde(skip)]
     pub secure_cookies: bool,
 }
 
 impl Config {
-    /// Load configuration from the process environment.
-    pub fn from_env() -> Result<Self> {
-        let bind_addr = env_socket_addr("BIND_ADDR", DEFAULT_BIND_ADDR)?;
-        let database_url = env_required("DATABASE_URL")?;
-        let db_max_connections = env_u32_in_range(
-            "DB_MAX_CONNECTIONS",
-            DEFAULT_DB_MAX_CONNECTIONS,
-            1,
-            DB_MAX_CONNECTIONS_LIMIT,
-        )?;
-        let authgate_url = env_required_trimmed_http_url("AUTHGATE_URL")?;
-        let opsgate_public_url = env_required_trimmed_http_url("OPSGATE_PUBLIC_URL")?;
-        let oauth_client_id = env_required("OAUTH_CLIENT_ID")?;
-        let oauth_redirect_url = env_required_http_url_verbatim("OAUTH_REDIRECT_URL")?;
-        let resource_url = env_required_trimmed_http_url("RESOURCE_URL")?;
-        let jwks_cache_ttl_secs = env_u64_in_range(
-            "JWKS_CACHE_TTL_SECS",
-            DEFAULT_JWKS_CACHE_TTL_SECS,
-            MIN_JWKS_CACHE_TTL_SECS,
-            MAX_JWKS_CACHE_TTL_SECS,
-        )?;
-        let secure_cookies = secure_cookies_for_redirect(&oauth_redirect_url);
+    /// Load configuration from optional files and the process environment.
+    ///
+    /// Supported file layers, if present:
+    /// - `config/default.toml`
+    /// - `config/local.toml`
+    ///
+    /// `OPSGATE_`-prefixed environment variables have highest precedence.
+    pub fn load() -> Result<Self> {
+        load_from_sources(true, Environment::with_prefix("OPSGATE"))
+    }
 
-        Ok(Self {
-            bind_addr,
-            database_url,
-            db_max_connections,
-            authgate_url,
-            opsgate_public_url,
-            oauth_client_id,
-            oauth_redirect_url,
-            resource_url,
-            jwks_cache_ttl: Duration::from_secs(jwks_cache_ttl_secs),
-            secure_cookies,
-        })
+    fn normalize(&mut self) {
+        self.authgate_url = trim_trailing_slashes(&self.authgate_url);
+        self.opsgate_public_url = trim_trailing_slashes(&self.opsgate_public_url);
+        self.resource_url = trim_trailing_slashes(&self.resource_url);
+        self.secure_cookies = secure_cookies_for_redirect(&self.oauth_redirect_url);
     }
 }
 
-fn env_required(name: &str) -> Result<String> {
-    match env::var(name) {
-        Ok(value) if !value.is_empty() => Ok(value),
-        Ok(_) => Err(Error::validation(format!("{name} must not be empty"))),
-        Err(env::VarError::NotPresent) => Err(Error::validation(format!("{name} must be set"))),
-        Err(env::VarError::NotUnicode(_)) => {
-            Err(Error::validation(format!("{name} must be valid UTF-8")))
-        }
+fn load_from_sources(include_files: bool, environment: Environment) -> Result<Config> {
+    let mut builder = LayeredConfig::builder()
+        .set_default("bind_addr", DEFAULT_BIND_ADDR)
+        .map_err(map_config_error)?
+        .set_default("db_max_connections", DEFAULT_DB_MAX_CONNECTIONS)
+        .map_err(map_config_error)?
+        .set_default("jwks_cache_ttl_secs", DEFAULT_JWKS_CACHE_TTL_SECS)
+        .map_err(map_config_error)?;
+
+    if include_files {
+        builder = builder
+            .add_source(File::new("config/default", FileFormat::Toml).required(false))
+            .add_source(File::new("config/local", FileFormat::Toml).required(false));
     }
+
+    let mut config = builder
+        .add_source(environment.try_parsing(true))
+        .build()
+        .map_err(map_config_error)?
+        .try_deserialize::<Config>()
+        .map_err(map_config_error)?;
+
+    config.validate().map_err(map_validation_error)?;
+    config.normalize();
+    Ok(config)
 }
 
-fn env_required_http_url_verbatim(name: &str) -> Result<String> {
-    let value = env_required(name)?;
-    validate_http_url(name, &value)?;
-    Ok(value)
-}
-
-fn env_required_trimmed_http_url(name: &str) -> Result<String> {
-    let value = trim_trailing_slashes(&env_required(name)?);
-    validate_http_url(name, &value)?;
-    Ok(value)
+fn map_config_error(error: config::ConfigError) -> Error {
+    Error::validation(format!("configuration error: {error}"))
 }
 
 fn trim_trailing_slashes(value: &str) -> String {
     value.trim_end_matches('/').to_owned()
 }
 
-fn validate_http_url(name: &str, value: &str) -> Result<()> {
-    let has_scheme = value.starts_with("http://") || value.starts_with("https://");
-    let has_host = value
-        .split_once("://")
-        .map(|(_scheme, rest)| !rest.is_empty() && !rest.starts_with('/'))
-        .unwrap_or(false);
-    if has_scheme && has_host {
+fn duration_from_secs<'de, D>(deserializer: D) -> std::result::Result<Duration, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Duration::from_secs(u64::deserialize(deserializer)?))
+}
+
+fn validate_http_url_value(value: &str) -> std::result::Result<(), ValidationError> {
+    let url = Url::parse(value).map_err(|_error| ValidationError::new("http_url"))?;
+    let allowed_scheme = matches!(url.scheme(), "http" | "https");
+    if allowed_scheme && url.host_str().is_some() {
         Ok(())
     } else {
-        Err(Error::validation(format!(
-            "{name} must be an http(s) URL with a host"
-        )))
+        Err(ValidationError::new("http_url"))
+    }
+}
+
+fn validate_jwks_cache_ttl(value: &Duration) -> std::result::Result<(), ValidationError> {
+    let seconds = value.as_secs();
+    if (30..=3600).contains(&seconds) {
+        Ok(())
+    } else {
+        Err(ValidationError::new("range"))
     }
 }
 
@@ -126,79 +143,131 @@ fn secure_cookies_for_redirect(oauth_redirect_url: &str) -> bool {
     oauth_redirect_url.starts_with("https://")
 }
 
-fn env_socket_addr(name: &str, default: &str) -> Result<SocketAddr> {
-    env_string(name, default)?
-        .parse()
-        .map_err(|error| Error::validation(format!("{name} must be a socket address: {error}")))
-}
+fn map_validation_error(error: validator::ValidationErrors) -> Error {
+    let mut fields = error
+        .field_errors()
+        .into_iter()
+        .flat_map(|(field, errors)| {
+            errors
+                .iter()
+                .map(move |error| format!("{field}:{}", error.code))
+        })
+        .collect::<Vec<_>>();
+    fields.sort();
 
-fn env_u32_in_range(name: &str, default: u32, min: u32, max: u32) -> Result<u32> {
-    let value: u32 = env_string(name, &default.to_string())?
-        .parse()
-        .map_err(|error| {
-            Error::validation(format!("{name} must be an unsigned integer: {error}"))
-        })?;
-
-    if !(min..=max).contains(&value) {
-        return Err(Error::validation(format!(
-            "{name} must be between {min} and {max}"
-        )));
-    }
-
-    Ok(value)
-}
-
-fn env_u64_in_range(name: &str, default: u64, min: u64, max: u64) -> Result<u64> {
-    let value: u64 = env_string(name, &default.to_string())?
-        .parse()
-        .map_err(|error| {
-            Error::validation(format!("{name} must be an unsigned integer: {error}"))
-        })?;
-
-    if !(min..=max).contains(&value) {
-        return Err(Error::validation(format!(
-            "{name} must be between {min} and {max}"
-        )));
-    }
-
-    Ok(value)
-}
-
-fn env_string(name: &str, default: &str) -> Result<String> {
-    match env::var(name) {
-        Ok(value) => Ok(value),
-        Err(env::VarError::NotPresent) => Ok(default.to_owned()),
-        Err(env::VarError::NotUnicode(_)) => {
-            Err(Error::validation(format!("{name} must be valid UTF-8")))
-        }
+    if fields.is_empty() {
+        Error::validation("configuration validation error")
+    } else {
+        Error::validation(format!(
+            "configuration validation error: {}",
+            fields.join(", ")
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{secure_cookies_for_redirect, trim_trailing_slashes, validate_http_url};
+    use std::collections::HashMap;
+    use std::net::SocketAddr;
+    use std::time::Duration;
 
-    #[test]
-    fn secure_cookies_follow_redirect_scheme() {
-        assert!(secure_cookies_for_redirect("https://example.test/callback"));
-        assert!(!secure_cookies_for_redirect(
-            "http://localhost:9091/callback"
-        ));
+    use config::Environment;
+    use validator::Validate;
+
+    use super::{Config, load_from_sources};
+
+    fn valid_config() -> Config {
+        Config {
+            bind_addr: SocketAddr::from(([127, 0, 0, 1], 9091)),
+            database_url: "postgres://example".to_owned(),
+            db_max_connections: 10,
+            authgate_url: "https://auth.test".to_owned(),
+            opsgate_public_url: "http://localhost:9091".to_owned(),
+            oauth_client_id: "opsgate-web".to_owned(),
+            oauth_redirect_url: "http://localhost:9091/callback".to_owned(),
+            resource_url: "http://localhost:9091/mcp".to_owned(),
+            jwks_cache_ttl: Duration::from_secs(300),
+            secure_cookies: false,
+        }
+    }
+
+    fn test_env(vars: &[(&str, &str)]) -> Environment {
+        Environment::with_prefix("OPSGATE").source(Some(
+            vars.iter()
+                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+                .collect::<HashMap<_, _>>(),
+        ))
     }
 
     #[test]
-    fn trims_trailing_slashes() {
+    fn environment_layer_accepts_prefixed_variable_names() -> crate::Result<()> {
+        let config = load_from_sources(
+            false,
+            test_env(&[
+                ("OPSGATE_DATABASE_URL", "postgres://env"),
+                ("OPSGATE_AUTHGATE_URL", "https://auth.env"),
+                ("OPSGATE_PUBLIC_URL", "http://localhost:9091"),
+                ("OPSGATE_OAUTH_CLIENT_ID", "opsgate-web"),
+                (
+                    "OPSGATE_OAUTH_REDIRECT_URL",
+                    "http://localhost:9091/callback",
+                ),
+                ("OPSGATE_RESOURCE_URL", "http://localhost:9091/mcp"),
+                ("OPSGATE_DB_MAX_CONNECTIONS", "7"),
+                ("PATH", "/bin"),
+                ("DATABASE_URL", "postgres://ignored"),
+            ]),
+        )?;
+
+        assert_eq!(config.bind_addr.to_string(), super::DEFAULT_BIND_ADDR);
+        assert_eq!(config.database_url, "postgres://env");
+        assert_eq!(config.db_max_connections, 7);
         assert_eq!(
-            trim_trailing_slashes("https://auth.test///"),
-            "https://auth.test"
+            config.jwks_cache_ttl.as_secs(),
+            super::DEFAULT_JWKS_CACHE_TTL_SECS
         );
+        Ok(())
     }
 
     #[test]
-    fn url_validator_requires_http_url_with_host() {
-        assert!(validate_http_url("X", "https://auth.test").is_ok());
-        assert!(validate_http_url("X", "http://localhost:9091/mcp").is_ok());
-        assert!(validate_http_url("X", "ftp://auth.test").is_err());
-        assert!(validate_http_url("X", "https://").is_err());
+    fn normalize_builds_valid_config() -> crate::Result<()> {
+        let mut config = valid_config();
+        config.validate().map_err(super::map_validation_error)?;
+        config.normalize();
+        assert_eq!(config.bind_addr.to_string(), "127.0.0.1:9091");
+        assert_eq!(config.db_max_connections, 10);
+        assert_eq!(config.jwks_cache_ttl.as_secs(), 300);
+        assert!(!config.secure_cookies);
+        Ok(())
+    }
+
+    #[test]
+    fn validate_rejects_out_of_range_values() {
+        let mut config = valid_config();
+        config.db_max_connections = 0;
+        assert!(config.validate().is_err());
+
+        let mut config = valid_config();
+        config.jwks_cache_ttl = Duration::from_secs(1);
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validation_errors_do_not_echo_values() -> crate::Result<()> {
+        let mut config = valid_config();
+        config.authgate_url = "not a url with secret-token".to_owned();
+
+        let err = match config.validate().map_err(super::map_validation_error) {
+            Ok(()) => {
+                return Err(crate::Error::validation(
+                    "invalid URL should fail validation",
+                ));
+            }
+            Err(err) => err,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("authgate_url:http_url"));
+        assert!(!msg.contains("secret-token"));
+        Ok(())
     }
 }

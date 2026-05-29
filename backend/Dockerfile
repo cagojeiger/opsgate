@@ -86,7 +86,7 @@ RUN groupadd --gid 10001 app \
 WORKDIR /app
 COPY --from=builder /usr/local/bin/opsgate-api /usr/local/bin/opsgate-api
 
-ENV BIND_ADDR=0.0.0.0:9091
+ENV OPSGATE_BIND_ADDR=0.0.0.0:9091
 EXPOSE 9091
 
 USER appuser

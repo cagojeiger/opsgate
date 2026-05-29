@@ -6,8 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+config.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+url.workspace = true
+validator.workspace = true
 
 [lints]
 workspace = true
