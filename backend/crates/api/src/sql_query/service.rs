@@ -79,7 +79,16 @@ impl SqlQueryService {
     }
 
     pub async fn execute(&self, caller: &Caller, input: SqlQueryInput) -> Result<SqlQueryOutput> {
-        let input = normalize_input(input)?;
+        // Sanitize the raw alias up front: on the bad-input path it is the only
+        // request field we record, and it has not been validated yet.
+        let raw_alias = safe_history_message(&input.alias);
+        let input = match normalize_input(input) {
+            Ok(input) => input,
+            Err(error) => {
+                self.record_bad_input(caller, &raw_alias, &error).await;
+                return Err(error);
+            }
+        };
         let mut recorder = QueryRecorder::new(&self.history, &self.audit, caller, &input);
 
         let row = match self
@@ -142,6 +151,21 @@ impl SqlQueryService {
         finalize_output(&mut output, &input, &credential.policy)?;
         recorder.ok(&output).await;
         Ok(output)
+    }
+
+    /// Record an input-validation rejection (before a normalized input exists).
+    /// Mirrors the per-tool denial stream so input-shaped abuse is still audited.
+    async fn record_bad_input(&self, caller: &Caller, alias: &str, error: &Error) {
+        if let Err(error) = self.audit.append(bad_input_audit_params(caller, alias)).await {
+            tracing::error!(event = "sql.query.audit_failed", detail = %error);
+        }
+        if let Err(error) = self
+            .history
+            .insert(bad_input_history_params(caller, alias, error))
+            .await
+        {
+            tracing::error!(event = "sql.query.history_failed", detail = %error);
+        }
     }
 
     fn open_sql_secret(&self, alias: &str, ciphertext: &[u8]) -> Result<SqlSecret> {
@@ -1237,6 +1261,63 @@ fn safe_history_message(value: &str) -> String {
     value.replace(['\r', '\n'], " ").chars().take(512).collect()
 }
 
+/// Audit row for an input-validation denial. Records only the channel, the
+/// (pre-sanitized) alias, and `denial_reason=bad_input` — never the raw input.
+fn bad_input_audit_params(caller: &Caller, alias: &str) -> AuditLogParams {
+    let channel = channel_str(caller.channel).to_owned();
+    let mut detail = serde_json::Map::new();
+    detail.insert("schema_version".to_owned(), serde_json::json!(1));
+    detail.insert("denial_reason".to_owned(), serde_json::json!("bad_input"));
+    AuditLogParams {
+        action: format!("{channel}.sql.query"),
+        channel,
+        outcome: "denied".to_owned(),
+        severity: "warning".to_owned(),
+        actor_user_id: Some(caller.user.id),
+        actor_role: Some(role_for_channel(caller.channel).to_owned()),
+        actor_ip: None,
+        actor_user_agent: None,
+        target_type: Some("credential".to_owned()),
+        target_id: None,
+        target_key: Some(alias.to_owned()),
+        request_id: caller.request_id.clone(),
+        purpose: None,
+        detail: Value::Object(detail),
+    }
+}
+
+/// History row for an input-validation denial. `error_message_safe` carries the
+/// (value-free, CR/LF-stripped) validation reason; no normalized fields exist.
+fn bad_input_history_params(caller: &Caller, alias: &str, error: &Error) -> SqlQueryHistoryParams {
+    SqlQueryHistoryParams {
+        owner_user_id: Some(caller.user.id),
+        actor_user_id: Some(caller.user.id),
+        actor_role: Some(role_for_channel(caller.channel).to_owned()),
+        channel: channel_str(caller.channel).to_owned(),
+        request_id: caller.request_id.clone(),
+        credential_id: None,
+        credential_alias: alias.to_owned(),
+        credential_category: String::new(),
+        credential_provider: String::new(),
+        credential_env: String::new(),
+        query_sha256: String::new(),
+        params_count: 0,
+        shape: String::new(),
+        max_rows: 0,
+        max_bytes: 0,
+        timeout_ms: 0,
+        purpose: None,
+        outcome: "denied".to_owned(),
+        latency_ms: None,
+        row_count: None,
+        returned_bytes: None,
+        truncated: false,
+        result_columns: serde_json::json!([]),
+        error_kind: Some("bad_input".to_owned()),
+        error_message_safe: Some(safe_history_message(&error.to_string())),
+    }
+}
+
 fn channel_str(channel: Channel) -> &'static str {
     match channel {
         Channel::Api => "api",
@@ -1475,5 +1556,44 @@ mod tests {
         assert!(!serialized.contains("secret-value"));
         assert!(!serialized.contains("endpoint"));
         Ok(())
+    }
+
+    fn test_caller() -> opsgate_domain::Caller {
+        let now = Utc::now();
+        opsgate_domain::Caller {
+            user: opsgate_domain::User {
+                id: uuid::Uuid::nil(),
+                sub: "sub".to_owned(),
+                email: "user@example.test".to_owned(),
+                display_name: "User".to_owned(),
+                is_active: true,
+                created_at: now,
+                updated_at: now,
+            },
+            channel: opsgate_domain::Channel::Mcp,
+            request_id: None,
+        }
+    }
+
+    #[test]
+    fn bad_input_denial_is_recorded_safely() {
+        let caller = test_caller();
+        let error = Error::validation("query exceeds maximum length");
+
+        let history = bad_input_history_params(&caller, "prod", &error);
+        assert_eq!(history.outcome, "denied");
+        assert_eq!(history.error_kind.as_deref(), Some("bad_input"));
+        assert!(history.purpose.is_none());
+        assert_eq!(history.credential_alias, "prod");
+        assert!(history.query_sha256.is_empty());
+        assert_eq!(history.params_count, 0);
+
+        let audit = bad_input_audit_params(&caller, "prod");
+        assert_eq!(audit.outcome, "denied");
+        assert_eq!(audit.action, "mcp.sql.query");
+        assert_eq!(
+            audit.detail.get("denial_reason"),
+            Some(&serde_json::json!("bad_input"))
+        );
     }
 }

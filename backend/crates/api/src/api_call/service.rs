@@ -61,7 +61,16 @@ impl ApiCallService {
     }
 
     pub async fn call(&self, caller: &Caller, input: ApiCallInput) -> Result<ApiCallOutput> {
-        let input = normalize_input(input)?;
+        // Sanitize the raw alias up front: on the bad-input path it is the only
+        // request field we record, and it has not been validated yet.
+        let raw_alias = safe_history_message(&input.alias);
+        let input = match normalize_input(input) {
+            Ok(input) => input,
+            Err(error) => {
+                self.record_bad_input(caller, &raw_alias, &error).await;
+                return Err(error);
+            }
+        };
         let mut recorder = CallRecorder::new(&self.history, &self.audit, caller, &input);
 
         let row = match self
@@ -170,6 +179,21 @@ impl ApiCallService {
         };
         recorder.ok(&output).await;
         Ok(output)
+    }
+
+    /// Record an input-validation rejection (before a normalized input exists).
+    /// Mirrors the per-tool denial stream so input-shaped abuse is still audited.
+    async fn record_bad_input(&self, caller: &Caller, alias: &str, error: &Error) {
+        if let Err(error) = self.audit.append(bad_input_audit_params(caller, alias)).await {
+            tracing::error!(event = "api.call.audit_failed", detail = %error);
+        }
+        if let Err(error) = self
+            .history
+            .insert(bad_input_history_params(caller, alias, error))
+            .await
+        {
+            tracing::error!(event = "api.call.history_failed", detail = %error);
+        }
     }
 
     fn open_http_secret(&self, alias: &str, ciphertext: &[u8]) -> Result<Vec<SecretHeader>> {
@@ -776,6 +800,61 @@ fn safe_history_message(value: &str) -> String {
     replaced.chars().take(512).collect()
 }
 
+/// Audit row for an input-validation denial. Records only the channel, the
+/// (pre-sanitized) alias, and `denial_reason=bad_input` — never the raw input.
+fn bad_input_audit_params(caller: &Caller, alias: &str) -> AuditLogParams {
+    let channel = channel_str(caller.channel).to_owned();
+    let mut detail = serde_json::Map::new();
+    detail.insert("schema_version".to_owned(), serde_json::json!(1));
+    detail.insert("denial_reason".to_owned(), serde_json::json!("bad_input"));
+    AuditLogParams {
+        action: format!("{channel}.api.call"),
+        channel,
+        outcome: "denied".to_owned(),
+        severity: "warning".to_owned(),
+        actor_user_id: Some(caller.user.id),
+        actor_role: Some(role_for_channel(caller.channel).to_owned()),
+        actor_ip: None,
+        actor_user_agent: None,
+        target_type: Some("credential".to_owned()),
+        target_id: None,
+        target_key: Some(alias.to_owned()),
+        request_id: caller.request_id.clone(),
+        purpose: None,
+        detail: Value::Object(detail),
+    }
+}
+
+/// History row for an input-validation denial. `error_message_safe` carries the
+/// (value-free, CR/LF-stripped) validation reason; no normalized fields exist.
+fn bad_input_history_params(caller: &Caller, alias: &str, error: &Error) -> ApiCallHistoryParams {
+    ApiCallHistoryParams {
+        owner_user_id: Some(caller.user.id),
+        actor_user_id: Some(caller.user.id),
+        channel: channel_str(caller.channel).to_owned(),
+        credential_id: None,
+        credential_alias: alias.to_owned(),
+        credential_category: String::new(),
+        credential_provider: String::new(),
+        credential_env: String::new(),
+        method: String::new(),
+        path: String::new(),
+        query_keys: serde_json::json!([]),
+        request_header_keys: serde_json::json!([]),
+        projection_keys: serde_json::json!([]),
+        max_bytes: 0,
+        purpose: None,
+        outcome: "denied".to_owned(),
+        status_code: None,
+        latency_ms: None,
+        original_bytes: None,
+        returned_bytes: None,
+        truncated: false,
+        error_kind: Some("bad_input".to_owned()),
+        error_message_safe: Some(safe_history_message(&error.to_string())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -966,5 +1045,45 @@ mod tests {
         let addrs = resolve_guarded_target_addrs(&public).await?;
         assert_eq!(addrs, [SocketAddr::from(([93, 184, 216, 34], 443))]);
         Ok(())
+    }
+
+    fn test_caller() -> opsgate_domain::Caller {
+        let now = Utc::now();
+        opsgate_domain::Caller {
+            user: opsgate_domain::User {
+                id: uuid::Uuid::nil(),
+                sub: "sub".to_owned(),
+                email: "user@example.test".to_owned(),
+                display_name: "User".to_owned(),
+                is_active: true,
+                created_at: now,
+                updated_at: now,
+            },
+            channel: opsgate_domain::Channel::Mcp,
+            request_id: None,
+        }
+    }
+
+    #[test]
+    fn bad_input_denial_is_recorded_safely() {
+        let caller = test_caller();
+        let error = Error::validation("purpose must be at least 8 characters");
+
+        let history = bad_input_history_params(&caller, "prod", &error);
+        assert_eq!(history.outcome, "denied");
+        assert_eq!(history.error_kind.as_deref(), Some("bad_input"));
+        assert!(history.purpose.is_none());
+        assert_eq!(history.credential_alias, "prod");
+        assert!(history.method.is_empty());
+        assert_eq!(history.status_code, None);
+
+        let audit = bad_input_audit_params(&caller, "prod");
+        assert_eq!(audit.outcome, "denied");
+        assert_eq!(audit.action, "mcp.api.call");
+        assert!(audit.purpose.is_none());
+        assert_eq!(
+            audit.detail.get("denial_reason"),
+            Some(&serde_json::json!("bad_input"))
+        );
     }
 }
