@@ -1,21 +1,8 @@
-#[cfg(test)]
-use std::collections::HashMap;
-
 use axum_extra::extract::CookieJar;
 use axum_extra::extract::cookie::{Cookie, SameSite};
-#[cfg(test)]
-use base64::Engine;
-#[cfg(test)]
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use openidconnect::core::CoreAuthenticationFlow;
 use openidconnect::{CsrfToken, Nonce, PkceCodeChallenge, Scope};
-#[cfg(test)]
-use rand::RngCore;
-#[cfg(test)]
-use sha2::{Digest, Sha256};
 use time::Duration as CookieDuration;
-#[cfg(test)]
-use url::Url;
 
 use crate::auth::oauth_client::oidc_client;
 
@@ -84,129 +71,46 @@ fn expired_cookie(name: &'static str, secure: bool) -> Cookie<'static> {
 }
 
 #[cfg(test)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Pkce {
-    pub verifier: String,
-    pub challenge: String,
-}
-
-#[cfg(test)]
-pub fn new_pkce() -> opsgate_core::Result<Pkce> {
-    let mut raw = [0_u8; 48];
-    rand::thread_rng().fill_bytes(&mut raw);
-    let verifier = URL_SAFE_NO_PAD.encode(raw);
-    let challenge = pkce_challenge(&verifier);
-    Ok(Pkce {
-        verifier,
-        challenge,
-    })
-}
-
-#[cfg(test)]
-pub fn pkce_challenge(verifier: &str) -> String {
-    let digest = Sha256::digest(verifier.as_bytes());
-    URL_SAFE_NO_PAD.encode(digest)
-}
-
-#[cfg(test)]
-pub fn new_state() -> opsgate_core::Result<String> {
-    let mut raw = [0_u8; 32];
-    rand::thread_rng().fill_bytes(&mut raw);
-    Ok(URL_SAFE_NO_PAD.encode(raw))
-}
-
-#[cfg(test)]
-pub fn authorize_url(config: &opsgate_core::Config, state: &str, challenge: &str) -> String {
-    let base = format!("{}/authorize", config.authgate_url);
-    let parsed = Url::parse(&base).or_else(|_error| Url::parse("http://localhost/authorize"));
-    let mut url = match parsed {
-        Ok(url) => url,
-        Err(_error) => return base,
-    };
-    url.query_pairs_mut()
-        .append_pair("response_type", "code")
-        .append_pair("client_id", &config.oauth_client_id)
-        .append_pair("redirect_uri", &config.oauth_redirect_url)
-        .append_pair("scope", "openid profile email offline_access")
-        .append_pair("state", state)
-        .append_pair("code_challenge", challenge)
-        .append_pair("code_challenge_method", "S256");
-    url.to_string()
-}
-
-#[cfg(test)]
-pub fn parse_authorize_query(url: &str) -> HashMap<String, String> {
-    Url::parse(url)
-        .ok()
-        .and_then(|url| url.query().map(str::to_owned))
-        .map(|query| {
-            url::form_urlencoded::parse(query.as_bytes())
-                .into_owned()
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-#[cfg(test)]
 mod tests {
-    use base64::Engine;
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    use sha2::{Digest, Sha256};
+    use axum_extra::extract::CookieJar;
+    use axum_extra::extract::cookie::SameSite;
+    use time::Duration as CookieDuration;
 
-    use super::*;
+    use super::{
+        LOGIN_NONCE_COOKIE, LOGIN_STATE_COOKIE, LOGIN_VERIFIER_COOKIE, clear_flow_cookies,
+        flow_cookie,
+    };
 
-    fn config() -> opsgate_core::Config {
-        opsgate_core::Config {
-            bind_addr: std::net::SocketAddr::from(([127, 0, 0, 1], 9091)),
-            database_url: "postgres://example".to_owned(),
-            db_max_connections: 1,
-            authgate_url: "https://auth.example.test".to_owned(),
-            opsgate_public_url: "https://api.example.test".to_owned(),
-            oauth_client_id: "client".to_owned(),
-            oauth_redirect_url: "https://api.example.test/callback".to_owned(),
-            resource_url: "https://api.example.test".to_owned(),
-            jwks_cache_ttl: std::time::Duration::from_secs(300),
-            secure_cookies: true,
+    #[test]
+    fn flow_cookie_is_hardened_with_max_age() {
+        let cookie = flow_cookie(LOGIN_STATE_COOKIE, "value".to_owned(), true);
+        assert_eq!(cookie.name(), LOGIN_STATE_COOKIE);
+        assert_eq!(cookie.value(), "value");
+        assert_eq!(cookie.http_only(), Some(true));
+        assert_eq!(cookie.secure(), Some(true));
+        assert_eq!(cookie.same_site(), Some(SameSite::Lax));
+        assert_eq!(cookie.path(), Some("/"));
+        assert_eq!(cookie.max_age(), Some(CookieDuration::seconds(300)));
+    }
+
+    #[test]
+    fn insecure_flow_cookie_drops_secure_flag() {
+        let cookie = flow_cookie(LOGIN_STATE_COOKIE, "value".to_owned(), false);
+        assert_eq!(cookie.secure(), Some(false));
+    }
+
+    #[test]
+    fn clear_flow_cookies_expires_every_login_cookie() -> Result<(), Box<dyn std::error::Error>> {
+        let jar = clear_flow_cookies(CookieJar::new(), true);
+        for name in [
+            LOGIN_STATE_COOKIE,
+            LOGIN_VERIFIER_COOKIE,
+            LOGIN_NONCE_COOKIE,
+        ] {
+            let cookie = jar.get(name).ok_or("expired cookie missing from jar")?;
+            assert_eq!(cookie.value(), "");
+            assert_eq!(cookie.max_age(), Some(CookieDuration::seconds(0)));
         }
-    }
-
-    #[test]
-    fn pkce_challenge_uses_verifier_string_bytes() -> opsgate_core::Result<()> {
-        let pkce = new_pkce()?;
-        assert!((43..=128).contains(&pkce.verifier.len()));
-        let expected = URL_SAFE_NO_PAD.encode(Sha256::digest(pkce.verifier.as_bytes()));
-        assert_eq!(pkce.challenge, expected);
         Ok(())
-    }
-
-    #[test]
-    fn state_is_32_random_bytes() -> opsgate_core::Result<()> {
-        let a = new_state()?;
-        let b = new_state()?;
-        assert_ne!(a, b);
-        let decoded = URL_SAFE_NO_PAD
-            .decode(a.as_bytes())
-            .map_err(opsgate_core::Error::internal)?;
-        assert_eq!(decoded.len(), 32);
-        Ok(())
-    }
-
-    #[test]
-    fn authorize_url_contains_required_params() {
-        let url = authorize_url(&config(), "state", "challenge");
-        let params = parse_authorize_query(&url);
-        assert_eq!(
-            params.get("response_type").map(String::as_str),
-            Some("code")
-        );
-        assert_eq!(params.get("client_id").map(String::as_str), Some("client"));
-        assert_eq!(
-            params.get("redirect_uri").map(String::as_str),
-            Some("https://api.example.test/callback")
-        );
-        assert_eq!(
-            params.get("code_challenge_method").map(String::as_str),
-            Some("S256")
-        );
     }
 }
