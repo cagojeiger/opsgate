@@ -34,6 +34,7 @@ use crate::mcp::tools::credentials::{
     CredentialListOutput, DeleteCredentialOutput, RegisterCredentialOutput, UpdateCredentialOutput,
 };
 use crate::mcp::tools::me::{McpMeOutput, McpToolset};
+use crate::sql_schema::{SqlSchemaInput, SqlSchemaOutput};
 use crate::state::AppState;
 
 #[derive(Clone)]
@@ -104,6 +105,29 @@ impl RuntimeMcpServer {
             &self.state,
             &parts,
             "api.call",
+            "active",
+            started,
+            &result,
+        )
+        .await;
+        result
+    }
+
+    #[tool(
+        name = "sql.schema",
+        description = "Inspect Postgres schema metadata for a registered category=sql credential without returning row values."
+    )]
+    pub async fn sql_schema(
+        &self,
+        Extension(parts): Extension<Parts>,
+        input: Parameters<SqlSchemaInput>,
+    ) -> Result<Json<SqlSchemaOutput>, ErrorData> {
+        let started = std::time::Instant::now();
+        let result = crate::mcp::tools::sql_schema::call(&self.state, &parts, input).await;
+        crate::mcp::tools::audit::record_tool_result(
+            &self.state,
+            &parts,
+            "sql.schema",
             "active",
             started,
             &result,

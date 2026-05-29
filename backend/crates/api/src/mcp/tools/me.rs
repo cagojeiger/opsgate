@@ -95,6 +95,10 @@ fn capabilities_for_toolset(toolset: McpToolset) -> Vec<Capability> {
                 "등록된 credential의 alias, metadata, policy를 조회합니다.",
             ),
             ("api.call", "HTTP credential alias로 JSON API를 호출합니다."),
+            (
+                "sql.schema",
+                "SQL credential alias로 Postgres schema metadata를 조회합니다.",
+            ),
         ],
         McpToolset::Admin => vec![
             (

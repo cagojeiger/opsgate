@@ -17,6 +17,7 @@ mod identity;
 mod mcp;
 mod rest;
 mod routes;
+mod sql_schema;
 mod state;
 
 use state::{AppState, AppStateDeps};
@@ -52,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
     let api_call_history = opsgate_db::ApiCallHistoryRepo::new(pool.clone());
     let audit_repo = opsgate_db::AuditRepo::new(pool.clone());
     let audit = std::sync::Arc::new(audit_repo.clone());
+    let sql_schema_audit_repo = audit_repo.clone();
     let cipher = opsgate_core::crypto::Cipher::new(config.master_key.expose_secret())?;
     let sealer = opsgate_core::crypto::Sealer::new(cipher);
     let credential_service = std::sync::Arc::new(crate::credential::CredentialService::new(
@@ -62,8 +64,13 @@ async fn main() -> anyhow::Result<()> {
         opsgate_db::CredentialRepo::new(pool.clone()),
         api_call_history,
         audit_repo,
-        sealer,
+        sealer.clone(),
         http.clone(),
+    ));
+    let sql_schema_service = std::sync::Arc::new(crate::sql_schema::SqlSchemaService::new(
+        opsgate_db::CredentialRepo::new(pool.clone()),
+        sql_schema_audit_repo,
+        sealer,
     ));
     let config = std::sync::Arc::new(config);
     let jwks = std::sync::Arc::new(auth::jwks::JwksCache::new(
@@ -82,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
         resolver: std::sync::Arc::new(resolver),
         credentials: credential_service,
         api_calls: api_call_service,
+        sql_schema: sql_schema_service,
         audit,
         http,
     });

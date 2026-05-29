@@ -173,10 +173,16 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
         opsgate_db::CredentialRepo::new(pool.clone()),
         opsgate_db::ApiCallHistoryRepo::new(pool.clone()),
         opsgate_db::AuditRepo::new(pool.clone()),
-        sealer,
+        sealer.clone(),
         reqwest::Client::new(),
     ));
-    let audit = Arc::new(opsgate_db::AuditRepo::new(pool.clone()));
+    let audit_repo = opsgate_db::AuditRepo::new(pool.clone());
+    let audit = Arc::new(audit_repo.clone());
+    let sql_schema = Arc::new(crate::sql_schema::SqlSchemaService::new(
+        opsgate_db::CredentialRepo::new(pool.clone()),
+        audit_repo,
+        sealer,
+    ));
     Ok(AppState::new(AppStateDeps {
         db: pool,
         config,
@@ -185,6 +191,7 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
         resolver: Arc::new(TestResolver { mode }),
         credentials,
         api_calls,
+        sql_schema,
         audit,
         http: reqwest::Client::new(),
     }))
