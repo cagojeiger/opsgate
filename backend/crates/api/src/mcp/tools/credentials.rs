@@ -5,6 +5,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{ErrorData, Json};
 use schemars::JsonSchema;
 use serde::Serialize;
+use std::collections::BTreeSet;
 
 use crate::credential::{
     CredentialUpdate, DeleteCredentialInput, ListCredentialsInput, RegisterHttpCredentialInput,
@@ -23,19 +24,29 @@ pub struct PageOutput {
     pub limit: i64,
     pub returned: usize,
     pub has_more: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct CredentialOutput {
     pub alias: String,
-    pub category: CredentialCategory,
-    pub provider: String,
-    pub description: String,
-    pub env: String,
-    pub tags: Vec<String>,
-    pub policy: CredentialPolicy,
-    pub allow_private_network: bool,
-    pub has_tls_ca: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<CredentialCategory>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy: Option<CredentialPolicy>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_private_network: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_tls_ca: Option<bool>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -73,22 +84,24 @@ pub async fn list(
     Parameters(input): Parameters<ListCredentialsInput>,
 ) -> Result<Json<CredentialListOutput>, ErrorData> {
     let caller = caller(parts)?;
-    let limit = input.limit.unwrap_or(50).clamp(1, 100);
-    let credentials = state
+    let fields = input.fields.clone().map(normalize_fields);
+    let page = state
         .credentials
         .list(caller.user.id, input)
         .await
         .map_err(map_error)?;
-    let returned = credentials.len();
+    let returned = page.credentials.len();
     Ok(Json(CredentialListOutput {
-        credentials: credentials
+        credentials: page
+            .credentials
             .into_iter()
-            .map(CredentialOutput::from)
+            .map(|credential| CredentialOutput::from_with_fields(credential, fields.as_ref()))
             .collect(),
         page: PageOutput {
-            limit,
+            limit: page.limit,
             returned,
-            has_more: returned >= usize::try_from(limit).unwrap_or(100),
+            has_more: page.has_more,
+            next_cursor: page.next_cursor,
         },
     }))
 }
@@ -166,18 +179,19 @@ pub async fn delete(
     }))
 }
 
-impl From<Credential> for CredentialOutput {
-    fn from(credential: Credential) -> Self {
+impl CredentialOutput {
+    fn from_with_fields(credential: Credential, fields: Option<&BTreeSet<String>>) -> Self {
         Self {
             alias: credential.alias,
-            category: credential.category,
-            provider: credential.provider,
-            description: credential.description,
-            env: credential.env,
-            tags: credential.tags,
-            policy: credential.policy,
-            allow_private_network: credential.allow_private_network,
-            has_tls_ca: credential.has_tls_ca,
+            category: include_field(fields, "category").then_some(credential.category),
+            provider: include_field(fields, "provider").then_some(credential.provider),
+            description: include_field(fields, "description").then_some(credential.description),
+            env: include_field(fields, "env").then_some(credential.env),
+            tags: include_field(fields, "tags").then_some(credential.tags),
+            policy: include_field(fields, "policy").then_some(credential.policy),
+            allow_private_network: include_field(fields, "allow_private_network")
+                .then_some(credential.allow_private_network),
+            has_tls_ca: include_field(fields, "has_tls_ca").then_some(credential.has_tls_ca),
         }
     }
 }
@@ -209,6 +223,18 @@ impl RegisterCredentialOutput {
             created: true,
         }
     }
+}
+
+fn normalize_fields(fields: Vec<String>) -> BTreeSet<String> {
+    fields
+        .into_iter()
+        .map(|field| field.trim().to_ascii_lowercase())
+        .filter(|field| !field.is_empty())
+        .collect()
+}
+
+fn include_field(fields: Option<&BTreeSet<String>>, field: &str) -> bool {
+    fields.is_none_or(|fields| fields.contains(field))
 }
 
 fn caller(parts: &Parts) -> Result<&Caller, ErrorData> {

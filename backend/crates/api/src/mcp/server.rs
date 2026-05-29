@@ -29,10 +29,10 @@ use crate::credential::{
     DeleteCredentialInput, ListCredentialsInput, RegisterHttpCredentialInput,
     RegisterSqlCredentialInput, UpdateCredentialInput,
 };
-use crate::identity::me::MeOutput;
 use crate::mcp::tools::credentials::{
     CredentialListOutput, DeleteCredentialOutput, RegisterCredentialOutput, UpdateCredentialOutput,
 };
+use crate::mcp::tools::me::{McpMeOutput, McpToolset};
 use crate::state::AppState;
 
 #[derive(Clone)]
@@ -50,8 +50,8 @@ impl RuntimeMcpServer {
     pub async fn me_tool(
         &self,
         Extension(parts): Extension<Parts>,
-    ) -> Result<Json<MeOutput>, ErrorData> {
-        crate::mcp::tools::me::call(&parts)
+    ) -> Result<Json<McpMeOutput>, ErrorData> {
+        crate::mcp::tools::me::call(&self.state, &parts, McpToolset::Runtime).await
     }
 
     #[tool(
@@ -94,8 +94,8 @@ impl AdminMcpServer {
     pub async fn me_tool(
         &self,
         Extension(parts): Extension<Parts>,
-    ) -> Result<Json<MeOutput>, ErrorData> {
-        crate::mcp::tools::me::call(&parts)
+    ) -> Result<Json<McpMeOutput>, ErrorData> {
+        crate::mcp::tools::me::call(&self.state, &parts, McpToolset::Admin).await
     }
 
     #[tool(

@@ -1,9 +1,10 @@
+use std::collections::BTreeMap;
 use std::net::IpAddr;
 
 use opsgate_core::crypto::Sealer;
 use opsgate_core::net::ssrf::is_blocked_target_ip;
 use opsgate_core::{Error, Result};
-use opsgate_db::CredentialRepo;
+use opsgate_db::{CredentialRepo, CredentialSummaryRows};
 use opsgate_domain::credential::{
     Credential, CredentialCategory, CredentialListParams, CredentialPolicy, CredentialSecret,
     InsertCredentialParams, RegisterCredentialInput, SecretHeader, UpdateCredentialParams,
@@ -95,8 +96,10 @@ impl CredentialService {
         &self,
         owner_user_id: Uuid,
         input: ListCredentialsInput,
-    ) -> Result<Vec<Credential>> {
-        self.repo
+    ) -> Result<CredentialListPage> {
+        let limit = normalize_limit(input.limit);
+        let rows = self
+            .repo
             .list_credentials(CredentialListParams {
                 owner_user_id,
                 category: input.category,
@@ -104,9 +107,35 @@ impl CredentialService {
                 env: input.env,
                 tag: input.tag,
                 q: input.q,
-                limit: input.limit.unwrap_or(50),
+                cursor: input.cursor,
+                limit: limit + 1,
             })
+            .await?;
+        let mut credentials = rows;
+        let has_more = credentials.len() > usize::try_from(limit).unwrap_or(100);
+        if has_more {
+            credentials.truncate(usize::try_from(limit).unwrap_or(100));
+        }
+        let next_cursor = if has_more {
+            credentials
+                .last()
+                .map(|credential| credential.alias.clone())
+        } else {
+            None
+        };
+        Ok(CredentialListPage {
+            credentials,
+            limit,
+            has_more,
+            next_cursor,
+        })
+    }
+
+    pub async fn summary(&self, owner_user_id: Uuid) -> Result<CredentialSummary> {
+        self.repo
+            .credential_summary(owner_user_id)
             .await
+            .map(CredentialSummary::from)
     }
 
     pub async fn update_http(
@@ -197,7 +226,40 @@ pub struct ListCredentialsInput {
     pub env: Option<String>,
     pub tag: Option<String>,
     pub q: Option<String>,
+    pub fields: Option<Vec<String>>,
     pub limit: Option<i64>,
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CredentialListPage {
+    pub credentials: Vec<Credential>,
+    pub limit: i64,
+    pub has_more: bool,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, schemars::JsonSchema, PartialEq, Eq)]
+pub struct CredentialSummary {
+    pub total: i64,
+    pub by_category: BTreeMap<String, i64>,
+    pub by_provider: BTreeMap<String, i64>,
+    pub tags: BTreeMap<String, i64>,
+}
+
+impl From<CredentialSummaryRows> for CredentialSummary {
+    fn from(rows: CredentialSummaryRows) -> Self {
+        Self {
+            total: rows.total,
+            by_category: count_map(rows.by_category),
+            by_provider: count_map(rows.by_provider),
+            tags: count_map(rows.tags),
+        }
+    }
+}
+
+fn count_map(rows: Vec<opsgate_db::credential_repo::CountRow>) -> BTreeMap<String, i64> {
+    rows.into_iter().map(|row| (row.key, row.count)).collect()
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -364,6 +426,10 @@ fn secret_header_json(header: &SecretHeader) -> serde_json::Value {
         "name": header.name,
         "value": header.value.expose_secret(),
     })
+}
+
+fn normalize_limit(limit: Option<i64>) -> i64 {
+    limit.unwrap_or(50).clamp(1, 100)
 }
 
 fn validate_reason(reason: &str) -> Result<()> {

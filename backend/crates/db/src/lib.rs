@@ -6,7 +6,7 @@ use sqlx::postgres::PgPoolOptions;
 pub mod credential_repo;
 pub mod user_repo;
 
-pub use credential_repo::CredentialRepo;
+pub use credential_repo::{CredentialRepo, CredentialSummaryRows};
 pub use sqlx::PgPool;
 pub use user_repo::UserRepo;
 

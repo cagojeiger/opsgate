@@ -181,5 +181,6 @@ pub struct CredentialListParams {
     pub env: Option<String>,
     pub tag: Option<String>,
     pub q: Option<String>,
+    pub cursor: Option<String>,
     pub limit: i64,
 }

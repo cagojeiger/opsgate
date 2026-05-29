@@ -209,10 +209,11 @@ impl CredentialRepo {
         let env = empty_to_none(params.env);
         let tag = empty_to_none(params.tag);
         let q = empty_to_none(params.q).map(|q| format!("%{q}%"));
+        let cursor = empty_to_none(params.cursor);
         let limit = if params.limit <= 0 {
             50
         } else {
-            params.limit.min(100)
+            params.limit.min(101)
         };
 
         let rows = sqlx::query_as::<_, CredentialRow>(
@@ -240,8 +241,9 @@ impl CredentialRepo {
               AND ($4::text IS NULL OR env = $4)
               AND ($5::text IS NULL OR $5 = ANY(tags))
               AND ($6::text IS NULL OR alias ILIKE $6 OR description ILIKE $6)
+              AND ($7::text IS NULL OR alias > $7)
             ORDER BY alias ASC
-            LIMIT $7
+            LIMIT $8
             "#,
         )
         .bind(params.owner_user_id)
@@ -250,6 +252,7 @@ impl CredentialRepo {
         .bind(env)
         .bind(tag)
         .bind(q)
+        .bind(cursor)
         .bind(limit)
         .fetch_all(&self.pool)
         .await
@@ -259,6 +262,88 @@ impl CredentialRepo {
             .map(CredentialRow::into_credential)
             .collect()
     }
+
+    pub async fn credential_summary(&self, owner_user_id: Uuid) -> Result<CredentialSummaryRows> {
+        let total = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT count(*)
+            FROM credentials
+            WHERE owner_user_id = $1
+              AND deleted_at IS NULL
+            "#,
+        )
+        .bind(owner_user_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        let by_category = sqlx::query_as::<_, CountRow>(
+            r#"
+            SELECT category AS key, count(*) AS count
+            FROM credentials
+            WHERE owner_user_id = $1
+              AND deleted_at IS NULL
+            GROUP BY category
+            ORDER BY category
+            "#,
+        )
+        .bind(owner_user_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        let by_provider = sqlx::query_as::<_, CountRow>(
+            r#"
+            SELECT provider AS key, count(*) AS count
+            FROM credentials
+            WHERE owner_user_id = $1
+              AND deleted_at IS NULL
+            GROUP BY provider
+            ORDER BY provider
+            "#,
+        )
+        .bind(owner_user_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        let tags = sqlx::query_as::<_, CountRow>(
+            r#"
+            SELECT expanded_tags.tag AS key, count(*) AS count
+            FROM credentials
+            CROSS JOIN unnest(credentials.tags) AS expanded_tags(tag)
+            WHERE owner_user_id = $1
+              AND deleted_at IS NULL
+            GROUP BY expanded_tags.tag
+            ORDER BY expanded_tags.tag
+            "#,
+        )
+        .bind(owner_user_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        Ok(CredentialSummaryRows {
+            total,
+            by_category,
+            by_provider,
+            tags,
+        })
+    }
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct CountRow {
+    pub key: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct CredentialSummaryRows {
+    pub total: i64,
+    pub by_category: Vec<CountRow>,
+    pub by_provider: Vec<CountRow>,
+    pub tags: Vec<CountRow>,
 }
 
 #[derive(Debug, FromRow)]
