@@ -53,6 +53,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
+http = "1"
+ipnet = "2"
+zeroize = "1"
+rustls-pemfile = "2"
 
 # Auth / OAuth / MCP
 jsonwebtoken = "9"
@@ -61,6 +65,8 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 rand = "0.8"
 sha2 = "0.10"
 base64 = "0.22"
+aes-gcm = "0.10"
+secrecy = { version = "0.10", features = ["serde"] }
 url = "2"
 axum-extra = { version = "0.10", features = ["cookie"] }
 subtle = "2"

@@ -3,8 +3,10 @@
 use opsgate_core::{Config, Error, Result};
 use sqlx::postgres::PgPoolOptions;
 
+pub mod credential_repo;
 pub mod user_repo;
 
+pub use credential_repo::CredentialRepo;
 pub use sqlx::PgPool;
 pub use user_repo::UserRepo;
 
