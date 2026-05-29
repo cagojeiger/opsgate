@@ -503,26 +503,24 @@ impl Visitor for SqlPolicyVisitor<'_> {
         }
         // A table function (`FROM dblink(...)`) surfaces here as a relation name,
         // never as `Expr::Function`, so apply the function denylist to it too.
-        if let Some(candidate) = object_name_last(name) {
-            return self.check_function(&candidate, true);
-        }
-        ControlFlow::Continue(())
+        self.check_function_name(name, true)
     }
 
     fn pre_visit_expr(&mut self, expr: &Expr) -> ControlFlow<Self::Break> {
         match expr {
             // Function calls (`pg_sleep(...)`): match on the parsed call name.
-            Expr::Function(function) => match object_name_last(&function.name) {
-                Some(candidate) => self.check_function(&candidate, true),
-                None => ControlFlow::Continue(()),
-            },
+            Expr::Function(function) => self.check_function_name(&function.name, true),
             // Niladic value functions (`current_user`) may parse as identifiers;
             // only the credential's denylist applies (not the builtin call list).
             Expr::Identifier(ident) => {
-                self.check_function(&ident.value.to_ascii_lowercase(), false)
+                let candidate = ident.value.trim().to_ascii_lowercase();
+                self.check_function_candidates(&candidate, &candidate, false)
             }
             Expr::CompoundIdentifier(parts) => match parts.last() {
-                Some(ident) => self.check_function(&ident.value.to_ascii_lowercase(), false),
+                Some(ident) => {
+                    let candidate = ident.value.trim().to_ascii_lowercase();
+                    self.check_function_candidates(&candidate, &candidate, false)
+                }
                 None => ControlFlow::Continue(()),
             },
             _ => ControlFlow::Continue(()),
@@ -531,68 +529,92 @@ impl Visitor for SqlPolicyVisitor<'_> {
 }
 
 impl SqlPolicyVisitor<'_> {
-    /// Check a function/relation name against the builtin (call sites only) and
-    /// credential-policy denylists, recording the first violation.
-    fn check_function(&mut self, candidate: &str, is_call: bool) -> ControlFlow<()> {
+    fn check_function_name(&mut self, name: &ObjectName, is_call: bool) -> ControlFlow<()> {
+        let parts = object_name_parts(name);
+        let Some(short) = parts.last() else {
+            return ControlFlow::Continue(());
+        };
         if is_call
-            && BUILTIN_DENIED_FUNCTIONS
-                .iter()
-                .any(|denied| denied.eq_ignore_ascii_case(candidate))
+            && !self.policy.allow_metadata
+            && parts.len() > 1
+            && let Some(schema) = parts.first().filter(|schema| is_metadata_schema(schema))
         {
             self.violation = Some(format!(
-                "function {candidate:?} is blocked by built-in SQL policy"
+                "function schema {schema:?} is not allowed by credential policy"
             ));
             return ControlFlow::Break(());
         }
-        if let Some(denied) = self.denied_policy_function(candidate) {
+        let full = parts.join(".");
+        self.check_function_candidates(&full, short, is_call)
+    }
+
+    /// Check a function/relation name against the builtin (call sites only) and
+    /// credential-policy denylists, recording the first violation.
+    fn check_function_candidates(
+        &mut self,
+        full_candidate: &str,
+        short_candidate: &str,
+        is_call: bool,
+    ) -> ControlFlow<()> {
+        if is_call
+            && BUILTIN_DENIED_FUNCTIONS
+                .iter()
+                .any(|denied| denied == &short_candidate || denied == &full_candidate)
+        {
             self.violation = Some(format!(
-                "function {denied:?} is denied by credential policy"
+                "function {full_candidate:?} is blocked by built-in SQL policy"
+            ));
+            return ControlFlow::Break(());
+        }
+        if self.denied_policy_function(full_candidate, short_candidate) {
+            self.violation = Some(format!(
+                "function {full_candidate:?} is denied by credential policy"
             ));
             return ControlFlow::Break(());
         }
         ControlFlow::Continue(())
     }
 
-    /// Return the matching denied-function entry (its short form) if `candidate`
-    /// matches a policy-denied function by full or unqualified name.
-    fn denied_policy_function(&self, candidate: &str) -> Option<String> {
+    /// Match Go parity: unqualified denied names match any schema, while
+    /// qualified denied names match only the exact full call name.
+    fn denied_policy_function(&self, full_candidate: &str, short_candidate: &str) -> bool {
         self.policy
             .denied_functions
             .iter()
             .map(|denied| denied.trim().to_ascii_lowercase())
-            .find(|denied| {
-                !denied.is_empty()
-                    && (denied == candidate
-                        || denied
-                            .rsplit('.')
-                            .next()
-                            .is_some_and(|short| short == candidate))
+            .any(|denied| {
+                if denied.is_empty() {
+                    false
+                } else if denied.contains('.') {
+                    denied == full_candidate
+                } else {
+                    denied == short_candidate
+                }
             })
-            .map(|denied| denied.rsplit('.').next().unwrap_or(&denied).to_owned())
     }
 }
 
 /// Postgres catalog/metadata relation: schema-qualified `pg_catalog`/
 /// `information_schema`, or an unqualified `pg_`-prefixed catalog table.
 fn is_metadata_relation(name: &ObjectName) -> bool {
-    let parts: Vec<String> = name
-        .0
-        .iter()
-        .filter_map(|part| part.as_ident())
-        .map(|ident| ident.value.to_ascii_lowercase())
-        .collect();
+    let parts = object_name_parts(name);
     match parts.as_slice() {
         [] => false,
         [table] => table.starts_with("pg_"),
-        [.., schema, _table] => schema == "pg_catalog" || schema == "information_schema",
+        [.., schema, _table] => is_metadata_schema(schema),
     }
 }
 
-fn object_name_last(name: &ObjectName) -> Option<String> {
+fn object_name_parts(name: &ObjectName) -> Vec<String> {
     name.0
-        .last()?
-        .as_ident()
-        .map(|ident| ident.value.to_ascii_lowercase())
+        .iter()
+        .filter_map(|part| part.as_ident())
+        .map(|ident| ident.value.trim().to_ascii_lowercase())
+        .collect()
+}
+
+fn is_metadata_schema(schema: &str) -> bool {
+    matches!(schema, "pg_catalog" | "information_schema")
 }
 
 async fn execute_postgres(
@@ -1459,6 +1481,76 @@ mod tests {
         assert!(enforce_sql_policy("select * from users for update", &policy).is_err());
         assert!(enforce_sql_policy("select pg_sleep(10)", &policy).is_err());
         assert!(enforce_sql_policy("select * from pg_catalog.pg_tables", &policy).is_err());
+    }
+
+    #[test]
+    fn ast_policy_denies_metadata_schema_functions_without_allow_metadata() {
+        let policy = CredentialPolicy::default();
+        assert!(
+            enforce_sql_policy(
+                "select pg_catalog.obj_description(1259, 'pg_class')",
+                &policy
+            )
+            .is_err()
+        );
+        assert!(
+            enforce_sql_policy(
+                "select information_schema._pg_char_max_length(1043, 10)",
+                &policy,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn ast_policy_allows_metadata_schema_functions_when_allow_metadata_enabled() {
+        let policy = CredentialPolicy {
+            allow_metadata: true,
+            ..CredentialPolicy::default()
+        };
+        assert!(
+            enforce_sql_policy(
+                "select pg_catalog.obj_description(1259, 'pg_class')",
+                &policy
+            )
+            .is_ok()
+        );
+        assert!(
+            enforce_sql_policy(
+                "select information_schema._pg_char_max_length(1043, 10)",
+                &policy,
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn ast_policy_denies_builtin_functions_after_metadata_is_allowed() {
+        let policy = CredentialPolicy {
+            allow_metadata: true,
+            ..CredentialPolicy::default()
+        };
+        assert!(enforce_sql_policy("select pg_catalog.pg_sleep(1)", &policy).is_err());
+    }
+
+    #[test]
+    fn ast_policy_matches_denied_functions_by_short_or_exact_full_name() {
+        let policy = CredentialPolicy {
+            allow_metadata: true,
+            denied_functions: vec!["custom_blocked".to_owned()],
+            ..CredentialPolicy::default()
+        };
+        assert!(enforce_sql_policy("select custom_blocked()", &policy).is_err());
+        assert!(enforce_sql_policy("select public.custom_blocked()", &policy).is_err());
+
+        let policy = CredentialPolicy {
+            allow_metadata: true,
+            denied_functions: vec!["public.custom_blocked".to_owned()],
+            ..CredentialPolicy::default()
+        };
+        assert!(enforce_sql_policy("select public.custom_blocked()", &policy).is_err());
+        assert!(enforce_sql_policy("select custom_blocked()", &policy).is_ok());
+        assert!(enforce_sql_policy("select other.custom_blocked()", &policy).is_ok());
     }
 
     #[test]
