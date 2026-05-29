@@ -254,3 +254,58 @@ fn map_error(error: opsgate_core::Error) -> ErrorData {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use opsgate_domain::credential::CredentialCategory;
+    use uuid::Uuid;
+
+    use super::*;
+
+    fn credential() -> Credential {
+        Credential {
+            id: Uuid::nil(),
+            owner_user_id: Uuid::nil(),
+            category: CredentialCategory::Http,
+            provider: "k8s".to_owned(),
+            alias: "prod-api".to_owned(),
+            endpoint: "https://internal.example.test/secret-path".to_owned(),
+            description: "cluster api".to_owned(),
+            env: "prod".to_owned(),
+            tags: vec!["prod".to_owned(), "k8s".to_owned()],
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            has_tls_ca: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn credential_output_never_serializes_endpoint_or_secret_material()
+    -> Result<(), serde_json::Error> {
+        let output = CredentialOutput::from_with_fields(credential(), None);
+        let json = serde_json::to_string(&output)?;
+
+        assert!(json.contains("prod-api"));
+        assert!(!json.contains("internal.example.test"));
+        assert!(!json.contains("secret-path"));
+        assert!(!json.contains("secret"));
+        Ok(())
+    }
+
+    #[test]
+    fn credential_output_fields_limit_metadata_surface() -> Result<(), serde_json::Error> {
+        let fields = BTreeSet::from(["provider".to_owned()]);
+        let output = CredentialOutput::from_with_fields(credential(), Some(&fields));
+        let value = serde_json::to_value(output)?;
+
+        assert_eq!(value.get("alias"), Some(&serde_json::json!("prod-api")));
+        assert_eq!(value.get("provider"), Some(&serde_json::json!("k8s")));
+        assert!(value.get("policy").is_none());
+        assert!(value.get("tags").is_none());
+        assert!(value.get("allow_private_network").is_none());
+        Ok(())
+    }
+}

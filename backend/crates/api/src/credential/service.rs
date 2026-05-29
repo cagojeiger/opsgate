@@ -21,11 +21,25 @@ const SECRET_DOMAIN: &str = "credentials";
 pub struct CredentialService {
     repo: CredentialRepo,
     sealer: Sealer,
+    resolver: EndpointResolver,
 }
 
 impl CredentialService {
     pub fn new(repo: CredentialRepo, sealer: Sealer) -> Self {
-        Self { repo, sealer }
+        Self {
+            repo,
+            sealer,
+            resolver: EndpointResolver::System,
+        }
+    }
+
+    #[cfg(test)]
+    fn with_resolver(repo: CredentialRepo, sealer: Sealer, resolver: EndpointResolver) -> Self {
+        Self {
+            repo,
+            sealer,
+            resolver,
+        }
     }
 
     pub async fn register_http(
@@ -35,7 +49,7 @@ impl CredentialService {
     ) -> Result<Credential> {
         let input = normalize_register_input(input.into_domain());
         validate_register_input(&input)?;
-        validate_register_endpoint_ips(&input).await?;
+        self.validate_register_endpoint_ips(&input).await?;
         let secret_plaintext = secret_json(&input.secret)?;
         let secret_ciphertext = self
             .sealer
@@ -69,7 +83,7 @@ impl CredentialService {
     ) -> Result<Credential> {
         let input = normalize_register_input(input.into_domain());
         validate_register_input(&input)?;
-        validate_register_endpoint_ips(&input).await?;
+        self.validate_register_endpoint_ips(&input).await?;
         let secret_plaintext = secret_json(&input.secret)?;
         let secret_ciphertext = self
             .sealer
@@ -378,33 +392,52 @@ impl RegisterSqlCredentialInput {
     }
 }
 
-async fn validate_register_endpoint_ips(input: &RegisterCredentialInput) -> Result<()> {
-    if input.allow_private_network {
-        return Ok(());
+#[derive(Clone)]
+enum EndpointResolver {
+    System,
+    #[cfg(test)]
+    Fixed(Vec<IpAddr>),
+}
+
+impl EndpointResolver {
+    async fn resolve(&self, host: &str, port: u16) -> Result<Vec<IpAddr>> {
+        match self {
+            Self::System => tokio::net::lookup_host((host, port))
+                .await
+                .map_err(|error| Error::validation(format!("resolve endpoint host: {error}")))
+                .map(|addrs| addrs.map(|addr| addr.ip()).collect()),
+            #[cfg(test)]
+            Self::Fixed(ips) => Ok(ips.clone()),
+        }
     }
-    let url = url::Url::parse(&input.endpoint)
-        .map_err(|error| Error::validation(format!("endpoint URL: {error}")))?;
-    let host = url
-        .host_str()
-        .ok_or_else(|| Error::validation("endpoint requires host"))?;
-    let default_port = match input.category {
-        CredentialCategory::Http => 443,
-        CredentialCategory::Sql => 5432,
-    };
-    let port = url.port().unwrap_or(default_port);
-    let addrs = tokio::net::lookup_host((host, port))
-        .await
-        .map_err(|error| Error::validation(format!("resolve endpoint host: {error}")))?;
-    let ips = addrs.map(|addr| addr.ip()).collect::<Vec<_>>();
-    if ips.is_empty() {
-        return Err(Error::validation("resolve endpoint host: no IPs"));
+}
+
+impl CredentialService {
+    async fn validate_register_endpoint_ips(&self, input: &RegisterCredentialInput) -> Result<()> {
+        if input.allow_private_network {
+            return Ok(());
+        }
+        let url = url::Url::parse(&input.endpoint)
+            .map_err(|error| Error::validation(format!("endpoint URL: {error}")))?;
+        let host = url
+            .host_str()
+            .ok_or_else(|| Error::validation("endpoint requires host"))?;
+        let default_port = match input.category {
+            CredentialCategory::Http => 443,
+            CredentialCategory::Sql => 5432,
+        };
+        let port = url.port().unwrap_or(default_port);
+        let ips = self.resolver.resolve(host, port).await?;
+        if ips.is_empty() {
+            return Err(Error::validation("resolve endpoint host: no IPs"));
+        }
+        if let Some(ip) = ips.into_iter().find(|ip| is_blocked_target_ip(*ip)) {
+            return Err(Error::validation(format!(
+                "resolved IP {ip} is private/link-local/loopback"
+            )));
+        }
+        Ok(())
     }
-    if let Some(ip) = ips.into_iter().find(|ip| is_blocked_target_ip(*ip)) {
-        return Err(Error::validation(format!(
-            "resolved IP {ip} is private/link-local/loopback"
-        )));
-    }
-    Ok(())
 }
 
 fn secret_json(secret: &CredentialSecret) -> Result<Vec<u8>> {
@@ -487,5 +520,90 @@ fn default_string(value: &str, default: &str) -> String {
     }
 }
 
-#[allow(dead_code)]
-fn _assert_ipaddr(_: IpAddr) {}
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr};
+
+    use base64::Engine;
+    use sqlx::postgres::PgPoolOptions;
+
+    use super::*;
+
+    fn service_with_ips(ips: Vec<IpAddr>) -> Result<CredentialService> {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://opsgate:opsgate@localhost/opsgate")
+            .map_err(Error::internal)?;
+        let key = base64::engine::general_purpose::STANDARD.encode([11_u8; 32]);
+        let cipher = opsgate_core::crypto::Cipher::new(&key)?;
+        Ok(CredentialService::with_resolver(
+            CredentialRepo::new(pool),
+            Sealer::new(cipher),
+            EndpointResolver::Fixed(ips),
+        ))
+    }
+
+    fn http_input(allow_private_network: bool) -> RegisterCredentialInput {
+        RegisterHttpCredentialInput {
+            provider: "k8s".to_owned(),
+            alias: "prod".to_owned(),
+            endpoint: "https://service.example.test".to_owned(),
+            secret_headers: vec![SecretHeaderInput {
+                name: "Authorization".to_owned(),
+                value: "Bearer secret-token".to_owned(),
+            }],
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network,
+            tls_server_ca: String::new(),
+        }
+        .into_domain()
+    }
+
+    #[tokio::test]
+    async fn service_rejects_private_register_target_ip() -> Result<()> {
+        let service = service_with_ips(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))])?;
+        let err = service
+            .validate_register_endpoint_ips(&http_input(false))
+            .await
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("private/link-local/loopback"));
+        assert!(!err.contains("secret-token"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn service_allows_private_register_target_when_explicitly_enabled() -> Result<()> {
+        let service = service_with_ips(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))])?;
+        assert!(
+            service
+                .validate_register_endpoint_ips(&http_input(true))
+                .await
+                .is_ok()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn secret_json_contains_secret_only_before_sealing() -> Result<()> {
+        let secret = CredentialSecret::Http {
+            headers: vec![SecretHeader {
+                name: "Authorization".to_owned(),
+                value: SecretString::from("Bearer secret-token".to_owned()),
+            }],
+        };
+        let json = secret_json(&secret)?;
+        assert!(String::from_utf8_lossy(&json).contains("secret-token"));
+
+        let key = base64::engine::general_purpose::STANDARD.encode([12_u8; 32]);
+        let cipher = opsgate_core::crypto::Cipher::new(&key)?;
+        let sealer = Sealer::new(cipher);
+        let ciphertext = sealer.seal(SECRET_DOMAIN, "prod", &json)?;
+        assert!(!String::from_utf8_lossy(&ciphertext).contains("secret-token"));
+        assert!(sealer.open(SECRET_DOMAIN, "other", &ciphertext).is_err());
+        Ok(())
+    }
+}

@@ -270,6 +270,108 @@ mod tests {
     }
 
     #[test]
+    fn allows_authorization_as_secret_header_but_not_caller_header_overlap() {
+        let input = normalize_register_input(RegisterCredentialInput {
+            category: CredentialCategory::Http,
+            provider: "k8s".to_owned(),
+            alias: "prod".to_owned(),
+            endpoint: "https://example.com".to_owned(),
+            secret: CredentialSecret::Http {
+                headers: vec![SecretHeader {
+                    name: "Authorization".to_owned(),
+                    value: secret("Bearer secret-token"),
+                }],
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            tls_server_ca: None,
+        });
+        assert!(validate_register_input(&input).is_ok());
+    }
+
+    #[test]
+    fn rejects_transport_controlled_secret_headers() {
+        for name in ["Host", "Content-Type", "X-Forwarded-For"] {
+            let input = normalize_register_input(RegisterCredentialInput {
+                category: CredentialCategory::Http,
+                provider: "k8s".to_owned(),
+                alias: "prod".to_owned(),
+                endpoint: "https://example.com".to_owned(),
+                secret: CredentialSecret::Http {
+                    headers: vec![SecretHeader {
+                        name: name.to_owned(),
+                        value: secret("secret-token"),
+                    }],
+                },
+                description: String::new(),
+                env: String::new(),
+                tags: Vec::new(),
+                policy: CredentialPolicy::default(),
+                allow_private_network: false,
+                tls_server_ca: None,
+            });
+            assert!(
+                validate_register_input(&input).is_err(),
+                "{name} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn validation_errors_do_not_echo_secret_values() {
+        let input = normalize_register_input(RegisterCredentialInput {
+            category: CredentialCategory::Http,
+            provider: "k8s".to_owned(),
+            alias: "prod".to_owned(),
+            endpoint: "https://example.com".to_owned(),
+            secret: CredentialSecret::Http {
+                headers: vec![SecretHeader {
+                    name: "X-Api-Key".to_owned(),
+                    value: secret("secret-token\nleak"),
+                }],
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            tls_server_ca: None,
+        });
+        let msg = validate_register_input(&input)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(msg.contains("X-Api-Key"));
+        assert!(!msg.contains("secret-token"));
+    }
+
+    #[test]
+    fn rejects_secret_kind_mismatch() {
+        let input = normalize_register_input(RegisterCredentialInput {
+            category: CredentialCategory::Sql,
+            provider: "postgres".to_owned(),
+            alias: "db".to_owned(),
+            endpoint: "postgres://db.example.com/app".to_owned(),
+            secret: CredentialSecret::Http {
+                headers: vec![SecretHeader {
+                    name: "X-Api-Key".to_owned(),
+                    value: secret("secret-token"),
+                }],
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            tls_server_ca: None,
+        });
+        assert!(validate_register_input(&input).is_err());
+    }
+
+    #[test]
     fn rejects_postgres_endpoint_with_credentials() {
         let err = validate_postgres_endpoint("postgres://user:pass@example.com/db").err();
         assert!(err.is_some());

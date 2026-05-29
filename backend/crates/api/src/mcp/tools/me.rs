@@ -201,4 +201,44 @@ mod tests {
         );
         assert_eq!(out.id, "00000000-0000-0000-0000-000000000000");
     }
+
+    #[test]
+    fn runtime_me_excludes_admin_capabilities_and_aliases() -> Result<(), serde_json::Error> {
+        let now = Utc::now();
+        let user = User {
+            id: Uuid::nil(),
+            sub: "sub-1".to_owned(),
+            email: "user@example.test".to_owned(),
+            display_name: "Test User".to_owned(),
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+        };
+        let mut by_provider = BTreeMap::new();
+        by_provider.insert("k8s".to_owned(), 1);
+        let out = build_me(
+            &Caller {
+                user,
+                channel: Channel::Mcp,
+            },
+            McpToolset::Runtime,
+            CredentialSummary {
+                total: 1,
+                by_category: BTreeMap::new(),
+                by_provider,
+                tags: BTreeMap::new(),
+            },
+        );
+        let json = serde_json::to_string(&out)?;
+
+        assert_eq!(out.role, "active");
+        assert!(!out.is_admin);
+        assert!(
+            out.capabilities
+                .iter()
+                .all(|capability| capability.tool != "credential.delete")
+        );
+        assert!(!json.contains("prod-api"));
+        Ok(())
+    }
 }
