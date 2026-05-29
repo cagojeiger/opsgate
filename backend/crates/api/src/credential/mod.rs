@@ -1,6 +1,6 @@
 mod service;
 
 pub use service::{
-    CredentialService, ListCredentialsInput, RegisterHttpCredentialInput,
-    RegisterSqlCredentialInput,
+    CredentialService, CredentialUpdate, DeleteCredentialInput, ListCredentialsInput,
+    RegisterHttpCredentialInput, RegisterSqlCredentialInput, UpdateCredentialInput,
 };

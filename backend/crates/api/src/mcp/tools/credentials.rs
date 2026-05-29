@@ -7,7 +7,8 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::credential::{
-    ListCredentialsInput, RegisterHttpCredentialInput, RegisterSqlCredentialInput,
+    CredentialUpdate, DeleteCredentialInput, ListCredentialsInput, RegisterHttpCredentialInput,
+    RegisterSqlCredentialInput, UpdateCredentialInput,
 };
 use crate::state::AppState;
 
@@ -35,6 +36,24 @@ pub struct CredentialOutput {
     pub policy: CredentialPolicy,
     pub allow_private_network: bool,
     pub has_tls_ca: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct UpdateCredentialOutput {
+    pub alias: String,
+    pub category: CredentialCategory,
+    pub provider: String,
+    pub env: String,
+    pub tags: Vec<String>,
+    pub description: String,
+    pub updated: bool,
+    pub changed_fields: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct DeleteCredentialOutput {
+    pub alias: String,
+    pub deleted: bool,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -102,6 +121,51 @@ pub async fn register_sql(
     Ok(Json(RegisterCredentialOutput::created(credential)))
 }
 
+pub async fn update_http(
+    state: &AppState,
+    parts: &Parts,
+    Parameters(input): Parameters<UpdateCredentialInput>,
+) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
+    let caller = caller(parts)?;
+    let update = state
+        .credentials
+        .update_http(caller.user.id, input)
+        .await
+        .map_err(map_error)?;
+    Ok(Json(UpdateCredentialOutput::from_update(update)))
+}
+
+pub async fn update_sql(
+    state: &AppState,
+    parts: &Parts,
+    Parameters(input): Parameters<UpdateCredentialInput>,
+) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
+    let caller = caller(parts)?;
+    let update = state
+        .credentials
+        .update_sql(caller.user.id, input)
+        .await
+        .map_err(map_error)?;
+    Ok(Json(UpdateCredentialOutput::from_update(update)))
+}
+
+pub async fn delete(
+    state: &AppState,
+    parts: &Parts,
+    Parameters(input): Parameters<DeleteCredentialInput>,
+) -> Result<Json<DeleteCredentialOutput>, ErrorData> {
+    let caller = caller(parts)?;
+    let credential = state
+        .credentials
+        .delete(caller.user.id, input)
+        .await
+        .map_err(map_error)?;
+    Ok(Json(DeleteCredentialOutput {
+        alias: credential.alias,
+        deleted: true,
+    }))
+}
+
 impl From<Credential> for CredentialOutput {
     fn from(credential: Credential) -> Self {
         Self {
@@ -114,6 +178,21 @@ impl From<Credential> for CredentialOutput {
             policy: credential.policy,
             allow_private_network: credential.allow_private_network,
             has_tls_ca: credential.has_tls_ca,
+        }
+    }
+}
+
+impl UpdateCredentialOutput {
+    fn from_update(update: CredentialUpdate) -> Self {
+        Self {
+            alias: update.credential.alias,
+            category: update.credential.category,
+            provider: update.credential.provider,
+            env: update.credential.env,
+            tags: update.credential.tags,
+            description: update.credential.description,
+            updated: true,
+            changed_fields: update.changed_fields,
         }
     }
 }

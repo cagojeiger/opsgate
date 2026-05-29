@@ -162,6 +162,17 @@ pub struct InsertCredentialParams {
     pub tls_ca: Option<Vec<u8>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct UpdateCredentialParams {
+    pub owner_user_id: Uuid,
+    pub alias: String,
+    pub category: CredentialCategory,
+    pub description: Option<String>,
+    pub env: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub policy: Option<CredentialPolicy>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct CredentialListParams {
     pub owner_user_id: Uuid,

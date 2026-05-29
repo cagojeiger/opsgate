@@ -6,7 +6,8 @@ use opsgate_core::{Error, Result};
 use opsgate_db::CredentialRepo;
 use opsgate_domain::credential::{
     Credential, CredentialCategory, CredentialListParams, CredentialPolicy, CredentialSecret,
-    InsertCredentialParams, RegisterCredentialInput, SecretHeader, normalize_register_input,
+    InsertCredentialParams, RegisterCredentialInput, SecretHeader, UpdateCredentialParams,
+    normalize_policy_for_category, normalize_register_input, validate_policy_for_category,
     validate_register_input,
 };
 use secrecy::{ExposeSecret, SecretString};
@@ -107,6 +108,86 @@ impl CredentialService {
             })
             .await
     }
+
+    pub async fn update_http(
+        &self,
+        owner_user_id: Uuid,
+        input: UpdateCredentialInput,
+    ) -> Result<CredentialUpdate> {
+        self.update(owner_user_id, input, CredentialCategory::Http)
+            .await
+    }
+
+    pub async fn update_sql(
+        &self,
+        owner_user_id: Uuid,
+        input: UpdateCredentialInput,
+    ) -> Result<CredentialUpdate> {
+        self.update(owner_user_id, input, CredentialCategory::Sql)
+            .await
+    }
+
+    pub async fn delete(
+        &self,
+        owner_user_id: Uuid,
+        input: DeleteCredentialInput,
+    ) -> Result<Credential> {
+        let alias = input.alias.trim().to_owned();
+        validate_reason(&input.reason)?;
+        if alias.is_empty() {
+            return Err(Error::validation("alias is required"));
+        }
+        self.repo
+            .soft_delete_credential(owner_user_id, &alias)
+            .await
+    }
+
+    async fn update(
+        &self,
+        owner_user_id: Uuid,
+        input: UpdateCredentialInput,
+        category: CredentialCategory,
+    ) -> Result<CredentialUpdate> {
+        let alias = input.alias.trim().to_owned();
+        validate_reason(&input.reason)?;
+        if alias.is_empty() {
+            return Err(Error::validation("alias is required"));
+        }
+
+        let description = trim_optional(input.description);
+        let env = trim_optional(input.env).map(|env| default_string(&env, "dev"));
+        let tags = input.tags.map(normalize_tags);
+        let policy = input
+            .policy
+            .map(|policy| normalize_policy_for_category(policy, category));
+        if let Some(policy) = &policy {
+            validate_policy_for_category(policy, category)?;
+        }
+
+        let changed_fields = changed_fields(&description, &env, &tags, &policy);
+        if changed_fields.is_empty() {
+            return Err(Error::validation(
+                "at least one of description, env, tags, or policy is required",
+            ));
+        }
+
+        let credential = self
+            .repo
+            .update_credential_mutable_fields(UpdateCredentialParams {
+                owner_user_id,
+                alias,
+                category,
+                description,
+                env,
+                tags,
+                policy,
+            })
+            .await?;
+        Ok(CredentialUpdate {
+            credential,
+            changed_fields,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -157,6 +238,28 @@ pub struct RegisterSqlCredentialInput {
     pub policy: CredentialPolicy,
     #[serde(default)]
     pub allow_private_network: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct UpdateCredentialInput {
+    pub alias: String,
+    pub reason: String,
+    pub description: Option<String>,
+    pub env: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub policy: Option<CredentialPolicy>,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct DeleteCredentialInput {
+    pub alias: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CredentialUpdate {
+    pub credential: Credential,
+    pub changed_fields: Vec<&'static str>,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -261,6 +364,61 @@ fn secret_header_json(header: &SecretHeader) -> serde_json::Value {
         "name": header.name,
         "value": header.value.expose_secret(),
     })
+}
+
+fn validate_reason(reason: &str) -> Result<()> {
+    let reason = reason.trim();
+    if reason.len() < 8 || reason.len() > 512 || reason.contains(['\r', '\n']) {
+        return Err(Error::validation(
+            "reason must be 8-512 characters without CR/LF",
+        ));
+    }
+    Ok(())
+}
+
+fn changed_fields(
+    description: &Option<String>,
+    env: &Option<String>,
+    tags: &Option<Vec<String>>,
+    policy: &Option<CredentialPolicy>,
+) -> Vec<&'static str> {
+    let mut fields = Vec::new();
+    if description.is_some() {
+        fields.push("description");
+    }
+    if env.is_some() {
+        fields.push("env");
+    }
+    if tags.is_some() {
+        fields.push("tags");
+    }
+    if policy.is_some() {
+        fields.push("policy");
+    }
+    fields
+}
+
+fn trim_optional(value: Option<String>) -> Option<String> {
+    value.map(|value| value.trim().to_owned())
+}
+
+fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+    let mut out = Vec::new();
+    for tag in tags {
+        let normalized = tag.trim().to_ascii_lowercase();
+        if !normalized.is_empty() && !out.iter().any(|existing| existing == &normalized) {
+            out.push(normalized);
+        }
+    }
+    out
+}
+
+fn default_string(value: &str, default: &str) -> String {
+    if value.is_empty() {
+        default.to_owned()
+    } else {
+        value.to_owned()
+    }
 }
 
 #[allow(dead_code)]

@@ -26,10 +26,13 @@ use crate::auth::bearer::{
     verify_bearer_mcp,
 };
 use crate::credential::{
-    ListCredentialsInput, RegisterHttpCredentialInput, RegisterSqlCredentialInput,
+    DeleteCredentialInput, ListCredentialsInput, RegisterHttpCredentialInput,
+    RegisterSqlCredentialInput, UpdateCredentialInput,
 };
 use crate::identity::me::MeOutput;
-use crate::mcp::tools::credentials::{CredentialListOutput, RegisterCredentialOutput};
+use crate::mcp::tools::credentials::{
+    CredentialListOutput, DeleteCredentialOutput, RegisterCredentialOutput, UpdateCredentialOutput,
+};
 use crate::state::AppState;
 
 #[derive(Clone)]
@@ -129,6 +132,42 @@ impl AdminMcpServer {
         input: Parameters<RegisterSqlCredentialInput>,
     ) -> Result<Json<RegisterCredentialOutput>, ErrorData> {
         crate::mcp::tools::credentials::register_sql(&self.state, &parts, input).await
+    }
+
+    #[tool(
+        name = "credential.update_http",
+        description = "Update mutable metadata and policy for an existing HTTP credential. Secrets and endpoints are immutable."
+    )]
+    pub async fn credential_update_http(
+        &self,
+        Extension(parts): Extension<Parts>,
+        input: Parameters<UpdateCredentialInput>,
+    ) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
+        crate::mcp::tools::credentials::update_http(&self.state, &parts, input).await
+    }
+
+    #[tool(
+        name = "credential.update_sql",
+        description = "Update mutable metadata and policy for an existing SQL credential. Secrets and endpoints are immutable."
+    )]
+    pub async fn credential_update_sql(
+        &self,
+        Extension(parts): Extension<Parts>,
+        input: Parameters<UpdateCredentialInput>,
+    ) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
+        crate::mcp::tools::credentials::update_sql(&self.state, &parts, input).await
+    }
+
+    #[tool(
+        name = "credential.delete",
+        description = "Soft-delete a credential and destroy its sealed secret material."
+    )]
+    pub async fn credential_delete(
+        &self,
+        Extension(parts): Extension<Parts>,
+        input: Parameters<DeleteCredentialInput>,
+    ) -> Result<Json<DeleteCredentialOutput>, ErrorData> {
+        crate::mcp::tools::credentials::delete(&self.state, &parts, input).await
     }
 }
 

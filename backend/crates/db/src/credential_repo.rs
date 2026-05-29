@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use opsgate_core::{Error, Result};
 use opsgate_domain::credential::{
     Credential, CredentialCategory, CredentialListParams, CredentialPolicy, InsertCredentialParams,
+    UpdateCredentialParams,
 };
 use serde_json::Value;
 use sqlx::{FromRow, PgPool};
@@ -107,6 +108,99 @@ impl CredentialRepo {
         .await
         .map_err(map_sqlx_error)?;
         row.map(CredentialRow::into_credential).transpose()
+    }
+
+    pub async fn update_credential_mutable_fields(
+        &self,
+        params: UpdateCredentialParams,
+    ) -> Result<Credential> {
+        let category = params.category.as_str();
+        let policy = params
+            .policy
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|error| Error::internal(format!("serialize credential policy: {error}")))?;
+        let row = sqlx::query_as::<_, CredentialRow>(
+            r#"
+            UPDATE credentials
+            SET description = COALESCE($4, description),
+                env = COALESCE($5, env),
+                tags = COALESCE($6, tags),
+                policy = COALESCE($7, policy),
+                updated_at = now()
+            WHERE owner_user_id = $1
+              AND alias = $2
+              AND category = $3
+              AND deleted_at IS NULL
+            RETURNING
+                id,
+                owner_user_id,
+                category,
+                provider,
+                alias,
+                endpoint,
+                description,
+                env,
+                tags,
+                policy,
+                allow_private_network,
+                tls_ca IS NOT NULL AS has_tls_ca,
+                created_at,
+                updated_at
+            "#,
+        )
+        .bind(params.owner_user_id)
+        .bind(params.alias)
+        .bind(category)
+        .bind(params.description)
+        .bind(params.env)
+        .bind(params.tags)
+        .bind(policy)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+        row.into_credential()
+    }
+
+    pub async fn soft_delete_credential(
+        &self,
+        owner_user_id: Uuid,
+        alias: &str,
+    ) -> Result<Credential> {
+        let row = sqlx::query_as::<_, CredentialRow>(
+            r#"
+            UPDATE credentials
+            SET secret_ciphertext = NULL,
+                secret_destroyed_at = now(),
+                deleted_at = now(),
+                updated_at = now()
+            WHERE owner_user_id = $1
+              AND alias = $2
+              AND deleted_at IS NULL
+            RETURNING
+                id,
+                owner_user_id,
+                category,
+                provider,
+                alias,
+                endpoint,
+                description,
+                env,
+                tags,
+                policy,
+                allow_private_network,
+                tls_ca IS NOT NULL AS has_tls_ca,
+                created_at,
+                updated_at
+            "#,
+        )
+        .bind(owner_user_id)
+        .bind(alias)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+        row.into_credential()
     }
 
     pub async fn list_credentials(&self, params: CredentialListParams) -> Result<Vec<Credential>> {
