@@ -41,9 +41,11 @@ impl CredentialRepo {
                 tags,
                 policy,
                 allow_private_network,
-                tls_ca
+                tls_ca,
+                created_by,
+                updated_by
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)
             RETURNING
                 id,
                 owner_user_id,
@@ -73,10 +75,12 @@ impl CredentialRepo {
         .bind(policy)
         .bind(params.allow_private_network)
         .bind(params.tls_ca)
+        .bind(params.actor_user_id)
         .fetch_one(&mut *tx)
         .await
         .map_err(map_sqlx_error)?;
         let credential = row.into_credential()?;
+        insert_history_event(&mut tx, &credential, &audit).await?;
         insert_audit_event(&mut tx, &credential, audit).await?;
         tx.commit().await.map_err(map_sqlx_error)?;
         Ok(credential)
@@ -176,6 +180,7 @@ impl CredentialRepo {
                 env = COALESCE($5, env),
                 tags = COALESCE($6, tags),
                 policy = COALESCE($7, policy),
+                updated_by = $8,
                 updated_at = now()
             WHERE owner_user_id = $1
               AND alias = $2
@@ -205,10 +210,12 @@ impl CredentialRepo {
         .bind(params.env)
         .bind(params.tags)
         .bind(policy)
+        .bind(params.actor_user_id)
         .fetch_one(&mut *tx)
         .await
         .map_err(map_sqlx_error)?;
         let credential = row.into_credential()?;
+        insert_history_event(&mut tx, &credential, &audit).await?;
         insert_audit_event(&mut tx, &credential, audit).await?;
         tx.commit().await.map_err(map_sqlx_error)?;
         Ok(credential)
@@ -218,6 +225,7 @@ impl CredentialRepo {
         &self,
         owner_user_id: Uuid,
         alias: &str,
+        actor_user_id: Uuid,
         audit: CredentialAuditParams,
     ) -> Result<Credential> {
         let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
@@ -227,6 +235,8 @@ impl CredentialRepo {
             SET secret_ciphertext = NULL,
                 secret_destroyed_at = now(),
                 deleted_at = now(),
+                deleted_by = $3,
+                updated_by = $3,
                 updated_at = now()
             WHERE owner_user_id = $1
               AND alias = $2
@@ -250,10 +260,12 @@ impl CredentialRepo {
         )
         .bind(owner_user_id)
         .bind(alias)
+        .bind(actor_user_id)
         .fetch_one(&mut *tx)
         .await
         .map_err(map_sqlx_error)?;
         let credential = row.into_credential()?;
+        insert_history_event(&mut tx, &credential, &audit).await?;
         insert_audit_event(&mut tx, &credential, audit).await?;
         tx.commit().await.map_err(map_sqlx_error)?;
         Ok(credential)
@@ -296,7 +308,15 @@ impl CredentialRepo {
               AND ($3::text IS NULL OR provider = $3)
               AND ($4::text IS NULL OR env = $4)
               AND ($5::text IS NULL OR $5 = ANY(tags))
-              AND ($6::text IS NULL OR alias ILIKE $6 OR description ILIKE $6)
+              AND (
+                  $6::text IS NULL
+                  OR alias ILIKE $6
+                  OR description ILIKE $6
+                  OR category ILIKE $6
+                  OR provider ILIKE $6
+                  OR env ILIKE $6
+                  OR array_to_string(tags, ' ') ILIKE $6
+              )
               AND ($7::text IS NULL OR alias > $7)
             ORDER BY alias ASC
             LIMIT $8
@@ -426,6 +446,80 @@ pub struct CredentialAuditParams {
     pub reason: Option<String>,
     pub changed_fields: Vec<String>,
     pub detail: Value,
+}
+
+async fn insert_history_event(
+    tx: &mut Transaction<'_, Postgres>,
+    credential: &Credential,
+    audit: &CredentialAuditParams,
+) -> Result<()> {
+    let version = next_history_version(tx, credential.owner_user_id, &credential.alias).await?;
+    sqlx::query(
+        r#"
+        INSERT INTO credential_history (
+            credential_id,
+            owner_user_id,
+            alias,
+            action,
+            actor_user_id,
+            version,
+            detail
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        "#,
+    )
+    .bind(credential.id)
+    .bind(credential.owner_user_id)
+    .bind(&credential.alias)
+    .bind(audit.action.as_str())
+    .bind(audit.actor_user_id)
+    .bind(version)
+    .bind(history_detail(credential, audit))
+    .execute(&mut **tx)
+    .await
+    .map_err(map_sqlx_error)?;
+    Ok(())
+}
+
+async fn next_history_version(
+    tx: &mut Transaction<'_, Postgres>,
+    owner_user_id: Uuid,
+    alias: &str,
+) -> Result<i64> {
+    sqlx::query_scalar(
+        r#"
+        SELECT COALESCE(MAX(version), 0) + 1
+        FROM credential_history
+        WHERE owner_user_id = $1
+          AND alias = $2
+        "#,
+    )
+    .bind(owner_user_id)
+    .bind(alias)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(map_sqlx_error)
+}
+
+fn history_detail(credential: &Credential, audit: &CredentialAuditParams) -> Value {
+    match audit.action {
+        CredentialAuditAction::Register => serde_json::json!({
+            "alias": &credential.alias,
+            "category": credential.category.as_str(),
+            "provider": &credential.provider,
+        }),
+        CredentialAuditAction::Update => serde_json::json!({
+            "alias": &credential.alias,
+            "category": credential.category.as_str(),
+            "provider": &credential.provider,
+            "update_reason": audit.reason.as_deref(),
+            "changed_fields": &audit.changed_fields,
+        }),
+        CredentialAuditAction::Delete => serde_json::json!({
+            "alias": &credential.alias,
+            "delete_reason": audit.reason.as_deref(),
+        }),
+    }
 }
 
 async fn insert_audit_event(

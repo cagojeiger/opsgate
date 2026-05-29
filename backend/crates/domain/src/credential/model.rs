@@ -149,6 +149,7 @@ impl From<RegisterSqlCredentialInput> for RegisterCredentialInput {
 #[derive(Debug, Clone)]
 pub struct InsertCredentialParams {
     pub owner_user_id: Uuid,
+    pub actor_user_id: Uuid,
     pub category: CredentialCategory,
     pub provider: String,
     pub alias: String,
@@ -165,6 +166,7 @@ pub struct InsertCredentialParams {
 #[derive(Debug, Clone)]
 pub struct UpdateCredentialParams {
     pub owner_user_id: Uuid,
+    pub actor_user_id: Uuid,
     pub alias: String,
     pub category: CredentialCategory,
     pub description: Option<String>,

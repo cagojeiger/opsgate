@@ -14,9 +14,13 @@ use super::{
 
 const DEFAULT_ENV: &str = "dev";
 const MAX_SECRET_HEADER_VALUE_LEN: usize = 8192;
+const MAX_TAGS: usize = 16;
 
 pub fn normalize_register_input(mut input: RegisterCredentialInput) -> RegisterCredentialInput {
     input.provider = input.provider.trim().to_owned();
+    if input.category == CredentialCategory::Sql && input.provider.is_empty() {
+        input.provider = "postgres".to_owned();
+    }
     input.alias = input.alias.trim().to_owned();
     input.endpoint = input.endpoint.trim().to_owned();
     input.description = input.description.trim().to_owned();
@@ -52,6 +56,11 @@ pub fn validate_register_input(input: &RegisterCredentialInput) -> Result<()> {
             }
         }
         (CredentialCategory::Sql, CredentialSecret::Sql { username, password }) => {
+            if input.provider != "postgres" {
+                return Err(Error::validation(
+                    "sql category currently supports provider=postgres only",
+                ));
+            }
             validate_postgres_endpoint(&input.endpoint)?;
             validate_sql_secret(username.expose_secret(), password.expose_secret())?;
         }
@@ -65,12 +74,69 @@ pub fn validate_register_input(input: &RegisterCredentialInput) -> Result<()> {
 }
 
 fn validate_common(input: &RegisterCredentialInput) -> Result<()> {
-    require_non_empty("provider", &input.provider)?;
-    require_non_empty("alias", &input.alias)?;
     require_non_empty("endpoint", &input.endpoint)?;
-    require_no_line_breaks("alias", &input.alias)?;
-    require_no_line_breaks("provider", &input.provider)?;
-    require_no_line_breaks("env", &input.env)?;
+    validate_provider(&input.provider)?;
+    validate_alias(&input.alias)?;
+    validate_env(&input.env)?;
+    validate_tags(&input.tags)?;
+    Ok(())
+}
+
+pub fn validate_provider(provider: &str) -> Result<()> {
+    validate_pattern(
+        "provider",
+        provider,
+        1,
+        63,
+        is_provider_first,
+        is_provider_rest,
+        "^[a-z][a-z0-9_-]{0,62}$",
+    )
+}
+
+pub fn validate_alias(alias: &str) -> Result<()> {
+    validate_pattern(
+        "alias",
+        alias,
+        2,
+        127,
+        is_lower_ascii,
+        is_alias_rest,
+        "^[a-z][a-z0-9_.-]{1,126}$",
+    )
+}
+
+pub fn validate_env(env: &str) -> Result<()> {
+    if matches!(env, "prod" | "stage" | "dev" | "local") {
+        Ok(())
+    } else {
+        Err(Error::validation(
+            "env must be one of prod, stage, dev, local",
+        ))
+    }
+}
+
+pub fn validate_tag(tag: &str) -> Result<()> {
+    validate_pattern(
+        "tag",
+        tag,
+        1,
+        63,
+        is_lower_ascii,
+        is_tag_rest,
+        "^[a-z][a-z0-9_.:-]{0,62}$",
+    )
+}
+
+pub fn validate_tags(tags: &[String]) -> Result<()> {
+    if tags.len() > MAX_TAGS {
+        return Err(Error::validation(format!(
+            "tags count must be <= {MAX_TAGS}"
+        )));
+    }
+    for tag in tags {
+        validate_tag(tag)?;
+    }
     Ok(())
 }
 
@@ -175,15 +241,7 @@ fn require_non_empty(field: &str, value: &str) -> Result<()> {
     }
 }
 
-fn require_no_line_breaks(field: &str, value: &str) -> Result<()> {
-    if value.contains(['\r', '\n']) {
-        Err(Error::validation(format!("{field} must not contain CR/LF")))
-    } else {
-        Ok(())
-    }
-}
-
-fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+pub fn normalize_tags(tags: Vec<String>) -> Vec<String> {
     let mut out = Vec::new();
     for tag in tags {
         let normalized = tag.trim().to_ascii_lowercase();
@@ -191,6 +249,7 @@ fn normalize_tags(tags: Vec<String>) -> Vec<String> {
             out.push(normalized);
         }
     }
+    out.sort();
     out
 }
 
@@ -200,6 +259,47 @@ fn default_string(value: &str, default: &str) -> String {
     } else {
         value.to_owned()
     }
+}
+
+fn validate_pattern(
+    field: &str,
+    value: &str,
+    min_len: usize,
+    max_len: usize,
+    first: fn(u8) -> bool,
+    rest: fn(u8) -> bool,
+    pattern: &str,
+) -> Result<()> {
+    let bytes = value.as_bytes();
+    let valid = bytes.len() >= min_len
+        && bytes.len() <= max_len
+        && bytes.first().is_some_and(|byte| first(*byte))
+        && bytes.iter().skip(1).all(|byte| rest(*byte));
+    if valid {
+        Ok(())
+    } else {
+        Err(Error::validation(format!("{field} must match {pattern}")))
+    }
+}
+
+fn is_provider_first(byte: u8) -> bool {
+    is_lower_ascii(byte)
+}
+
+fn is_provider_rest(byte: u8) -> bool {
+    is_lower_ascii(byte) || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
+}
+
+fn is_alias_rest(byte: u8) -> bool {
+    is_lower_ascii(byte) || byte.is_ascii_digit() || matches!(byte, b'_' | b'.' | b'-')
+}
+
+fn is_tag_rest(byte: u8) -> bool {
+    is_alias_rest(byte) || byte == b':'
+}
+
+fn is_lower_ascii(byte: u8) -> bool {
+    byte.is_ascii_lowercase()
 }
 
 #[allow(dead_code)]
@@ -375,5 +475,63 @@ mod tests {
     fn rejects_postgres_endpoint_with_credentials() {
         let err = validate_postgres_endpoint("postgres://user:pass@example.com/db").err();
         assert!(err.is_some());
+    }
+
+    #[test]
+    fn rejects_invalid_provider_alias_env_and_tags() {
+        for provider in [
+            "K8s",
+            "1k8s",
+            "bad space",
+            "a234567890123456789012345678901234567890123456789012345678901234",
+        ] {
+            assert!(
+                validate_provider(provider).is_err(),
+                "{provider} should be rejected"
+            );
+        }
+        for alias in ["a", "1prod", "Prod", "bad space", "prod\napi"] {
+            assert!(validate_alias(alias).is_err(), "{alias} should be rejected");
+        }
+        assert!(validate_env("qa").is_err());
+        assert!(validate_tag("Bad").is_err());
+        assert!(validate_tag("bad space").is_err());
+        let too_many_tags = vec!["prod".to_owned(); 17];
+        assert!(validate_tags(&too_many_tags).is_err());
+    }
+
+    #[test]
+    fn normalizes_tags_lowercase_deduped_and_sorted() {
+        let tags = normalize_tags(vec![
+            " Prod ".to_owned(),
+            "db".to_owned(),
+            "prod".to_owned(),
+            "alpha".to_owned(),
+        ]);
+
+        assert_eq!(tags, ["alpha", "db", "prod"]);
+        assert!(validate_tags(&tags).is_ok());
+    }
+
+    #[test]
+    fn sql_register_requires_postgres_provider() {
+        let input = normalize_register_input(RegisterCredentialInput {
+            category: CredentialCategory::Sql,
+            provider: "mysql".to_owned(),
+            alias: "db-prod".to_owned(),
+            endpoint: "postgres://db.example.com/app".to_owned(),
+            secret: CredentialSecret::Sql {
+                username: secret("user"),
+                password: secret("pass"),
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            tls_server_ca: None,
+        });
+
+        assert!(validate_register_input(&input).is_err());
     }
 }

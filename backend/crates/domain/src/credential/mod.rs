@@ -12,4 +12,7 @@ pub use model::{
     UpdateCredentialParams,
 };
 pub use policy::{CredentialPolicy, normalize_policy_for_category, validate_policy_for_category};
-pub use validation::{normalize_register_input, validate_register_input};
+pub use validation::{
+    normalize_register_input, normalize_tags, validate_alias, validate_env, validate_provider,
+    validate_register_input, validate_tag, validate_tags,
+};

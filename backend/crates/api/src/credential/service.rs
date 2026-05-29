@@ -3,7 +3,7 @@ use std::net::IpAddr;
 
 use opsgate_core::crypto::Sealer;
 use opsgate_core::net::ssrf::is_blocked_target_ip;
-use opsgate_core::validation::{clamp_i64, validate_reason};
+use opsgate_core::validation::validate_reason;
 use opsgate_core::{Error, Result};
 use opsgate_db::{
     CredentialAuditAction, CredentialAuditParams, CredentialRepo, CredentialSummaryRows,
@@ -12,14 +12,21 @@ use opsgate_domain::Caller;
 use opsgate_domain::credential::{
     Credential, CredentialCategory, CredentialListParams, CredentialPolicy, CredentialSecret,
     InsertCredentialParams, RegisterCredentialInput, SecretHeader, UpdateCredentialParams,
-    normalize_policy_for_category, normalize_register_input, validate_policy_for_category,
-    validate_register_input,
+    normalize_policy_for_category, normalize_register_input,
+    normalize_tags as normalize_credential_tags, validate_alias as validate_credential_alias,
+    validate_env as validate_credential_env, validate_policy_for_category,
+    validate_provider as validate_credential_provider, validate_register_input,
+    validate_tag as validate_credential_tag,
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use uuid::Uuid;
 
 const SECRET_DOMAIN: &str = "credentials";
+const DEFAULT_LIST_LIMIT: i64 = 50;
+const MAX_LIST_LIMIT: i64 = 100;
+const MAX_LIST_Q: usize = 128;
+const MAX_LIST_FIELDS: usize = 8;
 
 #[derive(Clone)]
 pub struct CredentialService {
@@ -68,6 +75,7 @@ impl CredentialService {
             .insert_credential(
                 InsertCredentialParams {
                     owner_user_id,
+                    actor_user_id: owner_user_id,
                     category: input.category,
                     provider: input.provider,
                     alias: input.alias,
@@ -103,6 +111,7 @@ impl CredentialService {
             .insert_credential(
                 InsertCredentialParams {
                     owner_user_id,
+                    actor_user_id: owner_user_id,
                     category: input.category,
                     provider: input.provider,
                     alias: input.alias,
@@ -125,7 +134,9 @@ impl CredentialService {
         owner_user_id: Uuid,
         input: ListCredentialsInput,
     ) -> Result<CredentialListPage> {
-        let limit = normalize_limit(input.limit);
+        let input = normalize_list_input(input);
+        validate_list_input(&input)?;
+        let limit = input.limit.unwrap_or(DEFAULT_LIST_LIMIT);
         let rows = self
             .repo
             .list_credentials(CredentialListParams {
@@ -190,11 +201,14 @@ impl CredentialService {
         let owner_user_id = require_admin(caller)?;
         let alias = input.alias.trim().to_owned();
         let reason = validate_reason(&input.reason)?;
-        if alias.is_empty() {
-            return Err(Error::validation("alias is required"));
-        }
+        validate_credential_alias(&alias)?;
         self.repo
-            .soft_delete_credential(owner_user_id, &alias, delete_audit(owner_user_id, reason))
+            .soft_delete_credential(
+                owner_user_id,
+                &alias,
+                owner_user_id,
+                delete_audit(owner_user_id, reason),
+            )
             .await
     }
 
@@ -207,13 +221,17 @@ impl CredentialService {
         let owner_user_id = require_admin(caller)?;
         let alias = input.alias.trim().to_owned();
         let reason = validate_reason(&input.reason)?;
-        if alias.is_empty() {
-            return Err(Error::validation("alias is required"));
-        }
+        validate_credential_alias(&alias)?;
 
         let description = trim_optional(input.description);
-        let env = trim_optional(input.env).map(|env| default_string(&env, "dev"));
-        let tags = input.tags.map(normalize_tags);
+        let env = trim_optional(input.env);
+        if let Some(env) = &env {
+            validate_credential_env(env)?;
+        }
+        let tags = input.tags.map(normalize_credential_tags);
+        if let Some(tags) = &tags {
+            opsgate_domain::credential::validate_tags(tags)?;
+        }
         let policy = input
             .policy
             .map(|policy| normalize_policy_for_category(policy, category));
@@ -234,6 +252,7 @@ impl CredentialService {
             .update_credential_mutable_fields(
                 UpdateCredentialParams {
                     owner_user_id,
+                    actor_user_id: owner_user_id,
                     alias,
                     category,
                     description,
@@ -487,8 +506,77 @@ fn secret_header_json(header: &SecretHeader) -> serde_json::Value {
     })
 }
 
-fn normalize_limit(limit: Option<i64>) -> i64 {
-    clamp_i64(limit, 50, 1, 100)
+fn normalize_list_input(mut input: ListCredentialsInput) -> ListCredentialsInput {
+    input.provider = trim_filter_optional(input.provider);
+    input.env = trim_filter_optional(input.env);
+    input.tag = trim_filter_optional(input.tag).map(|tag| tag.to_ascii_lowercase());
+    input.q = trim_filter_optional(input.q);
+    input.cursor = trim_filter_optional(input.cursor);
+    input.fields = input.fields.map(normalize_list_fields);
+    input
+}
+
+fn validate_list_input(input: &ListCredentialsInput) -> Result<()> {
+    if let Some(provider) = &input.provider {
+        validate_credential_provider(provider)?;
+    }
+    if let Some(env) = &input.env {
+        validate_credential_env(env)?;
+    }
+    if let Some(tag) = &input.tag {
+        validate_credential_tag(tag)?;
+    }
+    if let Some(q) = &input.q
+        && (q.len() > MAX_LIST_Q || q.contains(['\r', '\n']))
+    {
+        return Err(Error::validation(format!(
+            "q must be at most {MAX_LIST_Q} characters without CR/LF"
+        )));
+    }
+    if let Some(fields) = &input.fields {
+        if fields.len() > MAX_LIST_FIELDS {
+            return Err(Error::validation(format!(
+                "fields count must be <= {MAX_LIST_FIELDS}"
+            )));
+        }
+        for field in fields {
+            if !allowed_list_field(field) {
+                return Err(Error::validation(format!("unsupported field {field:?}")));
+            }
+        }
+    }
+    if let Some(limit) = input.limit
+        && !(1..=MAX_LIST_LIMIT).contains(&limit)
+    {
+        return Err(Error::validation(format!(
+            "limit must be in range [1,{MAX_LIST_LIMIT}]"
+        )));
+    }
+    if let Some(cursor) = &input.cursor {
+        validate_credential_alias(cursor)?;
+    }
+    Ok(())
+}
+
+fn normalize_list_fields(fields: Vec<String>) -> Vec<String> {
+    if fields.is_empty() {
+        return fields;
+    }
+    let mut out = vec!["alias".to_owned()];
+    for field in fields {
+        let field = field.trim().to_owned();
+        if !field.is_empty() && !out.iter().any(|existing| existing == &field) {
+            out.push(field);
+        }
+    }
+    out
+}
+
+fn allowed_list_field(field: &str) -> bool {
+    matches!(
+        field,
+        "alias" | "category" | "provider" | "env" | "tags" | "description" | "policy"
+    )
 }
 
 fn changed_fields(
@@ -565,23 +653,8 @@ fn trim_optional(value: Option<String>) -> Option<String> {
     value.map(|value| value.trim().to_owned())
 }
 
-fn normalize_tags(tags: Vec<String>) -> Vec<String> {
-    let mut out = Vec::new();
-    for tag in tags {
-        let normalized = tag.trim().to_ascii_lowercase();
-        if !normalized.is_empty() && !out.iter().any(|existing| existing == &normalized) {
-            out.push(normalized);
-        }
-    }
-    out
-}
-
-fn default_string(value: &str, default: &str) -> String {
-    if value.is_empty() {
-        default.to_owned()
-    } else {
-        value.to_owned()
-    }
+fn trim_filter_optional(value: Option<String>) -> Option<String> {
+    trim_optional(value).filter(|value| !value.is_empty())
 }
 
 #[cfg(test)]
@@ -739,5 +812,58 @@ mod tests {
             require_admin(&caller(Role::Viewer)),
             Err(Error::Forbidden(_))
         ));
+    }
+
+    #[test]
+    fn list_input_validation_matches_go_boundaries() {
+        let valid = normalize_list_input(ListCredentialsInput {
+            category: Some(CredentialCategory::Http),
+            provider: Some(" k8s ".to_owned()),
+            env: Some("prod".to_owned()),
+            tag: Some(" Cluster ".to_owned()),
+            q: Some(" osaka ".to_owned()),
+            fields: Some(vec![" provider ".to_owned(), "env".to_owned()]),
+            limit: Some(50),
+            cursor: Some("prod-api".to_owned()),
+        });
+        assert!(validate_list_input(&valid).is_ok());
+        assert_eq!(valid.tag.as_deref(), Some("cluster"));
+
+        for input in [
+            ListCredentialsInput {
+                provider: Some("Bad".to_owned()),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                env: Some("qa".to_owned()),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                tag: Some("bad space".to_owned()),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                q: Some("bad\nquery".to_owned()),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                fields: Some((0..9).map(|idx| format!("field{idx}")).collect()),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                fields: Some(vec!["allow_private_network".to_owned()]),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                limit: Some(101),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                cursor: Some("bad cursor".to_owned()),
+                ..valid
+            },
+        ] {
+            assert!(validate_list_input(&normalize_list_input(input)).is_err());
+        }
     }
 }

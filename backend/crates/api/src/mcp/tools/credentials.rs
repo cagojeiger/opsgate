@@ -43,10 +43,6 @@ pub struct CredentialOutput {
     pub tags: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policy: Option<CredentialPolicy>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub allow_private_network: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub has_tls_ca: Option<bool>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -189,9 +185,6 @@ impl CredentialOutput {
             env: include_field(fields, "env").then_some(credential.env),
             tags: include_field(fields, "tags").then_some(credential.tags),
             policy: include_field(fields, "policy").then_some(credential.policy),
-            allow_private_network: include_field(fields, "allow_private_network")
-                .then_some(credential.allow_private_network),
-            has_tls_ca: include_field(fields, "has_tls_ca").then_some(credential.has_tls_ca),
         }
     }
 }
@@ -228,7 +221,7 @@ impl RegisterCredentialOutput {
 fn normalize_fields(fields: Vec<String>) -> BTreeSet<String> {
     fields
         .into_iter()
-        .map(|field| field.trim().to_ascii_lowercase())
+        .map(|field| field.trim().to_owned())
         .filter(|field| !field.is_empty())
         .collect()
 }
@@ -306,7 +299,6 @@ mod tests {
         assert_eq!(value.get("provider"), Some(&serde_json::json!("k8s")));
         assert!(value.get("policy").is_none());
         assert!(value.get("tags").is_none());
-        assert!(value.get("allow_private_network").is_none());
         Ok(())
     }
 }
