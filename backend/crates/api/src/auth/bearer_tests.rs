@@ -5,20 +5,22 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, encode};
 use opsgate_domain::{Caller, Channel, IdentityError, ResolveAttrs, User};
 use serde::Serialize;
 use serde_json::{Value, json};
 use sqlx::postgres::PgPoolOptions;
+use tower::ServiceExt as _;
 use uuid::Uuid;
 
 use crate::auth::jwks::JwksCache;
 use crate::identity::CallerResolver;
 use crate::state::AppState;
 
-use crate::auth::bearer::{RequestMeta, verify_bearer};
-use crate::auth::bearer_error::AuthError;
+use crate::auth::bearer::{AuthError, RequestMeta, verify_bearer};
 
 const KEY: &str = r#"-----BEGIN PRIVATE KEY-----
 MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCx8TUdJX0WeXTQ
@@ -288,6 +290,66 @@ async fn verify_maps_registered_state_errors() -> Result<(), Box<dyn std::error:
     let inactive = state(ResolverMode::Registered(false))?;
     let inactive_err = verify_bearer(&inactive, &valid, RequestMeta).await.err();
     assert!(matches!(inactive_err, Some(AuthError::Inactive)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn api_routes_require_bearer_before_handler() -> Result<(), Box<dyn std::error::Error>> {
+    let app = crate::routes::app(state(ResolverMode::Registered(true))?);
+    let response = app
+        .oneshot(Request::builder().uri("/api/v1/me").body(Body::empty())?)
+        .await?;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+#[tokio::test]
+async fn api_routes_accept_valid_bearer() -> Result<(), Box<dyn std::error::Error>> {
+    let app = crate::routes::app(state(ResolverMode::Registered(true))?);
+    let valid = token(
+        "sub-1",
+        "https://auth.example.test",
+        json!("https://api.example.test"),
+        future_exp(),
+        "kid-1",
+    )?;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/me")
+                .header("authorization", format!("Bearer {valid}"))
+                .body(Body::empty())?,
+        )
+        .await?;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    Ok(())
+}
+
+#[tokio::test]
+async fn unknown_api_routes_still_require_bearer() -> Result<(), Box<dyn std::error::Error>> {
+    let app = crate::routes::app(state(ResolverMode::Registered(true))?);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/missing")
+                .body(Body::empty())?,
+        )
+        .await?;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+#[tokio::test]
+async fn public_routes_do_not_require_bearer() -> Result<(), Box<dyn std::error::Error>> {
+    let app = crate::routes::app(state(ResolverMode::Registered(true))?);
+    let response = app
+        .oneshot(Request::builder().uri("/health").body(Body::empty())?)
+        .await?;
+
+    assert_eq!(response.status(), StatusCode::OK);
     Ok(())
 }
 

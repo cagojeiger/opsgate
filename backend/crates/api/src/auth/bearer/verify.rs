@@ -1,6 +1,6 @@
 use opsgate_domain::{Caller, IdentityError, ResolveAttrs};
 
-use crate::auth::bearer_error::AuthError;
+use crate::auth::bearer::AuthError;
 use crate::state::AppState;
 
 pub struct RequestMeta;

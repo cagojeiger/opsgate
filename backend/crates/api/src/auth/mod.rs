@@ -1,6 +1,4 @@
 pub mod bearer;
-pub mod bearer_error;
-pub mod bearer_extractor;
 #[cfg(test)]
 mod bearer_tests;
 pub mod jwks;

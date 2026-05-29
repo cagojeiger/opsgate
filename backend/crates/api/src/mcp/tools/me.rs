@@ -3,7 +3,7 @@ use opsgate_domain::Caller;
 use rmcp::ErrorData;
 use rmcp::Json;
 
-use crate::me::{MeOutput, build_me};
+use crate::identity::me::{MeOutput, build_me};
 
 pub fn build_mcp_me(parts: &Parts) -> Result<Json<MeOutput>, ErrorData> {
     let caller = parts

@@ -20,12 +20,11 @@ use rmcp::transport::streamable_http_server::session::never::NeverSessionManager
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::{ErrorData, Json, ServerHandler, tool, tool_handler, tool_router};
 
-use crate::auth::bearer::{RequestMeta, verify_bearer_mcp};
-use crate::auth::bearer_error::{
-    AuthError, auth_error_body, shared_challenge_header, status_for_error,
+use crate::auth::bearer::{
+    AuthError, RequestMeta, auth_error_body, extract_bearer, shared_challenge_header,
+    status_for_error, verify_bearer_mcp,
 };
-use crate::auth::bearer_extractor::extract_bearer;
-use crate::me::MeOutput;
+use crate::identity::me::MeOutput;
 use crate::state::AppState;
 
 #[derive(Clone)]

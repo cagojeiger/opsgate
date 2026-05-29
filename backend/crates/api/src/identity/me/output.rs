@@ -2,8 +2,6 @@ use opsgate_domain::Caller;
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::auth::bearer_extractor::AuthenticatedCaller;
-
 #[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct MeOutput {
     pub id: String,
@@ -19,10 +17,6 @@ pub fn build_me(caller: &Caller) -> MeOutput {
         email: caller.user.email.clone(),
         name: caller.user.display_name.clone(),
     }
-}
-
-pub async fn me(AuthenticatedCaller(caller): AuthenticatedCaller) -> axum::Json<MeOutput> {
-    axum::Json(build_me(&caller))
 }
 
 #[cfg(test)]

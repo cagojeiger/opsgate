@@ -5,6 +5,7 @@ use std::time::Duration;
 use axum::extract::{MatchedPath, State};
 use axum::http::Request;
 use axum::http::header::HeaderName;
+use axum::middleware::from_fn_with_state;
 use axum::routing::{any, get};
 use axum::{Json, Router};
 use serde::Serialize;
@@ -13,25 +14,34 @@ use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetReques
 use tower_http::trace::TraceLayer;
 use tracing::{Span, info, info_span};
 
+use crate::auth::bearer::require_bearer;
 use crate::auth::metadata::{protected_resource_metadata, protected_resource_metadata_url};
 use crate::auth::oauth::{callback, login};
 use crate::error::ApiError;
+use crate::identity::me::me;
 use crate::mcp::server::mcp_handler;
-use crate::me::me;
 use crate::state::AppState;
 
 pub fn app(state: AppState) -> Router {
     let x_request_id = HeaderName::from_static("x-request-id");
     let metadata_path = protected_resource_metadata_url(&state.config.resource_url).route_path;
 
-    Router::new()
+    let public_routes = Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
         .route("/login", get(login))
         .route("/callback", get(callback))
-        .route("/api/v1/me", get(me))
+        .route(&metadata_path, get(protected_resource_metadata));
+
+    let api_routes = Router::new()
+        .route("/v1/me", get(me))
+        .fallback(api_not_found)
+        .layer(from_fn_with_state(state.clone(), require_bearer));
+
+    Router::new()
+        .merge(public_routes)
+        .nest("/api", api_routes)
         .route("/mcp", any(mcp_handler))
-        .route(&metadata_path, get(protected_resource_metadata))
         .with_state(state)
         .layer(
             ServiceBuilder::new()
@@ -64,6 +74,10 @@ async fn ready(State(state): State<AppState>) -> Result<Json<HealthResponse>, Ap
         })?;
 
     Ok(Json(HealthResponse { status: "ready" }))
+}
+
+async fn api_not_found() -> axum::http::StatusCode {
+    axum::http::StatusCode::NOT_FOUND
 }
 
 fn log_request_end<B>(response: &axum::http::Response<B>, latency: Duration, _span: &Span) {
