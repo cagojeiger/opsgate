@@ -52,7 +52,18 @@ impl RuntimeMcpServer {
         &self,
         Extension(parts): Extension<Parts>,
     ) -> Result<Json<McpMeOutput>, ErrorData> {
-        crate::mcp::tools::me::call(&self.state, &parts, McpToolset::Runtime).await
+        let started = std::time::Instant::now();
+        let result = crate::mcp::tools::me::call(&self.state, &parts, McpToolset::Runtime).await;
+        crate::mcp::tools::audit::record_tool_result(
+            &self.state,
+            &parts,
+            "me",
+            "active",
+            started,
+            &result,
+        )
+        .await;
+        result
     }
 
     #[tool(
@@ -64,7 +75,18 @@ impl RuntimeMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<ListCredentialsInput>,
     ) -> Result<Json<CredentialListOutput>, ErrorData> {
-        crate::mcp::tools::credentials::list(&self.state, &parts, input).await
+        let started = std::time::Instant::now();
+        let result = crate::mcp::tools::credentials::list(&self.state, &parts, input).await;
+        crate::mcp::tools::audit::record_tool_result(
+            &self.state,
+            &parts,
+            "credential.list",
+            "active",
+            started,
+            &result,
+        )
+        .await;
+        result
     }
 
     #[tool(
@@ -76,7 +98,18 @@ impl RuntimeMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<ApiCallInput>,
     ) -> Result<Json<ApiCallOutput>, ErrorData> {
-        crate::mcp::tools::api_call::call(&self.state, &parts, input).await
+        let started = std::time::Instant::now();
+        let result = crate::mcp::tools::api_call::call(&self.state, &parts, input).await;
+        crate::mcp::tools::audit::record_tool_result(
+            &self.state,
+            &parts,
+            "api.call",
+            "active",
+            started,
+            &result,
+        )
+        .await;
+        result
     }
 }
 
@@ -108,7 +141,18 @@ impl AdminMcpServer {
         &self,
         Extension(parts): Extension<Parts>,
     ) -> Result<Json<McpMeOutput>, ErrorData> {
-        crate::mcp::tools::me::call(&self.state, &parts, McpToolset::Admin).await
+        let started = std::time::Instant::now();
+        let result = crate::mcp::tools::me::call(&self.state, &parts, McpToolset::Admin).await;
+        crate::mcp::tools::audit::record_tool_result(
+            &self.state,
+            &parts,
+            "me",
+            "admin",
+            started,
+            &result,
+        )
+        .await;
+        result
     }
 
     #[tool(
@@ -120,7 +164,18 @@ impl AdminMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<ListCredentialsInput>,
     ) -> Result<Json<CredentialListOutput>, ErrorData> {
-        crate::mcp::tools::credentials::list(&self.state, &parts, input).await
+        let started = std::time::Instant::now();
+        let result = crate::mcp::tools::credentials::list(&self.state, &parts, input).await;
+        crate::mcp::tools::audit::record_tool_result(
+            &self.state,
+            &parts,
+            "credential.list",
+            "admin",
+            started,
+            &result,
+        )
+        .await;
+        result
     }
 
     #[tool(
@@ -132,7 +187,19 @@ impl AdminMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<RegisterHttpCredentialInput>,
     ) -> Result<Json<RegisterCredentialOutput>, ErrorData> {
-        crate::mcp::tools::credentials::register_http(&self.state, &parts, input).await
+        let started = std::time::Instant::now();
+        let result =
+            crate::mcp::tools::credentials::register_http(&self.state, &parts, input).await;
+        crate::mcp::tools::audit::record_tool_result(
+            &self.state,
+            &parts,
+            "credential.register_http",
+            "admin",
+            started,
+            &result,
+        )
+        .await;
+        result
     }
 
     #[tool(
@@ -144,7 +211,18 @@ impl AdminMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<RegisterSqlCredentialInput>,
     ) -> Result<Json<RegisterCredentialOutput>, ErrorData> {
-        crate::mcp::tools::credentials::register_sql(&self.state, &parts, input).await
+        let started = std::time::Instant::now();
+        let result = crate::mcp::tools::credentials::register_sql(&self.state, &parts, input).await;
+        crate::mcp::tools::audit::record_tool_result(
+            &self.state,
+            &parts,
+            "credential.register_sql",
+            "admin",
+            started,
+            &result,
+        )
+        .await;
+        result
     }
 
     #[tool(
@@ -156,7 +234,18 @@ impl AdminMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<UpdateCredentialInput>,
     ) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
-        crate::mcp::tools::credentials::update_http(&self.state, &parts, input).await
+        let started = std::time::Instant::now();
+        let result = crate::mcp::tools::credentials::update_http(&self.state, &parts, input).await;
+        crate::mcp::tools::audit::record_tool_result(
+            &self.state,
+            &parts,
+            "credential.update_http",
+            "admin",
+            started,
+            &result,
+        )
+        .await;
+        result
     }
 
     #[tool(
@@ -168,7 +257,18 @@ impl AdminMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<UpdateCredentialInput>,
     ) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
-        crate::mcp::tools::credentials::update_sql(&self.state, &parts, input).await
+        let started = std::time::Instant::now();
+        let result = crate::mcp::tools::credentials::update_sql(&self.state, &parts, input).await;
+        crate::mcp::tools::audit::record_tool_result(
+            &self.state,
+            &parts,
+            "credential.update_sql",
+            "admin",
+            started,
+            &result,
+        )
+        .await;
+        result
     }
 
     #[tool(
@@ -180,7 +280,18 @@ impl AdminMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<DeleteCredentialInput>,
     ) -> Result<Json<DeleteCredentialOutput>, ErrorData> {
-        crate::mcp::tools::credentials::delete(&self.state, &parts, input).await
+        let started = std::time::Instant::now();
+        let result = crate::mcp::tools::credentials::delete(&self.state, &parts, input).await;
+        crate::mcp::tools::audit::record_tool_result(
+            &self.state,
+            &parts,
+            "credential.delete",
+            "admin",
+            started,
+            &result,
+        )
+        .await;
+        result
     }
 }
 

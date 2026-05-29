@@ -21,6 +21,7 @@ pub struct AppState {
     pub resolver: Arc<dyn CallerResolver>,
     pub credentials: Arc<CredentialService>,
     pub api_calls: Arc<ApiCallService>,
+    pub audit: Arc<opsgate_db::AuditRepo>,
     pub http: reqwest::Client,
 }
 
@@ -32,6 +33,7 @@ pub struct AppStateDeps {
     pub resolver: Arc<dyn CallerResolver>,
     pub credentials: Arc<CredentialService>,
     pub api_calls: Arc<ApiCallService>,
+    pub audit: Arc<opsgate_db::AuditRepo>,
     pub http: reqwest::Client,
 }
 
@@ -45,6 +47,7 @@ impl AppState {
             resolver: deps.resolver,
             credentials: deps.credentials,
             api_calls: deps.api_calls,
+            audit: deps.audit,
             http: deps.http,
         }
     }

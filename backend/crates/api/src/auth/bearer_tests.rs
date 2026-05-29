@@ -176,6 +176,7 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
         sealer,
         reqwest::Client::new(),
     ));
+    let audit = Arc::new(opsgate_db::AuditRepo::new(pool.clone()));
     Ok(AppState::new(AppStateDeps {
         db: pool,
         config,
@@ -184,6 +185,7 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
         resolver: Arc::new(TestResolver { mode }),
         credentials,
         api_calls,
+        audit,
         http: reqwest::Client::new(),
     }))
 }
