@@ -80,7 +80,7 @@ pub async fn list(
     Parameters(input): Parameters<ListCredentialsInput>,
 ) -> Result<Json<CredentialListOutput>, ErrorData> {
     let caller = caller(parts)?;
-    let fields = input.fields.clone().map(normalize_fields);
+    let fields = input.fields.clone().and_then(normalize_fields);
     let page = state
         .credentials
         .list(caller.user.id, input)
@@ -218,12 +218,13 @@ impl RegisterCredentialOutput {
     }
 }
 
-fn normalize_fields(fields: Vec<String>) -> BTreeSet<String> {
-    fields
+fn normalize_fields(fields: Vec<String>) -> Option<BTreeSet<String>> {
+    let fields = fields
         .into_iter()
         .map(|field| field.trim().to_owned())
         .filter(|field| !field.is_empty())
-        .collect()
+        .collect::<BTreeSet<_>>();
+    (!fields.is_empty()).then_some(fields)
 }
 
 fn include_field(fields: Option<&BTreeSet<String>>, field: &str) -> bool {
@@ -300,5 +301,11 @@ mod tests {
         assert!(value.get("policy").is_none());
         assert!(value.get("tags").is_none());
         Ok(())
+    }
+
+    #[test]
+    fn empty_projection_fields_mean_default_metadata() {
+        assert!(normalize_fields(Vec::new()).is_none());
+        assert!(normalize_fields(vec![" ".to_owned()]).is_none());
     }
 }

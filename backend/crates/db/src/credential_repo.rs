@@ -690,6 +690,9 @@ fn empty_to_none(value: Option<String>) -> Option<String> {
 fn map_sqlx_error(error: sqlx::Error) -> Error {
     match error {
         sqlx::Error::RowNotFound => Error::not_found("credential not found"),
+        sqlx::Error::Database(error) if error.code().as_deref() == Some("23505") => {
+            Error::validation("credential alias is already registered")
+        }
         other => Error::internal(format!("credential store error: {other}")),
     }
 }

@@ -5,7 +5,10 @@ mod model;
 mod policy;
 mod validation;
 
-pub use header::{contains_fold, header_blocked, valid_header_name};
+pub use header::{
+    contains_fold, header_blocked, valid_header_name,
+    validate_allowed_headers_do_not_overlap_secret,
+};
 pub use model::{
     Credential, CredentialCategory, CredentialListParams, CredentialSecret, InsertCredentialParams,
     RegisterCredentialInput, RegisterHttpCredentialInput, RegisterSqlCredentialInput, SecretHeader,

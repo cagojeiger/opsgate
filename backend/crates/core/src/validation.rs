@@ -38,7 +38,7 @@ pub fn validate_count(field: &str, count: usize, max: usize) -> Result<()> {
 }
 
 pub fn validate_reason(reason: &str) -> Result<String> {
-    validate_bounded_text("reason", reason, 8, 512)
+    validate_bounded_text("reason", reason, 1, 512)
 }
 
 pub fn validate_purpose(purpose: &str) -> Result<String> {
@@ -139,6 +139,7 @@ mod tests {
     #[test]
     fn bounded_text_trims_and_rejects_crlf_without_echoing_value() -> Result<()> {
         assert_eq!(validate_reason("  rotate safely  ")?, "rotate safely");
+        assert_eq!(validate_reason("x")?, "x");
         let msg = validate_reason("secret-token\nleak")
             .err()
             .map(|error| error.to_string())

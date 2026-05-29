@@ -14,9 +14,9 @@ use opsgate_domain::credential::{
     InsertCredentialParams, RegisterCredentialInput, SecretHeader, UpdateCredentialParams,
     normalize_policy_for_category, normalize_register_input,
     normalize_tags as normalize_credential_tags, validate_alias as validate_credential_alias,
-    validate_env as validate_credential_env, validate_policy_for_category,
-    validate_provider as validate_credential_provider, validate_register_input,
-    validate_tag as validate_credential_tag,
+    validate_allowed_headers_do_not_overlap_secret, validate_env as validate_credential_env,
+    validate_policy_for_category, validate_provider as validate_credential_provider,
+    validate_register_input, validate_tag as validate_credential_tag,
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
@@ -223,6 +223,15 @@ impl CredentialService {
         let reason = validate_reason(&input.reason)?;
         validate_credential_alias(&alias)?;
 
+        let material = self
+            .repo
+            .find_credential_secret_by_alias(owner_user_id, &alias)
+            .await?
+            .ok_or_else(|| Error::not_found("credential not found"))?
+            .into_credential()?;
+        let before = material.credential;
+        ensure_update_category(&before, category)?;
+
         let description = trim_optional(input.description);
         let env = trim_optional(input.env);
         if let Some(env) = &env {
@@ -239,14 +248,41 @@ impl CredentialService {
             validate_policy_for_category(policy, category)?;
         }
 
-        let changed_fields = changed_fields(&description, &env, &tags, &policy);
+        if category == CredentialCategory::Http
+            && let Some(policy) = &policy
+        {
+            validate_http_policy_secret_overlap(
+                &self.sealer,
+                &alias,
+                material.secret_ciphertext.as_deref(),
+                policy,
+            )?;
+        }
+
+        let next_description = description
+            .clone()
+            .unwrap_or_else(|| before.description.clone());
+        let next_env = env.clone().unwrap_or_else(|| before.env.clone());
+        let next_tags = tags.clone().unwrap_or_else(|| before.tags.clone());
+        let next_policy = policy.clone().unwrap_or_else(|| before.policy.clone());
+        let changed_fields = changed_fields(
+            &before,
+            &next_description,
+            &next_env,
+            &next_tags,
+            &next_policy,
+        );
         if changed_fields.is_empty() {
-            return Err(Error::validation(
-                "at least one of description, env, tags, or policy is required",
-            ));
+            return Err(Error::validation("no mutable fields changed"));
         }
 
         let audit = update_audit(caller, reason, &changed_fields);
+        let description = changed_fields
+            .contains(&"description")
+            .then_some(next_description);
+        let env = changed_fields.contains(&"env").then_some(next_env);
+        let tags = changed_fields.contains(&"tags").then_some(next_tags);
+        let policy = changed_fields.contains(&"policy").then_some(next_policy);
         let credential = self
             .repo
             .update_credential_mutable_fields(
@@ -506,6 +542,49 @@ fn secret_header_json(header: &SecretHeader) -> serde_json::Value {
     })
 }
 
+#[derive(Deserialize)]
+struct StoredHttpSecret {
+    #[serde(default)]
+    headers: Vec<StoredSecretHeader>,
+}
+
+#[derive(Deserialize)]
+struct StoredSecretHeader {
+    name: String,
+}
+
+fn ensure_update_category(credential: &Credential, expected: CredentialCategory) -> Result<()> {
+    if credential.category == expected {
+        Ok(())
+    } else {
+        Err(Error::validation(format!(
+            "alias {:?} is category {:?}, not {:?}",
+            credential.alias,
+            credential.category.as_str(),
+            expected.as_str(),
+        )))
+    }
+}
+
+fn validate_http_policy_secret_overlap(
+    sealer: &Sealer,
+    alias: &str,
+    secret_ciphertext: Option<&[u8]>,
+    policy: &CredentialPolicy,
+) -> Result<()> {
+    let ciphertext =
+        secret_ciphertext.ok_or_else(|| Error::internal("credential secret missing"))?;
+    let plaintext = sealer.open(SECRET_DOMAIN, alias, ciphertext)?;
+    let secret = serde_json::from_slice::<StoredHttpSecret>(&plaintext)
+        .map_err(|error| Error::internal(format!("decode credential secret: {error}")))?;
+    let names = secret
+        .headers
+        .into_iter()
+        .map(|header| header.name)
+        .collect::<Vec<_>>();
+    validate_allowed_headers_do_not_overlap_secret(policy, &names)
+}
+
 fn normalize_list_input(mut input: ListCredentialsInput) -> ListCredentialsInput {
     input.provider = trim_filter_optional(input.provider);
     input.env = trim_filter_optional(input.env);
@@ -580,22 +659,23 @@ fn allowed_list_field(field: &str) -> bool {
 }
 
 fn changed_fields(
-    description: &Option<String>,
-    env: &Option<String>,
-    tags: &Option<Vec<String>>,
-    policy: &Option<CredentialPolicy>,
+    before: &Credential,
+    description: &str,
+    env: &str,
+    tags: &[String],
+    policy: &CredentialPolicy,
 ) -> Vec<&'static str> {
     let mut fields = Vec::new();
-    if description.is_some() {
+    if before.description != description {
         fields.push("description");
     }
-    if env.is_some() {
+    if before.env != env {
         fields.push("env");
     }
-    if tags.is_some() {
+    if before.tags != tags {
         fields.push("tags");
     }
-    if policy.is_some() {
+    if before.policy != *policy {
         fields.push("policy");
     }
     fields
@@ -723,6 +803,33 @@ mod tests {
         .into_domain()
     }
 
+    fn stored_credential(category: CredentialCategory) -> Credential {
+        Credential {
+            id: Uuid::nil(),
+            owner_user_id: Uuid::nil(),
+            category,
+            provider: match category {
+                CredentialCategory::Http => "k8s",
+                CredentialCategory::Sql => "postgres",
+            }
+            .to_owned(),
+            alias: "prod".to_owned(),
+            endpoint: match category {
+                CredentialCategory::Http => "https://service.example.test",
+                CredentialCategory::Sql => "postgres://db.example.test/app",
+            }
+            .to_owned(),
+            description: "old description".to_owned(),
+            env: "prod".to_owned(),
+            tags: vec!["prod".to_owned()],
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            has_tls_ca: false,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
     fn caller(role: Role) -> Caller {
         let now = Utc::now();
         Caller {
@@ -829,6 +936,79 @@ mod tests {
         assert!(matches!(delete.action, CredentialAuditAction::Delete));
         assert_eq!(delete.reason.as_deref(), Some("Retire old credential"));
         assert!(!delete.detail.to_string().contains("secret-token"));
+    }
+
+    #[test]
+    fn update_category_mismatch_is_validation() {
+        let credential = stored_credential(CredentialCategory::Sql);
+        let err = ensure_update_category(&credential, CredentialCategory::Http)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+
+        assert!(err.contains("category"));
+        assert!(err.contains("sql"));
+        assert!(err.contains("http"));
+    }
+
+    #[test]
+    fn changed_fields_ignore_noop_values() {
+        let before = stored_credential(CredentialCategory::Http);
+
+        assert!(
+            changed_fields(
+                &before,
+                &before.description,
+                &before.env,
+                &before.tags,
+                &before.policy,
+            )
+            .is_empty()
+        );
+
+        let changed = changed_fields(
+            &before,
+            "new description",
+            &before.env,
+            &before.tags,
+            &before.policy,
+        );
+        assert_eq!(changed, ["description"]);
+    }
+
+    #[test]
+    fn http_policy_update_rejects_secret_header_overlap() -> Result<()> {
+        let key = base64::engine::general_purpose::STANDARD.encode([13_u8; 32]);
+        let cipher = opsgate_core::crypto::Cipher::new(&key)?;
+        let sealer = Sealer::new(cipher);
+        let secret = CredentialSecret::Http {
+            headers: vec![SecretHeader {
+                name: "X-Api-Key".to_owned(),
+                value: SecretString::from("secret-token".to_owned()),
+            }],
+        };
+        let ciphertext = sealer.seal(SECRET_DOMAIN, "prod", &secret_json(&secret)?)?;
+        let policy = normalize_policy_for_category(
+            CredentialPolicy {
+                allowed_request_headers: vec!["x-api-key".to_owned()],
+                ..CredentialPolicy::default()
+            },
+            CredentialCategory::Http,
+        );
+
+        let err = validate_http_policy_secret_overlap(
+            &sealer,
+            "prod",
+            Some(ciphertext.as_slice()),
+            &policy,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+
+        assert!(err.contains("secret header"));
+        assert!(!err.contains("secret-token"));
+        Ok(())
     }
 
     #[test]

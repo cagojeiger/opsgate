@@ -29,7 +29,7 @@ async fn register(
 ) -> Result<Json<RegisterCredentialOutput>, ApiError> {
     let input = serde_json::from_slice::<RegisterCredentialInput>(&body)
         .map_err(|_error| ApiError::invalid_field("invalid json"))?;
-    let credential = match input.into_service_input() {
+    let credential = match input.into_service_input()? {
         RegisterServiceInput::Http(input) => {
             state.credentials.register_http(&caller, input).await?
         }
@@ -44,7 +44,7 @@ async fn list(
     RawQuery(query): RawQuery,
 ) -> Result<Json<CredentialListOutput>, ApiError> {
     let input = parse_list_query(query.as_deref())?;
-    let fields = input.fields.clone().map(normalize_fields);
+    let fields = input.fields.clone().and_then(normalize_fields);
     let page = state.credentials.list(caller.user.id, input).await?;
     let returned = page.credentials.len();
     Ok(Json(CredentialListOutput {
@@ -182,32 +182,46 @@ enum RegisterServiceInput {
 }
 
 impl RegisterCredentialInput {
-    fn into_service_input(self) -> RegisterServiceInput {
+    fn into_service_input(self) -> Result<RegisterServiceInput, ApiError> {
         match self.category {
-            CredentialCategory::Http => RegisterServiceInput::Http(RegisterHttpCredentialInput {
-                provider: self.provider,
-                alias: self.alias,
-                endpoint: self.endpoint,
-                secret_headers: self.secret.headers,
-                description: self.description,
-                env: self.env,
-                tags: self.tags,
-                policy: self.policy,
-                allow_private_network: self.allow_private_network,
-                tls_server_ca: self.tls_server_ca,
-            }),
-            CredentialCategory::Sql => RegisterServiceInput::Sql(RegisterSqlCredentialInput {
-                provider: self.provider,
-                alias: self.alias,
-                endpoint: self.endpoint,
-                username: self.secret.username,
-                password: self.secret.password,
-                description: self.description,
-                env: self.env,
-                tags: self.tags,
-                policy: self.policy,
-                allow_private_network: self.allow_private_network,
-            }),
+            CredentialCategory::Http => {
+                if !self.secret.username.trim().is_empty()
+                    || !self.secret.password.trim().is_empty()
+                {
+                    return Err(ApiError::invalid_field("http secret only supports headers"));
+                }
+                Ok(RegisterServiceInput::Http(RegisterHttpCredentialInput {
+                    provider: self.provider,
+                    alias: self.alias,
+                    endpoint: self.endpoint,
+                    secret_headers: self.secret.headers,
+                    description: self.description,
+                    env: self.env,
+                    tags: self.tags,
+                    policy: self.policy,
+                    allow_private_network: self.allow_private_network,
+                    tls_server_ca: self.tls_server_ca,
+                }))
+            }
+            CredentialCategory::Sql => {
+                if !self.secret.headers.is_empty() {
+                    return Err(ApiError::invalid_field(
+                        "sql secret does not support headers",
+                    ));
+                }
+                Ok(RegisterServiceInput::Sql(RegisterSqlCredentialInput {
+                    provider: self.provider,
+                    alias: self.alias,
+                    endpoint: self.endpoint,
+                    username: self.secret.username,
+                    password: self.secret.password,
+                    description: self.description,
+                    env: self.env,
+                    tags: self.tags,
+                    policy: self.policy,
+                    allow_private_network: self.allow_private_network,
+                }))
+            }
         }
     }
 }
@@ -295,12 +309,13 @@ impl RegisterCredentialOutput {
     }
 }
 
-fn normalize_fields(fields: Vec<String>) -> BTreeSet<String> {
-    fields
+fn normalize_fields(fields: Vec<String>) -> Option<BTreeSet<String>> {
+    let fields = fields
         .into_iter()
         .map(|field| field.trim().to_owned())
         .filter(|field| !field.is_empty())
-        .collect()
+        .collect::<BTreeSet<_>>();
+    (!fields.is_empty()).then_some(fields)
 }
 
 fn include_field(fields: Option<&BTreeSet<String>>, field: &str) -> bool {
@@ -326,8 +341,8 @@ mod tests {
                     name: "Authorization".to_owned(),
                     value: "Bearer token".to_owned(),
                 }],
-                username: "ignored".to_owned(),
-                password: "ignored".to_owned(),
+                username: String::new(),
+                password: String::new(),
             },
             description: "cluster api".to_owned(),
             env: "prod".to_owned(),
@@ -337,7 +352,10 @@ mod tests {
             tls_server_ca: "-----BEGIN CERTIFICATE-----".to_owned(),
         };
 
-        let input = match input.into_service_input() {
+        let input = match input
+            .into_service_input()
+            .map_err(|_error| "unexpected error".to_owned())?
+        {
             RegisterServiceInput::Http(input) => input,
             RegisterServiceInput::Sql(_) => return Err("expected http credential input".to_owned()),
         };
@@ -373,7 +391,10 @@ mod tests {
             tls_server_ca: "ignored".to_owned(),
         };
 
-        let input = match input.into_service_input() {
+        let input = match input
+            .into_service_input()
+            .map_err(|_error| "unexpected error".to_owned())?
+        {
             RegisterServiceInput::Sql(input) => input,
             RegisterServiceInput::Http(_) => return Err("expected sql credential input".to_owned()),
         };
@@ -381,6 +402,53 @@ mod tests {
         assert_eq!(input.password, "secret");
         assert_eq!(input.provider, "");
         Ok(())
+    }
+
+    #[test]
+    fn unified_register_input_rejects_wrong_secret_shape() {
+        let http_with_sql_secret = RegisterCredentialInput {
+            category: CredentialCategory::Http,
+            provider: "k8s".to_owned(),
+            alias: "prod-api".to_owned(),
+            endpoint: "https://api.example.test".to_owned(),
+            secret: RegisterSecretInput {
+                headers: vec![SecretHeaderInput {
+                    name: "Authorization".to_owned(),
+                    value: "Bearer token".to_owned(),
+                }],
+                username: "wrong".to_owned(),
+                password: String::new(),
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            tls_server_ca: String::new(),
+        };
+        assert!(http_with_sql_secret.into_service_input().is_err());
+
+        let sql_with_http_secret = RegisterCredentialInput {
+            category: CredentialCategory::Sql,
+            provider: String::new(),
+            alias: "prod-db".to_owned(),
+            endpoint: "postgres://db.example.test/app".to_owned(),
+            secret: RegisterSecretInput {
+                headers: vec![SecretHeaderInput {
+                    name: "Authorization".to_owned(),
+                    value: "Bearer token".to_owned(),
+                }],
+                username: "app".to_owned(),
+                password: "secret".to_owned(),
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            tls_server_ca: String::new(),
+        };
+        assert!(sql_with_http_secret.into_service_input().is_err());
     }
 
     #[test]
@@ -409,6 +477,12 @@ mod tests {
         );
         assert_eq!(input.limit, Some(25));
         Ok(())
+    }
+
+    #[test]
+    fn empty_projection_fields_mean_default_metadata() {
+        assert!(normalize_fields(Vec::new()).is_none());
+        assert!(normalize_fields(vec![" ".to_owned()]).is_none());
     }
 
     fn credential() -> Credential {

@@ -249,6 +249,36 @@ async fn credential_history_versions_are_per_owner_alias() -> Result<(), Box<dyn
     Ok(())
 }
 
+#[tokio::test]
+async fn duplicate_alias_maps_to_validation_error() -> Result<(), Box<dyn std::error::Error>> {
+    let Some(db) = TestDb::setup().await? else {
+        return Ok(());
+    };
+
+    let owner = insert_user(&db.pool, "owner@example.test").await?;
+    let repo = CredentialRepo::new(db.pool.clone());
+    repo.insert_credential(
+        insert_params(owner, "prod-api"),
+        audit(owner, CredentialAuditAction::Register),
+    )
+    .await?;
+    let err = repo
+        .insert_credential(
+            insert_params(owner, "prod-api"),
+            audit(owner, CredentialAuditAction::Register),
+        )
+        .await
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+
+    assert!(err.contains("invalid input"));
+    assert!(err.contains("already registered"));
+
+    db.cleanup().await;
+    Ok(())
+}
+
 impl TestDb {
     async fn setup() -> Result<Option<Self>, Box<dyn std::error::Error>> {
         let database_url = match std::env::var("OPSGATE_TEST_DATABASE_URL") {
