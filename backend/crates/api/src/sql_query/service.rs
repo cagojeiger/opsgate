@@ -23,6 +23,7 @@ use sqlparser::ast::{Expr, ObjectName, Query, SetExpr, Statement, Visit, Visitor
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
 use sqlx::postgres::PgConnectOptions;
+use sqlx::types::Json;
 use sqlx::{Connection, Executor, PgConnection};
 use uuid::Uuid;
 
@@ -82,7 +83,11 @@ impl SqlQueryService {
         // Sanitize the raw alias up front: on the bad-input path it is the only
         // request field we record, and it has not been validated yet.
         let raw_alias = safe_history_message(&input.alias);
-        require_executor(caller)?;
+        if let Err(error) = require_executor(caller) {
+            self.record_pre_input_denial(caller, &raw_alias, "required_role", &error)
+                .await;
+            return Err(error);
+        }
         let input = match normalize_input(input) {
             Ok(input) => input,
             Err(error) => {
@@ -157,16 +162,29 @@ impl SqlQueryService {
     /// Record an input-validation rejection (before a normalized input exists).
     /// Mirrors the per-tool denial stream so input-shaped abuse is still audited.
     async fn record_bad_input(&self, caller: &Caller, alias: &str, error: &Error) {
+        self.record_pre_input_denial(caller, alias, "bad_input", error)
+            .await;
+    }
+
+    async fn record_pre_input_denial(
+        &self,
+        caller: &Caller,
+        alias: &str,
+        reason: &str,
+        error: &Error,
+    ) {
         if let Err(error) = self
             .audit
-            .append(bad_input_audit_params(caller, alias))
+            .append(pre_input_denial_audit_params(caller, alias, reason))
             .await
         {
             tracing::error!(event = "sql.query.audit_failed", detail = %error);
         }
         if let Err(error) = self
             .history
-            .insert(bad_input_history_params(caller, alias, error))
+            .insert(pre_input_denial_history_params(
+                caller, alias, reason, error,
+            ))
             .await
         {
             tracing::error!(event = "sql.query.history_failed", detail = %error);
@@ -329,9 +347,6 @@ fn normalize_input(input: SqlQueryInput) -> Result<NormalizedInput> {
             input.params.len()
         )));
     }
-    for param in &input.params {
-        validate_param(param)?;
-    }
     let shape = if input.shape.trim().is_empty() {
         DEFAULT_SHAPE.to_owned()
     } else {
@@ -366,15 +381,6 @@ fn normalize_input(input: SqlQueryInput) -> Result<NormalizedInput> {
         timeout_ms,
         query_sha256,
     })
-}
-
-fn validate_param(value: &Value) -> Result<()> {
-    match value {
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => Ok(()),
-        Value::Array(_) | Value::Object(_) => Err(Error::validation(
-            "params must contain only null, boolean, number, or string values",
-        )),
-    }
 }
 
 fn validate_policy_boundary(credential: &Credential, input: &NormalizedInput) -> Result<()> {
@@ -733,11 +739,7 @@ fn bind_string_param<'q>(
             }
         }
         Value::String(value) => query.bind(value.clone()),
-        Value::Array(_) | Value::Object(_) => {
-            return Err(Error::validation(
-                "params must contain only null, boolean, number, or string values",
-            ));
-        }
+        Value::Array(_) | Value::Object(_) => query.bind(Json(value.clone())),
     };
     Ok(query)
 }
@@ -763,11 +765,7 @@ fn bind_json_param<'q>(
             }
         }
         Value::String(value) => query.bind(value.clone()),
-        Value::Array(_) | Value::Object(_) => {
-            return Err(Error::validation(
-                "params must contain only null, boolean, number, or string values",
-            ));
-        }
+        Value::Array(_) | Value::Object(_) => query.bind(Json(value.clone())),
     };
     Ok(query)
 }
@@ -1289,13 +1287,13 @@ fn safe_history_message(value: &str) -> String {
     value.replace(['\r', '\n'], " ").chars().take(512).collect()
 }
 
-/// Audit row for an input-validation denial. Records only the channel, the
-/// (pre-sanitized) alias, and `denial_reason=bad_input` — never the raw input.
-fn bad_input_audit_params(caller: &Caller, alias: &str) -> AuditLogParams {
+/// Audit row for a pre-normalization denial. Records only the channel, the
+/// (pre-sanitized) alias, and denial reason — never the raw input.
+fn pre_input_denial_audit_params(caller: &Caller, alias: &str, reason: &str) -> AuditLogParams {
     let channel = channel_str(caller.channel).to_owned();
     let mut detail = serde_json::Map::new();
     detail.insert("schema_version".to_owned(), serde_json::json!(1));
-    detail.insert("denial_reason".to_owned(), serde_json::json!("bad_input"));
+    detail.insert("denial_reason".to_owned(), serde_json::json!(reason));
     AuditLogParams {
         action: format!("{channel}.sql.query"),
         channel,
@@ -1314,9 +1312,14 @@ fn bad_input_audit_params(caller: &Caller, alias: &str) -> AuditLogParams {
     }
 }
 
-/// History row for an input-validation denial. `error_message_safe` carries the
+/// History row for a pre-normalization denial. `error_message_safe` carries the
 /// (value-free, CR/LF-stripped) validation reason; no normalized fields exist.
-fn bad_input_history_params(caller: &Caller, alias: &str, error: &Error) -> SqlQueryHistoryParams {
+fn pre_input_denial_history_params(
+    caller: &Caller,
+    alias: &str,
+    reason: &str,
+    error: &Error,
+) -> SqlQueryHistoryParams {
     SqlQueryHistoryParams {
         owner_user_id: Some(caller.user.id),
         actor_user_id: Some(caller.user.id),
@@ -1341,7 +1344,7 @@ fn bad_input_history_params(caller: &Caller, alias: &str, error: &Error) -> SqlQ
         returned_bytes: None,
         truncated: false,
         result_columns: serde_json::json!([]),
-        error_kind: Some("bad_input".to_owned()),
+        error_kind: Some(reason.to_owned()),
         error_message_safe: Some(safe_history_message(&error.to_string())),
     }
 }
@@ -1442,6 +1445,27 @@ mod tests {
         input = base_input();
         input.max_rows = Some(MAX_MAX_ROWS + 1);
         assert!(normalize_input(input).is_err());
+    }
+
+    #[test]
+    fn input_validation_allows_json_array_and_object_params() -> Result<()> {
+        let input = normalize_input(SqlQueryInput {
+            params: vec![
+                serde_json::json!(["paid", "failed"]),
+                serde_json::json!({"status": "paid"}),
+            ],
+            ..base_input()
+        })?;
+        assert_eq!(input.params.len(), 2);
+        let [array_param, object_param] = input.params.as_slice() else {
+            return Err(Error::internal("expected two params"));
+        };
+
+        let query = sqlx::query_scalar::<_, Value>("select $1");
+        assert!(bind_json_param(query, array_param).is_ok());
+        let query = sqlx::query_scalar::<_, String>("explain select $1");
+        assert!(bind_string_param(query, object_param).is_ok());
+        Ok(())
     }
 
     #[test]
@@ -1686,7 +1710,7 @@ mod tests {
         let caller = test_caller();
         let error = Error::validation("query exceeds maximum length");
 
-        let history = bad_input_history_params(&caller, "prod", &error);
+        let history = pre_input_denial_history_params(&caller, "prod", "bad_input", &error);
         assert_eq!(history.outcome, "denied");
         assert_eq!(history.error_kind.as_deref(), Some("bad_input"));
         assert!(history.purpose.is_none());
@@ -1694,12 +1718,33 @@ mod tests {
         assert!(history.query_sha256.is_empty());
         assert_eq!(history.params_count, 0);
 
-        let audit = bad_input_audit_params(&caller, "prod");
+        let audit = pre_input_denial_audit_params(&caller, "prod", "bad_input");
         assert_eq!(audit.outcome, "denied");
         assert_eq!(audit.action, "mcp.sql.query");
         assert_eq!(
             audit.detail.get("denial_reason"),
             Some(&serde_json::json!("bad_input"))
+        );
+    }
+
+    #[test]
+    fn required_role_denial_is_recorded_safely() {
+        let caller = test_caller();
+        let error = Error::forbidden("operator or admin role required");
+
+        let history = pre_input_denial_history_params(&caller, "prod", "required_role", &error);
+        assert_eq!(history.outcome, "denied");
+        assert_eq!(history.error_kind.as_deref(), Some("required_role"));
+        assert!(history.purpose.is_none());
+        assert_eq!(history.credential_alias, "prod");
+        assert!(history.query_sha256.is_empty());
+        assert_eq!(history.params_count, 0);
+
+        let audit = pre_input_denial_audit_params(&caller, "prod", "required_role");
+        assert_eq!(audit.outcome, "denied");
+        assert_eq!(
+            audit.detail.get("denial_reason"),
+            Some(&serde_json::json!("required_role"))
         );
     }
 

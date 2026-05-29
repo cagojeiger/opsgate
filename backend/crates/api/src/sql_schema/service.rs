@@ -50,8 +50,20 @@ impl SqlSchemaService {
     }
 
     pub async fn execute(&self, caller: &Caller, input: SqlSchemaInput) -> Result<SqlSchemaOutput> {
-        require_executor(caller)?;
-        let input = normalize_input(input)?;
+        let raw_alias = safe_audit_message(&input.alias);
+        if let Err(error) = require_executor(caller) {
+            self.record_pre_input_denial(caller, &raw_alias, "required_role", &error)
+                .await;
+            return Err(error);
+        }
+        let input = match normalize_input(input) {
+            Ok(input) => input,
+            Err(error) => {
+                self.record_pre_input_denial(caller, &raw_alias, "bad_input", &error)
+                    .await;
+                return Err(error);
+            }
+        };
         let mut recorder = SchemaRecorder::new(&self.audit, caller, &input);
 
         let row = match self
@@ -118,6 +130,22 @@ impl SqlSchemaService {
         let plaintext = self.sealer.open(SECRET_DOMAIN, alias, ciphertext)?;
         serde_json::from_slice::<SqlSecret>(&plaintext)
             .map_err(|error| Error::internal(format!("decode sql credential secret: {error}")))
+    }
+
+    async fn record_pre_input_denial(
+        &self,
+        caller: &Caller,
+        alias: &str,
+        reason: &str,
+        error: &Error,
+    ) {
+        if let Err(error) = self
+            .audit
+            .append(pre_input_denial_audit_params(caller, alias, reason, error))
+            .await
+        {
+            tracing::error!(event = "sql.schema.audit_failed", detail = %error);
+        }
     }
 }
 
@@ -905,6 +933,38 @@ fn safe_audit_message(value: &str) -> String {
     value.replace(['\r', '\n'], " ").chars().take(512).collect()
 }
 
+fn pre_input_denial_audit_params(
+    caller: &Caller,
+    alias: &str,
+    reason: &str,
+    error: &Error,
+) -> AuditLogParams {
+    let channel = channel_str(caller.channel).to_owned();
+    let mut detail = serde_json::Map::new();
+    detail.insert("schema_version".to_owned(), serde_json::json!(1));
+    detail.insert("denial_reason".to_owned(), serde_json::json!(reason));
+    detail.insert(
+        "error_message_safe".to_owned(),
+        serde_json::json!(safe_audit_message(&error.to_string())),
+    );
+    AuditLogParams {
+        action: format!("{channel}.sql.schema"),
+        channel,
+        outcome: "denied".to_owned(),
+        severity: "warning".to_owned(),
+        actor_user_id: Some(caller.user.id),
+        actor_role: Some(caller.role.as_str().to_owned()),
+        actor_ip: caller.remote_ip.clone(),
+        actor_user_agent: caller.user_agent.clone(),
+        target_type: Some("credential".to_owned()),
+        target_id: None,
+        target_key: Some(alias.to_owned()),
+        request_id: caller.request_id.clone(),
+        purpose: None,
+        detail: Value::Object(detail),
+    }
+}
+
 fn channel_str(channel: Channel) -> &'static str {
     match channel {
         Channel::Api => "api",
@@ -1016,6 +1076,28 @@ mod tests {
         assert!(!serialized.contains("password"));
         assert!(!serialized.contains("\"reason\""));
         Ok(())
+    }
+
+    #[test]
+    fn pre_input_denial_is_recorded_safely() {
+        let caller = caller(Role::Viewer);
+        let error = Error::forbidden("operator or admin role required");
+
+        let audit = pre_input_denial_audit_params(&caller, "analytics", "required_role", &error);
+        assert_eq!(audit.action, "mcp.sql.schema");
+        assert_eq!(audit.outcome, "denied");
+        assert_eq!(audit.target_key.as_deref(), Some("analytics"));
+        assert!(audit.purpose.is_none());
+        assert_eq!(
+            audit.detail.get("denial_reason"),
+            Some(&serde_json::json!("required_role"))
+        );
+        assert_eq!(
+            audit.detail.get("error_message_safe"),
+            Some(&serde_json::json!(
+                "forbidden: operator or admin role required"
+            ))
+        );
     }
 
     #[test]

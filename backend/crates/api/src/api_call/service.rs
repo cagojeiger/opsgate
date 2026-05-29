@@ -64,7 +64,11 @@ impl ApiCallService {
         // Sanitize the raw alias up front: on the bad-input path it is the only
         // request field we record, and it has not been validated yet.
         let raw_alias = safe_history_message(&input.alias);
-        require_executor(caller)?;
+        if let Err(error) = require_executor(caller) {
+            self.record_pre_input_denial(caller, &raw_alias, "required_role", &error)
+                .await;
+            return Err(error);
+        }
         let input = match normalize_input(input) {
             Ok(input) => input,
             Err(error) => {
@@ -185,16 +189,29 @@ impl ApiCallService {
     /// Record an input-validation rejection (before a normalized input exists).
     /// Mirrors the per-tool denial stream so input-shaped abuse is still audited.
     async fn record_bad_input(&self, caller: &Caller, alias: &str, error: &Error) {
+        self.record_pre_input_denial(caller, alias, "bad_input", error)
+            .await;
+    }
+
+    async fn record_pre_input_denial(
+        &self,
+        caller: &Caller,
+        alias: &str,
+        reason: &str,
+        error: &Error,
+    ) {
         if let Err(error) = self
             .audit
-            .append(bad_input_audit_params(caller, alias))
+            .append(pre_input_denial_audit_params(caller, alias, reason))
             .await
         {
             tracing::error!(event = "api.call.audit_failed", detail = %error);
         }
         if let Err(error) = self
             .history
-            .insert(bad_input_history_params(caller, alias, error))
+            .insert(pre_input_denial_history_params(
+                caller, alias, reason, error,
+            ))
             .await
         {
             tracing::error!(event = "api.call.history_failed", detail = %error);
@@ -465,7 +482,8 @@ fn validate_no_secret_header_override(
 fn build_target_url(endpoint: &str, input: &NormalizedApiCallInput) -> Result<url::Url> {
     let mut url = url::Url::parse(endpoint)
         .map_err(|error| Error::validation(format!("credential endpoint URL: {error}")))?;
-    url.set_path(&input.path);
+    let path = join_endpoint_path(url.path(), &input.path);
+    url.set_path(&path);
     url.set_query(None);
     if !input.query.is_empty() {
         let mut pairs = url.query_pairs_mut();
@@ -474,6 +492,15 @@ fn build_target_url(endpoint: &str, input: &NormalizedApiCallInput) -> Result<ur
         }
     }
     Ok(url)
+}
+
+fn join_endpoint_path(endpoint_path: &str, request_path: &str) -> String {
+    let base = endpoint_path.trim_end_matches('/');
+    if base.is_empty() {
+        request_path.to_owned()
+    } else {
+        format!("{base}{request_path}")
+    }
 }
 
 async fn resolve_guarded_target_addrs(url: &url::Url) -> Result<Vec<SocketAddr>> {
@@ -809,13 +836,13 @@ fn safe_history_message(value: &str) -> String {
     replaced.chars().take(512).collect()
 }
 
-/// Audit row for an input-validation denial. Records only the channel, the
-/// (pre-sanitized) alias, and `denial_reason=bad_input` — never the raw input.
-fn bad_input_audit_params(caller: &Caller, alias: &str) -> AuditLogParams {
+/// Audit row for a pre-normalization denial. Records only the channel, the
+/// (pre-sanitized) alias, and denial reason — never the raw input.
+fn pre_input_denial_audit_params(caller: &Caller, alias: &str, reason: &str) -> AuditLogParams {
     let channel = channel_str(caller.channel).to_owned();
     let mut detail = serde_json::Map::new();
     detail.insert("schema_version".to_owned(), serde_json::json!(1));
-    detail.insert("denial_reason".to_owned(), serde_json::json!("bad_input"));
+    detail.insert("denial_reason".to_owned(), serde_json::json!(reason));
     AuditLogParams {
         action: format!("{channel}.api.call"),
         channel,
@@ -834,9 +861,14 @@ fn bad_input_audit_params(caller: &Caller, alias: &str) -> AuditLogParams {
     }
 }
 
-/// History row for an input-validation denial. `error_message_safe` carries the
+/// History row for a pre-normalization denial. `error_message_safe` carries the
 /// (value-free, CR/LF-stripped) validation reason; no normalized fields exist.
-fn bad_input_history_params(caller: &Caller, alias: &str, error: &Error) -> ApiCallHistoryParams {
+fn pre_input_denial_history_params(
+    caller: &Caller,
+    alias: &str,
+    reason: &str,
+    error: &Error,
+) -> ApiCallHistoryParams {
     ApiCallHistoryParams {
         owner_user_id: Some(caller.user.id),
         actor_user_id: Some(caller.user.id),
@@ -861,7 +893,7 @@ fn bad_input_history_params(caller: &Caller, alias: &str, error: &Error) -> ApiC
         original_bytes: None,
         returned_bytes: None,
         truncated: false,
-        error_kind: Some("bad_input".to_owned()),
+        error_kind: Some(reason.to_owned()),
         error_message_safe: Some(safe_history_message(&error.to_string())),
     }
 }
@@ -1008,6 +1040,27 @@ mod tests {
     }
 
     #[test]
+    fn target_url_preserves_endpoint_base_path() -> Result<()> {
+        let input = normalize_input(ApiCallInput {
+            path: "/v1/pods".to_owned(),
+            query: BTreeMap::from([("label".to_owned(), "app=web".to_owned())]),
+            ..base_input()
+        })?;
+        let url = build_target_url("https://api.example.test/base/", &input)?;
+        assert_eq!(
+            url.as_str(),
+            "https://api.example.test/base/v1/pods?label=app%3Dweb"
+        );
+
+        let url = build_target_url("https://api.example.test", &input)?;
+        assert_eq!(
+            url.as_str(),
+            "https://api.example.test/v1/pods?label=app%3Dweb"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn history_message_is_bounded_and_single_line() {
         let message = format!("secret\r\n{}", "x".repeat(600));
         let safe = safe_history_message(&message);
@@ -1084,7 +1137,7 @@ mod tests {
         let caller = test_caller();
         let error = Error::validation("purpose must be at least 8 characters");
 
-        let history = bad_input_history_params(&caller, "prod", &error);
+        let history = pre_input_denial_history_params(&caller, "prod", "bad_input", &error);
         assert_eq!(history.outcome, "denied");
         assert_eq!(history.error_kind.as_deref(), Some("bad_input"));
         assert!(history.purpose.is_none());
@@ -1092,13 +1145,33 @@ mod tests {
         assert!(history.method.is_empty());
         assert_eq!(history.status_code, None);
 
-        let audit = bad_input_audit_params(&caller, "prod");
+        let audit = pre_input_denial_audit_params(&caller, "prod", "bad_input");
         assert_eq!(audit.outcome, "denied");
         assert_eq!(audit.action, "mcp.api.call");
         assert!(audit.purpose.is_none());
         assert_eq!(
             audit.detail.get("denial_reason"),
             Some(&serde_json::json!("bad_input"))
+        );
+    }
+
+    #[test]
+    fn required_role_denial_is_recorded_safely() {
+        let caller = test_caller();
+        let error = Error::forbidden("operator or admin role required");
+
+        let history = pre_input_denial_history_params(&caller, "prod", "required_role", &error);
+        assert_eq!(history.outcome, "denied");
+        assert_eq!(history.error_kind.as_deref(), Some("required_role"));
+        assert!(history.purpose.is_none());
+        assert_eq!(history.credential_alias, "prod");
+        assert!(history.method.is_empty());
+
+        let audit = pre_input_denial_audit_params(&caller, "prod", "required_role");
+        assert_eq!(audit.outcome, "denied");
+        assert_eq!(
+            audit.detail.get("denial_reason"),
+            Some(&serde_json::json!("required_role"))
         );
     }
 
