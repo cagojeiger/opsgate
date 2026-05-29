@@ -180,6 +180,12 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
     let audit = Arc::new(audit_repo.clone());
     let sql_schema = Arc::new(crate::sql_schema::SqlSchemaService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
+        audit_repo.clone(),
+        sealer.clone(),
+    ));
+    let sql_query = Arc::new(crate::sql_query::SqlQueryService::new(
+        opsgate_db::CredentialRepo::new(pool.clone()),
+        opsgate_db::SqlQueryHistoryRepo::new(pool.clone()),
         audit_repo,
         sealer,
     ));
@@ -192,6 +198,7 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
         credentials,
         api_calls,
         sql_schema,
+        sql_query,
         audit,
         http: reqwest::Client::new(),
     }))

@@ -17,6 +17,7 @@ mod identity;
 mod mcp;
 mod rest;
 mod routes;
+mod sql_query;
 mod sql_schema;
 mod state;
 
@@ -51,9 +52,11 @@ async fn main() -> anyhow::Result<()> {
     let resolver = opsgate_domain::Resolver::new(user_repo);
     let credential_repo = opsgate_db::CredentialRepo::new(pool.clone());
     let api_call_history = opsgate_db::ApiCallHistoryRepo::new(pool.clone());
+    let sql_query_history = opsgate_db::SqlQueryHistoryRepo::new(pool.clone());
     let audit_repo = opsgate_db::AuditRepo::new(pool.clone());
     let audit = std::sync::Arc::new(audit_repo.clone());
     let sql_schema_audit_repo = audit_repo.clone();
+    let sql_query_audit_repo = audit_repo.clone();
     let cipher = opsgate_core::crypto::Cipher::new(config.master_key.expose_secret())?;
     let sealer = opsgate_core::crypto::Sealer::new(cipher);
     let credential_service = std::sync::Arc::new(crate::credential::CredentialService::new(
@@ -70,6 +73,12 @@ async fn main() -> anyhow::Result<()> {
     let sql_schema_service = std::sync::Arc::new(crate::sql_schema::SqlSchemaService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
         sql_schema_audit_repo,
+        sealer.clone(),
+    ));
+    let sql_query_service = std::sync::Arc::new(crate::sql_query::SqlQueryService::new(
+        opsgate_db::CredentialRepo::new(pool.clone()),
+        sql_query_history,
+        sql_query_audit_repo,
         sealer,
     ));
     let config = std::sync::Arc::new(config);
@@ -90,6 +99,7 @@ async fn main() -> anyhow::Result<()> {
         credentials: credential_service,
         api_calls: api_call_service,
         sql_schema: sql_schema_service,
+        sql_query: sql_query_service,
         audit,
         http,
     });

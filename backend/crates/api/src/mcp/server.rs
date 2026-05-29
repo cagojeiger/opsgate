@@ -34,6 +34,7 @@ use crate::mcp::tools::credentials::{
     CredentialListOutput, DeleteCredentialOutput, RegisterCredentialOutput, UpdateCredentialOutput,
 };
 use crate::mcp::tools::me::{McpMeOutput, McpToolset};
+use crate::sql_query::{SqlQueryInput, SqlQueryOutput};
 use crate::sql_schema::{SqlSchemaInput, SqlSchemaOutput};
 use crate::state::AppState;
 
@@ -105,6 +106,29 @@ impl RuntimeMcpServer {
             &self.state,
             &parts,
             "api.call",
+            "active",
+            started,
+            &result,
+        )
+        .await;
+        result
+    }
+
+    #[tool(
+        name = "sql.query",
+        description = "Execute a read-only Postgres SELECT through a registered category=sql credential. Returns budgeted JSON rows only."
+    )]
+    pub async fn sql_query(
+        &self,
+        Extension(parts): Extension<Parts>,
+        input: Parameters<SqlQueryInput>,
+    ) -> Result<Json<SqlQueryOutput>, ErrorData> {
+        let started = std::time::Instant::now();
+        let result = crate::mcp::tools::sql_query::call(&self.state, &parts, input).await;
+        crate::mcp::tools::audit::record_tool_result(
+            &self.state,
+            &parts,
+            "sql.query",
             "active",
             started,
             &result,

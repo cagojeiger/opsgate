@@ -99,6 +99,10 @@ fn capabilities_for_toolset(toolset: McpToolset) -> Vec<Capability> {
                 "sql.schema",
                 "SQL credential alias로 Postgres schema metadata를 조회합니다.",
             ),
+            (
+                "sql.query",
+                "SQL credential alias로 읽기 전용 Postgres 쿼리를 실행합니다.",
+            ),
         ],
         McpToolset::Admin => vec![
             (

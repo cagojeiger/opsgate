@@ -8,6 +8,7 @@ use opsgate_db::PgPool;
 use crate::api_call::ApiCallService;
 use crate::credential::CredentialService;
 use crate::identity::CallerResolver;
+use crate::sql_query::SqlQueryService;
 use crate::sql_schema::SqlSchemaService;
 
 use crate::auth::jwks::JwksCache;
@@ -23,6 +24,7 @@ pub struct AppState {
     pub credentials: Arc<CredentialService>,
     pub api_calls: Arc<ApiCallService>,
     pub sql_schema: Arc<SqlSchemaService>,
+    pub sql_query: Arc<SqlQueryService>,
     pub audit: Arc<opsgate_db::AuditRepo>,
     pub http: reqwest::Client,
 }
@@ -36,6 +38,7 @@ pub struct AppStateDeps {
     pub credentials: Arc<CredentialService>,
     pub api_calls: Arc<ApiCallService>,
     pub sql_schema: Arc<SqlSchemaService>,
+    pub sql_query: Arc<SqlQueryService>,
     pub audit: Arc<opsgate_db::AuditRepo>,
     pub http: reqwest::Client,
 }
@@ -51,6 +54,7 @@ impl AppState {
             credentials: deps.credentials,
             api_calls: deps.api_calls,
             sql_schema: deps.sql_schema,
+            sql_query: deps.sql_query,
             audit: deps.audit,
             http: deps.http,
         }

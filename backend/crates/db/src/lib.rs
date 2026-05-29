@@ -6,6 +6,7 @@ use sqlx::postgres::PgPoolOptions;
 pub mod api_call_history_repo;
 pub mod audit_repo;
 pub mod credential_repo;
+pub mod sql_query_history_repo;
 pub mod user_repo;
 
 pub use api_call_history_repo::{ApiCallHistoryParams, ApiCallHistoryRepo};
@@ -13,6 +14,7 @@ pub use audit_repo::{AuditLogParams, AuditRepo};
 pub use credential_repo::{
     CredentialAuditAction, CredentialAuditParams, CredentialRepo, CredentialSummaryRows,
 };
+pub use sql_query_history_repo::{SqlQueryHistoryParams, SqlQueryHistoryRepo};
 pub use sqlx::PgPool;
 pub use user_repo::UserRepo;
 
