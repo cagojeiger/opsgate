@@ -5,7 +5,7 @@ use opsgate_domain::credential::{
     UpdateCredentialParams,
 };
 use serde_json::Value;
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -18,10 +18,15 @@ impl CredentialRepo {
         Self { pool }
     }
 
-    pub async fn insert_credential(&self, params: InsertCredentialParams) -> Result<Credential> {
+    pub async fn insert_credential(
+        &self,
+        params: InsertCredentialParams,
+        audit: CredentialAuditParams,
+    ) -> Result<Credential> {
         let category = params.category.as_str();
         let policy = serde_json::to_value(&params.policy)
             .map_err(|error| Error::internal(format!("serialize credential policy: {error}")))?;
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
         let row = sqlx::query_as::<_, CredentialRow>(
             r#"
             INSERT INTO credentials (
@@ -68,10 +73,13 @@ impl CredentialRepo {
         .bind(policy)
         .bind(params.allow_private_network)
         .bind(params.tls_ca)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(map_sqlx_error)?;
-        row.into_credential()
+        let credential = row.into_credential()?;
+        insert_audit_event(&mut tx, &credential, audit).await?;
+        tx.commit().await.map_err(map_sqlx_error)?;
+        Ok(credential)
     }
 
     pub async fn find_credential_by_alias(
@@ -113,6 +121,7 @@ impl CredentialRepo {
     pub async fn update_credential_mutable_fields(
         &self,
         params: UpdateCredentialParams,
+        audit: CredentialAuditParams,
     ) -> Result<Credential> {
         let category = params.category.as_str();
         let policy = params
@@ -121,6 +130,7 @@ impl CredentialRepo {
             .map(serde_json::to_value)
             .transpose()
             .map_err(|error| Error::internal(format!("serialize credential policy: {error}")))?;
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
         let row = sqlx::query_as::<_, CredentialRow>(
             r#"
             UPDATE credentials
@@ -157,17 +167,22 @@ impl CredentialRepo {
         .bind(params.env)
         .bind(params.tags)
         .bind(policy)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(map_sqlx_error)?;
-        row.into_credential()
+        let credential = row.into_credential()?;
+        insert_audit_event(&mut tx, &credential, audit).await?;
+        tx.commit().await.map_err(map_sqlx_error)?;
+        Ok(credential)
     }
 
     pub async fn soft_delete_credential(
         &self,
         owner_user_id: Uuid,
         alias: &str,
+        audit: CredentialAuditParams,
     ) -> Result<Credential> {
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
         let row = sqlx::query_as::<_, CredentialRow>(
             r#"
             UPDATE credentials
@@ -197,10 +212,13 @@ impl CredentialRepo {
         )
         .bind(owner_user_id)
         .bind(alias)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(map_sqlx_error)?;
-        row.into_credential()
+        let credential = row.into_credential()?;
+        insert_audit_event(&mut tx, &credential, audit).await?;
+        tx.commit().await.map_err(map_sqlx_error)?;
+        Ok(credential)
     }
 
     pub async fn list_credentials(&self, params: CredentialListParams) -> Result<Vec<Credential>> {
@@ -344,6 +362,68 @@ pub struct CredentialSummaryRows {
     pub by_category: Vec<CountRow>,
     pub by_provider: Vec<CountRow>,
     pub tags: Vec<CountRow>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CredentialAuditAction {
+    Register,
+    Update,
+    Delete,
+}
+
+impl CredentialAuditAction {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Register => "register",
+            Self::Update => "update",
+            Self::Delete => "delete",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CredentialAuditParams {
+    pub actor_user_id: Uuid,
+    pub action: CredentialAuditAction,
+    pub reason: Option<String>,
+    pub changed_fields: Vec<String>,
+    pub detail: Value,
+}
+
+async fn insert_audit_event(
+    tx: &mut Transaction<'_, Postgres>,
+    credential: &Credential,
+    audit: CredentialAuditParams,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO credential_audit_events (
+            owner_user_id,
+            actor_user_id,
+            credential_id,
+            alias,
+            category,
+            action,
+            reason,
+            changed_fields,
+            detail
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        "#,
+    )
+    .bind(credential.owner_user_id)
+    .bind(audit.actor_user_id)
+    .bind(credential.id)
+    .bind(&credential.alias)
+    .bind(credential.category.as_str())
+    .bind(audit.action.as_str())
+    .bind(audit.reason)
+    .bind(audit.changed_fields)
+    .bind(audit.detail)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_sqlx_error)?;
+    Ok(())
 }
 
 #[derive(Debug, FromRow)]

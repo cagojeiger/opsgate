@@ -4,7 +4,9 @@ use std::net::IpAddr;
 use opsgate_core::crypto::Sealer;
 use opsgate_core::net::ssrf::is_blocked_target_ip;
 use opsgate_core::{Error, Result};
-use opsgate_db::{CredentialRepo, CredentialSummaryRows};
+use opsgate_db::{
+    CredentialAuditAction, CredentialAuditParams, CredentialRepo, CredentialSummaryRows,
+};
 use opsgate_domain::credential::{
     Credential, CredentialCategory, CredentialListParams, CredentialPolicy, CredentialSecret,
     InsertCredentialParams, RegisterCredentialInput, SecretHeader, UpdateCredentialParams,
@@ -58,21 +60,25 @@ impl CredentialService {
             .tls_server_ca
             .as_ref()
             .map(|ca| ca.as_bytes().to_vec());
+        let audit = register_audit(owner_user_id, &input);
         self.repo
-            .insert_credential(InsertCredentialParams {
-                owner_user_id,
-                category: input.category,
-                provider: input.provider,
-                alias: input.alias,
-                endpoint: input.endpoint,
-                secret_ciphertext,
-                description: input.description,
-                env: input.env,
-                tags: input.tags,
-                policy: input.policy,
-                allow_private_network: input.allow_private_network,
-                tls_ca,
-            })
+            .insert_credential(
+                InsertCredentialParams {
+                    owner_user_id,
+                    category: input.category,
+                    provider: input.provider,
+                    alias: input.alias,
+                    endpoint: input.endpoint,
+                    secret_ciphertext,
+                    description: input.description,
+                    env: input.env,
+                    tags: input.tags,
+                    policy: input.policy,
+                    allow_private_network: input.allow_private_network,
+                    tls_ca,
+                },
+                audit,
+            )
             .await
     }
 
@@ -88,21 +94,25 @@ impl CredentialService {
         let secret_ciphertext = self
             .sealer
             .seal(SECRET_DOMAIN, &input.alias, &secret_plaintext)?;
+        let audit = register_audit(owner_user_id, &input);
         self.repo
-            .insert_credential(InsertCredentialParams {
-                owner_user_id,
-                category: input.category,
-                provider: input.provider,
-                alias: input.alias,
-                endpoint: input.endpoint,
-                secret_ciphertext,
-                description: input.description,
-                env: input.env,
-                tags: input.tags,
-                policy: input.policy,
-                allow_private_network: input.allow_private_network,
-                tls_ca: None,
-            })
+            .insert_credential(
+                InsertCredentialParams {
+                    owner_user_id,
+                    category: input.category,
+                    provider: input.provider,
+                    alias: input.alias,
+                    endpoint: input.endpoint,
+                    secret_ciphertext,
+                    description: input.description,
+                    env: input.env,
+                    tags: input.tags,
+                    policy: input.policy,
+                    allow_private_network: input.allow_private_network,
+                    tls_ca: None,
+                },
+                audit,
+            )
             .await
     }
 
@@ -181,7 +191,11 @@ impl CredentialService {
             return Err(Error::validation("alias is required"));
         }
         self.repo
-            .soft_delete_credential(owner_user_id, &alias)
+            .soft_delete_credential(
+                owner_user_id,
+                &alias,
+                delete_audit(owner_user_id, input.reason),
+            )
             .await
     }
 
@@ -214,17 +228,21 @@ impl CredentialService {
             ));
         }
 
+        let audit = update_audit(owner_user_id, input.reason, &changed_fields);
         let credential = self
             .repo
-            .update_credential_mutable_fields(UpdateCredentialParams {
-                owner_user_id,
-                alias,
-                category,
-                description,
-                env,
-                tags,
-                policy,
-            })
+            .update_credential_mutable_fields(
+                UpdateCredentialParams {
+                    owner_user_id,
+                    alias,
+                    category,
+                    description,
+                    env,
+                    tags,
+                    policy,
+                },
+                audit,
+            )
             .await?;
         Ok(CredentialUpdate {
             credential,
@@ -497,6 +515,54 @@ fn changed_fields(
     fields
 }
 
+fn register_audit(actor_user_id: Uuid, input: &RegisterCredentialInput) -> CredentialAuditParams {
+    CredentialAuditParams {
+        actor_user_id,
+        action: CredentialAuditAction::Register,
+        reason: None,
+        changed_fields: Vec::new(),
+        detail: serde_json::json!({
+            "provider": input.provider,
+            "env": input.env,
+            "tags": input.tags,
+            "allow_private_network": input.allow_private_network,
+            "has_tls_ca": input.tls_server_ca.is_some(),
+        }),
+    }
+}
+
+fn update_audit(
+    actor_user_id: Uuid,
+    reason: String,
+    changed_fields: &[&'static str],
+) -> CredentialAuditParams {
+    let changed_fields = changed_fields
+        .iter()
+        .map(|field| (*field).to_owned())
+        .collect::<Vec<_>>();
+    CredentialAuditParams {
+        actor_user_id,
+        action: CredentialAuditAction::Update,
+        reason: Some(reason.trim().to_owned()),
+        changed_fields: changed_fields.clone(),
+        detail: serde_json::json!({
+            "changed_fields": changed_fields,
+        }),
+    }
+}
+
+fn delete_audit(actor_user_id: Uuid, reason: String) -> CredentialAuditParams {
+    CredentialAuditParams {
+        actor_user_id,
+        action: CredentialAuditAction::Delete,
+        reason: Some(reason.trim().to_owned()),
+        changed_fields: Vec::new(),
+        detail: serde_json::json!({
+            "secret_destroyed": true,
+        }),
+    }
+}
+
 fn trim_optional(value: Option<String>) -> Option<String> {
     value.map(|value| value.trim().to_owned())
 }
@@ -605,5 +671,39 @@ mod tests {
         assert!(!String::from_utf8_lossy(&ciphertext).contains("secret-token"));
         assert!(sealer.open(SECRET_DOMAIN, "other", &ciphertext).is_err());
         Ok(())
+    }
+
+    #[test]
+    fn register_audit_detail_excludes_endpoint_and_secret_material() {
+        let input = http_input(false);
+        let audit = register_audit(Uuid::nil(), &input);
+        let detail = audit.detail.to_string();
+
+        assert!(matches!(audit.action, CredentialAuditAction::Register));
+        assert!(detail.contains("k8s"));
+        assert!(!detail.contains("service.example.test"));
+        assert!(!detail.contains("secret-token"));
+        assert!(!detail.contains("Authorization"));
+    }
+
+    #[test]
+    fn update_and_delete_audit_store_reason_without_secret_material() {
+        let update = update_audit(
+            Uuid::nil(),
+            "  Allow readonly metadata query  ".to_owned(),
+            &["policy"],
+        );
+        let delete = delete_audit(Uuid::nil(), "  Retire old credential  ".to_owned());
+
+        assert!(matches!(update.action, CredentialAuditAction::Update));
+        assert_eq!(
+            update.reason.as_deref(),
+            Some("Allow readonly metadata query")
+        );
+        assert!(update.changed_fields.iter().any(|field| field == "policy"));
+        assert!(!update.detail.to_string().contains("secret-token"));
+        assert!(matches!(delete.action, CredentialAuditAction::Delete));
+        assert_eq!(delete.reason.as_deref(), Some("Retire old credential"));
+        assert!(!delete.detail.to_string().contains("secret-token"));
     }
 }
