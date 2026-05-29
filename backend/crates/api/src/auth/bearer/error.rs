@@ -2,7 +2,9 @@ use axum::Json;
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 
-use crate::auth::metadata::{challenge_header, protected_resource_metadata_url};
+use crate::auth::metadata::{
+    challenge_header, protected_resource_metadata_url, scoped_challenge_header,
+};
 use crate::state::AppState;
 
 #[derive(Debug, thiserror::Error)]
@@ -59,6 +61,11 @@ pub fn auth_error_response(state: &AppState, error: AuthError) -> Response {
 pub fn shared_challenge_header(resource_url: &str) -> HeaderValue {
     let meta = protected_resource_metadata_url(resource_url);
     challenge_header(&meta.full_url)
+}
+
+pub fn shared_scoped_challenge_header(resource_url: &str) -> HeaderValue {
+    let meta = protected_resource_metadata_url(resource_url);
+    scoped_challenge_header(&meta.full_url)
 }
 
 pub fn status_for_error(error: &AuthError) -> StatusCode {

@@ -15,7 +15,9 @@ use tower_http::trace::TraceLayer;
 use tracing::{Span, info, info_span};
 
 use crate::auth::bearer::require_bearer;
-use crate::auth::metadata::{protected_resource_metadata, protected_resource_metadata_url};
+use crate::auth::metadata::{
+    authorization_server_metadata, protected_resource_metadata, protected_resource_metadata_url,
+};
 use crate::auth::oauth::{callback, login};
 use crate::error::ApiError;
 use crate::mcp::server::{mcp_admin_handler, mcp_handler};
@@ -61,7 +63,24 @@ fn auth_routes() -> Router<AppState> {
 
 fn metadata_routes(state: &AppState) -> Router<AppState> {
     let metadata_path = protected_resource_metadata_url(&state.config.resource_url).route_path;
-    Router::new().route(&metadata_path, get(protected_resource_metadata))
+    let wildcard_path = format!("{metadata_path}/{{*path}}");
+    let router = Router::new()
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(authorization_server_metadata),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(protected_resource_metadata),
+        );
+
+    if metadata_path == "/.well-known/oauth-protected-resource" {
+        router.route(&wildcard_path, get(protected_resource_metadata))
+    } else {
+        router
+            .route(&metadata_path, get(protected_resource_metadata))
+            .route(&wildcard_path, get(protected_resource_metadata))
+    }
 }
 
 fn rest_api_routes(state: AppState) -> Router<AppState> {

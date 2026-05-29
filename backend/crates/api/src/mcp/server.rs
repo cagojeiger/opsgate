@@ -27,7 +27,7 @@ use rmcp::{ErrorData, Json, ServerHandler, tool, tool_handler, tool_router};
 
 use crate::api_call::{ApiCallInput, ApiCallOutput};
 use crate::auth::bearer::{
-    AuthError, auth_error_body, extract_bearer, shared_challenge_header, status_for_error,
+    AuthError, auth_error_body, extract_bearer, shared_scoped_challenge_header, status_for_error,
     verify_bearer_mcp,
 };
 use crate::credential::{
@@ -466,7 +466,7 @@ fn mcp_auth_response(state: &AppState, error: AuthError) -> Response {
     if status == StatusCode::UNAUTHORIZED {
         response.headers_mut().insert(
             WWW_AUTHENTICATE,
-            shared_challenge_header(&state.config.resource_url),
+            shared_scoped_challenge_header(&state.config.resource_url),
         );
     }
     response

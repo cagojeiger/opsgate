@@ -6,8 +6,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use axum::body::Body;
+use axum::body::{Body, to_bytes};
+use axum::http::header::WWW_AUTHENTICATE;
 use axum::http::{Method, Request, StatusCode};
+use axum::response::Response;
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, encode};
 use opsgate_domain::{Caller, Channel, IdentityError, ResolveAttrs, Role, User};
@@ -145,6 +147,13 @@ fn test_user(attrs: ResolveAttrs, role: Role) -> User {
 }
 
 fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
+    state_with_resource_url(mode, "https://api.example.test")
+}
+
+fn state_with_resource_url(
+    mode: ResolverMode,
+    resource_url: &str,
+) -> Result<AppState, Box<dyn std::error::Error>> {
     let mut keys = HashMap::new();
     keys.insert(
         "kid-1".to_owned(),
@@ -160,7 +169,7 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
         opsgate_public_url: "http://localhost:9091".to_owned(),
         oauth_client_id: "client".to_owned(),
         oauth_redirect_url: "http://localhost:9091/callback".to_owned(),
-        resource_url: "https://api.example.test".to_owned(),
+        resource_url: resource_url.to_owned(),
         admin_email: "admin@example.test".to_owned(),
         master_key: SecretString::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
         jwks_cache_ttl: Duration::from_secs(300),
@@ -221,6 +230,13 @@ fn state_with_role(role: Role) -> Result<AppState, Box<dyn std::error::Error>> {
     state(ResolverMode::RegisteredRole { active: true, role })
 }
 
+async fn request(
+    state: AppState,
+    request: Request<Body>,
+) -> Result<Response, Box<dyn std::error::Error>> {
+    Ok(crate::routes::app(state).oneshot(request).await?)
+}
+
 fn valid_api_token() -> Result<String, Box<dyn std::error::Error>> {
     token(
         "sub-1",
@@ -243,6 +259,18 @@ fn authed_json_request(
         .header("authorization", format!("Bearer {valid}"))
         .header("content-type", "application/json")
         .body(Body::from(body.to_owned()))?)
+}
+
+async fn response_json(response: Response) -> Result<Value, Box<dyn std::error::Error>> {
+    let body = to_bytes(response.into_body(), usize::MAX).await?;
+    Ok(serde_json::from_slice(&body)?)
+}
+
+fn json_array_contains(value: &Value, field: &str, expected: &str) -> bool {
+    value
+        .get(field)
+        .and_then(Value::as_array)
+        .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(expected)))
 }
 
 fn token(
@@ -382,6 +410,14 @@ async fn api_routes_require_bearer_before_handler() -> Result<(), Box<dyn std::e
         .await?;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let challenge = response
+        .headers()
+        .get(WWW_AUTHENTICATE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    assert!(challenge.starts_with("Bearer "));
+    assert!(challenge.contains("resource_metadata="));
+    assert!(!challenge.contains("scope="));
     Ok(())
 }
 
@@ -474,6 +510,198 @@ async fn unknown_api_routes_still_require_bearer() -> Result<(), Box<dyn std::er
         .await?;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+#[tokio::test]
+async fn authorization_server_metadata_route_returns_metadata()
+-> Result<(), Box<dyn std::error::Error>> {
+    let response = request(
+        state(ResolverMode::Registered(true))?,
+        Request::builder()
+            .uri("/.well-known/oauth-authorization-server")
+            .body(Body::empty())?,
+    )
+    .await?;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let value = response_json(response).await?;
+    assert_eq!(
+        value.get("issuer"),
+        Some(&json!("https://auth.example.test"))
+    );
+    assert_eq!(
+        value.get("authorization_endpoint"),
+        Some(&json!("https://auth.example.test/authorize"))
+    );
+    assert_eq!(
+        value.get("token_endpoint"),
+        Some(&json!("https://auth.example.test/oauth/token"))
+    );
+    assert_eq!(
+        value.get("revocation_endpoint"),
+        Some(&json!("https://auth.example.test/oauth/revoke"))
+    );
+    assert_eq!(
+        value.get("device_authorization_endpoint"),
+        Some(&json!("https://auth.example.test/oauth/device/authorize"))
+    );
+    assert!(json_array_contains(
+        &value,
+        "grant_types_supported",
+        "authorization_code"
+    ));
+    assert!(json_array_contains(
+        &value,
+        "grant_types_supported",
+        "refresh_token"
+    ));
+    assert!(json_array_contains(
+        &value,
+        "grant_types_supported",
+        "urn:ietf:params:oauth:grant-type:device_code"
+    ));
+    assert!(json_array_contains(
+        &value,
+        "code_challenge_methods_supported",
+        "S256"
+    ));
+    assert!(json_array_contains(
+        &value,
+        "token_endpoint_auth_methods_supported",
+        "none"
+    ));
+    assert!(json_array_contains(
+        &value,
+        "token_endpoint_auth_methods_supported",
+        "client_secret_basic"
+    ));
+    assert!(json_array_contains(
+        &value,
+        "token_endpoint_auth_methods_supported",
+        "client_secret_post"
+    ));
+    assert!(json_array_contains(&value, "scopes_supported", "openid"));
+    assert!(json_array_contains(
+        &value,
+        "scopes_supported",
+        "offline_access"
+    ));
+    assert_eq!(
+        value.get("client_id_metadata_document_supported"),
+        Some(&json!(true))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn protected_resource_metadata_route_returns_root_metadata()
+-> Result<(), Box<dyn std::error::Error>> {
+    let response = request(
+        state_with_resource_url(ResolverMode::Registered(true), "https://api.example.test")?,
+        Request::builder()
+            .uri("/.well-known/oauth-protected-resource")
+            .body(Body::empty())?,
+    )
+    .await?;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let value = response_json(response).await?;
+    assert_eq!(
+        value.get("resource"),
+        Some(&json!("https://api.example.test"))
+    );
+    assert!(json_array_contains(
+        &value,
+        "authorization_servers",
+        "https://auth.example.test"
+    ));
+    assert!(json_array_contains(&value, "scopes_supported", "openid"));
+    assert!(json_array_contains(
+        &value,
+        "scopes_supported",
+        "offline_access"
+    ));
+    assert!(json_array_contains(
+        &value,
+        "bearer_methods_supported",
+        "header"
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn protected_resource_metadata_route_returns_path_qualified_metadata()
+-> Result<(), Box<dyn std::error::Error>> {
+    let state = state_with_resource_url(
+        ResolverMode::Registered(true),
+        "https://api.example.test/mcp",
+    )?;
+
+    let root_response = request(
+        state.clone(),
+        Request::builder()
+            .uri("/.well-known/oauth-protected-resource")
+            .body(Body::empty())?,
+    )
+    .await?;
+    assert_eq!(root_response.status(), StatusCode::OK);
+    let root_value = response_json(root_response).await?;
+    assert_eq!(
+        root_value.get("resource"),
+        Some(&json!("https://api.example.test/mcp"))
+    );
+
+    for uri in [
+        "/.well-known/oauth-protected-resource/mcp",
+        "/.well-known/oauth-protected-resource/mcp/tools",
+    ] {
+        let response = request(
+            state.clone(),
+            Request::builder().uri(uri).body(Body::empty())?,
+        )
+        .await?;
+
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        let value = response_json(response).await?;
+        assert_eq!(
+            value.get("resource"),
+            Some(&json!("https://api.example.test/mcp"))
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn mcp_unauthenticated_challenge_includes_resource_metadata_and_scope()
+-> Result<(), Box<dyn std::error::Error>> {
+    let state = state_with_resource_url(
+        ResolverMode::Registered(true),
+        "https://api.example.test/mcp",
+    )?;
+
+    for uri in ["/mcp", "/mcp/admin"] {
+        let response = request(
+            state.clone(),
+            Request::builder()
+                .method(Method::POST)
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))?,
+        )
+        .await?;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{uri}");
+        let challenge = response
+            .headers()
+            .get(WWW_AUTHENTICATE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        assert!(challenge.starts_with("Bearer "));
+        assert!(challenge.contains("resource_metadata="));
+        assert!(challenge.contains("/.well-known/oauth-protected-resource/mcp"));
+        assert!(challenge.contains("scope=\"openid offline_access\""));
+    }
     Ok(())
 }
 
