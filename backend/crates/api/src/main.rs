@@ -35,8 +35,11 @@ async fn main() -> anyhow::Result<()> {
     // aborts startup instead of leaving us without graceful shutdown.
     let signals = ShutdownSignals::install()?;
 
+    let migrate_pool = opsgate_db::connect_migrate(&config).await?;
+    opsgate_db::run_migrations(&migrate_pool).await?;
+    migrate_pool.close().await;
+
     let pool = opsgate_db::connect(&config).await?;
-    opsgate_db::run_migrations(&pool).await?;
     info!(
         event = "db.ready",
         max_connections = config.db_max_connections

@@ -22,7 +22,8 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       OPSGATE_BIND_ADDR: 0.0.0.0:9091
-      OPSGATE_DATABASE_URL: postgres://opsgate:opsgate@postgres:5432/opsgate
+      OPSGATE_DATABASE_MIGRATE_URL: postgres://opsgate:opsgate@postgres:5432/opsgate
+      OPSGATE_DATABASE_URL: postgres://opsgate_app:opsgate_app@postgres:5432/opsgate
       OPSGATE_DB_MAX_CONNECTIONS: 10
       LOG_FORMAT: json
       OPSGATE_AUTHGATE_URL: https://authgate.project-jelly.io

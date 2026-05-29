@@ -28,6 +28,9 @@ pub struct Config {
     /// Postgres connection string.
     #[validate(length(min = 1))]
     pub database_url: String,
+    /// Postgres owner connection string used only for boot-time migrations.
+    #[validate(length(min = 1))]
+    pub database_migrate_url: String,
     /// Max connections in the sqlx pool.
     #[validate(range(min = 1, max = 256))]
     pub db_max_connections: u32,
@@ -187,6 +190,7 @@ mod tests {
         Config {
             bind_addr: SocketAddr::from(([127, 0, 0, 1], 9091)),
             database_url: "postgres://example".to_owned(),
+            database_migrate_url: "postgres://owner".to_owned(),
             db_max_connections: 10,
             authgate_url: "https://auth.test".to_owned(),
             opsgate_public_url: "http://localhost:9091".to_owned(),
@@ -216,6 +220,7 @@ mod tests {
             false,
             test_env(&[
                 ("OPSGATE_DATABASE_URL", "postgres://env"),
+                ("OPSGATE_DATABASE_MIGRATE_URL", "postgres://owner"),
                 ("OPSGATE_AUTHGATE_URL", "https://auth.env"),
                 ("OPSGATE_PUBLIC_URL", "http://localhost:9091"),
                 ("OPSGATE_OAUTH_CLIENT_ID", "opsgate-web"),
@@ -237,6 +242,7 @@ mod tests {
 
         assert_eq!(config.bind_addr.to_string(), super::DEFAULT_BIND_ADDR);
         assert_eq!(config.database_url, "postgres://env");
+        assert_eq!(config.database_migrate_url, "postgres://owner");
         assert_eq!(config.admin_email, "admin@example.test");
         assert_eq!(config.db_max_connections, 7);
         assert_eq!(
@@ -262,6 +268,10 @@ mod tests {
     fn validate_rejects_out_of_range_values() {
         let mut config = valid_config();
         config.db_max_connections = 0;
+        assert!(config.validate().is_err());
+
+        let mut config = valid_config();
+        config.database_migrate_url.clear();
         assert!(config.validate().is_err());
 
         let mut config = valid_config();

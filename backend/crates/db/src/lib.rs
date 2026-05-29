@@ -21,13 +21,28 @@ pub use user_repo::UserRepo;
 /// Embedded migrations from `migrations/`, run at startup via [`run_migrations`].
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
-/// Build a Postgres connection pool from configuration.
+/// Build the narrowed runtime Postgres connection pool from configuration.
 pub async fn connect(config: &Config) -> Result<PgPool> {
-    PgPoolOptions::new()
-        .max_connections(config.db_max_connections)
-        .connect(&config.database_url)
+    connect_url(&config.database_url, config.db_max_connections)
         .await
         .map_err(|e| Error::internal(format!("failed to connect to database: {e}")))
+}
+
+/// Build the owner/migration Postgres connection pool from configuration.
+pub async fn connect_migrate(config: &Config) -> Result<PgPool> {
+    connect_url(&config.database_migrate_url, 1)
+        .await
+        .map_err(|e| Error::internal(format!("failed to connect to migration database: {e}")))
+}
+
+async fn connect_url(
+    database_url: &str,
+    max_connections: u32,
+) -> std::result::Result<PgPool, sqlx::Error> {
+    PgPoolOptions::new()
+        .max_connections(max_connections)
+        .connect(database_url)
+        .await
 }
 
 /// Apply any pending migrations.

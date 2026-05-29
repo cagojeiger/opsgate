@@ -154,6 +154,7 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
     let config = Arc::new(opsgate_core::Config {
         bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9091),
         database_url: "postgres://opsgate:opsgate@localhost/opsgate".to_owned(),
+        database_migrate_url: "postgres://opsgate:opsgate@localhost/opsgate".to_owned(),
         db_max_connections: 1,
         authgate_url: "https://auth.example.test".to_owned(),
         opsgate_public_url: "http://localhost:9091".to_owned(),
