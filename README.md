@@ -53,10 +53,14 @@ local opsgate user row, then reconnect the MCP client to `OPSGATE_RESOURCE_URL`.
 ## Checks
 
 ```sh
-cargo fmt --all
-cargo clippy --all-targets
-cargo test
+cargo fmt --all --check
+cargo check --workspace
+cargo test --workspace
+cargo clippy --all-targets --all-features -- -D warnings
 ```
+
+Release and MCP smoke details are tracked in
+`docs/release-checklist.md` and `docs/mcp/smoke-report.md`.
 
 ## Full stack via Docker
 

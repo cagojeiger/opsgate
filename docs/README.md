@@ -2,12 +2,6 @@
 
 이 디렉터리는 `0.1.0` release candidate에 맞춰 다시 정리하는 중입니다.
 
-이전 문서 세트는 리포지토리 루트의 다음 위치에 보존되어 있습니다.
-
-```text
-docs.backup-20260520-170612/
-```
-
 현재 문서:
 
 - [MCP tool surface specification index](mcp-tools.md)

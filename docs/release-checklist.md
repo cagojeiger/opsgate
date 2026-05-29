@@ -1,49 +1,102 @@
 # 0.1.0 release readiness checklist
 
-날짜: 2026-05-21
+Date: 2026-05-29
 
-현재 target:
+Current target:
 
 ```text
-0.1.0 release candidate
+0.1.0 Rust release candidate
 ```
 
-## 상태
+## Status
 
 ```text
 release-check: PASS
 ```
 
-명령:
+There is no repo-local release wrapper in the Rust port. Run the release check
+as the explicit command set below so CI/local failures map directly to a tool
+output.
 
-```text
-make release-check
-```
+## Required Local Checks
 
-`release-check`가 다루는 항목:
-
-```text
-go test ./...
-go vet ./...
-go build -o bin/opsgate ./cmd/opsgate
-govulncheck ./...
-deadcode -test ./...
-staticcheck ./...
+```sh
+cargo fmt --all --check
+cargo check --workspace
+cargo test --workspace
+cargo clippy --all-targets --all-features -- -D warnings
+cargo build --release --bin opsgate-api
 git diff --check
 ```
 
-## 준비 점검 중 수정한 사항
+The workspace is pinned by `rust-toolchain.toml` to Rust 1.95.0. These checks
+cover formatting, type checking, unit/integration tests, strict linting under
+the workspace lint policy, the release binary, and whitespace-safe diffs.
 
-```text
-Makefile:
-  release-check now runs govulncheck with GOTOOLCHAIN=go1.26.3,
-  matching the module's Go version and the other analyzer commands.
+## Optional Postgres-Backed Checks
 
-internal/service/sql/query/run_test.go:
-  removed an unused test helper that deadcode/staticcheck reported.
+Several DB tests self-skip when `OPSGATE_TEST_DATABASE_URL` is not set. Run
+them against a local Postgres when validating migrations, runtime grants, and
+audit persistence:
+
+```sh
+docker compose up -d postgres
+
+OPSGATE_TEST_DATABASE_URL=postgres://opsgate:opsgate@localhost:5432/opsgate \
+cargo test -p opsgate-db --tests
 ```
 
-## 검증한 surface
+To specifically rehearse the runtime least-privilege split:
+
+```sh
+OPSGATE_TEST_DATABASE_MIGRATE_URL=postgres://opsgate:opsgate@localhost:5432/opsgate \
+OPSGATE_TEST_DATABASE_URL=postgres://opsgate_app:opsgate_app@localhost:5432/opsgate \
+cargo test -p opsgate-db --test runtime_least_privilege -- --nocapture
+```
+
+`opsgate_app` is created by the migrations that run through the owner URL above.
+Do not point the runtime URL at `opsgate_app` before the owner migration step has
+run at least once against that database.
+
+## Compose Smoke
+
+Bring up the Rust stack with the external AuthGate configuration from
+`.env.example` / `docker-compose.yml`:
+
+```sh
+docker compose up --build -d
+curl -fsS http://localhost:9091/health
+curl -fsS http://localhost:9091/ready
+curl -fsS http://localhost:9091/.well-known/oauth-authorization-server
+curl -fsS http://localhost:9091/.well-known/oauth-protected-resource
+curl -fsS http://localhost:9091/.well-known/oauth-protected-resource/mcp
+curl -i -sS http://localhost:9091/mcp \
+  -X POST \
+  -H 'content-type: application/json' \
+  -d '{}'
+curl -i -sS http://localhost:9091/mcp/admin \
+  -X POST \
+  -H 'content-type: application/json' \
+  -d '{}'
+```
+
+Expected compose smoke results:
+
+```text
+/health returns 200
+/ready returns 200 after migrations and DB readiness
+/.well-known/oauth-authorization-server returns issuer/token/revocation/device metadata
+/.well-known/oauth-protected-resource returns the configured resource
+/.well-known/oauth-protected-resource/mcp returns path-qualified resource metadata
+unauthenticated /mcp and /mcp/admin return 401 with WWW-Authenticate:
+  Bearer resource_metadata="...", scope="openid offline_access"
+```
+
+For a live authenticated smoke, open `http://localhost:9091/login` once with the
+configured admin account, then connect an MCP client to
+`http://localhost:9091/mcp`. Runtime and admin tool surfaces are listed below.
+
+## Verified Surfaces
 
 ```text
 /mcp runtime:
@@ -61,12 +114,21 @@ internal/service/sql/query/run_test.go:
   credential.update_sql
   credential.list
   credential.delete
+
+/api/v1 REST:
+  GET /api/v1/me
+  POST /api/v1/api/call
+  POST /api/v1/sql/query
+  POST /api/v1/credentials
+  GET /api/v1/credentials
+  DELETE /api/v1/credentials/{alias}
 ```
 
-## 남은 release 참고 사항
+## Remaining Release Notes
 
 ```text
-첫 0.1.0 release 전까지는 changelog를 유지하지 않습니다.
-Preview pagination/cache는 0.1.0에 의도적으로 포함하지 않습니다.
-실제 authgate live 로그인과 실 target API smoke는 environment 레벨 점검으로 남겨 둡니다.
+No changelog is maintained before the first 0.1.0 release.
+Preview pagination/cache remains intentionally out of scope for 0.1.0.
+Real target API side effects and live Postgres query execution are environment
+smoke checks, not required unit-test gates.
 ```
