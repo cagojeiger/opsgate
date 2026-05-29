@@ -40,10 +40,11 @@ async fn main() -> anyhow::Result<()> {
     let bind_addr = config.bind_addr;
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
         .build()?;
     let jwks_url = format!("{}/keys", config.authgate_url);
     let user_repo = opsgate_db::UserRepo::new(pool.clone());
-    let resolver = opsgate_domain::Resolver::new(user_repo, config.admin_email.clone());
+    let resolver = opsgate_domain::Resolver::new(user_repo);
     let config = std::sync::Arc::new(config);
     let jwks = std::sync::Arc::new(auth::jwks::JwksCache::new(
         jwks_url,

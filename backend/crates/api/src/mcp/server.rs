@@ -11,15 +11,21 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::header::WWW_AUTHENTICATE;
+use axum::http::request::Parts;
 use axum::http::{Request, StatusCode};
 use axum::response::{IntoResponse, Response};
-use rmcp::handler::server::tool::ToolRouter;
+use rmcp::handler::server::tool::{Extension, ToolRouter};
 use rmcp::model::{Implementation, ProtocolVersion, ServerCapabilities, ServerInfo};
 use rmcp::transport::streamable_http_server::session::never::NeverSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
-use rmcp::{ServerHandler, tool_handler, tool_router};
+use rmcp::{ErrorData, Json, ServerHandler, tool, tool_handler, tool_router};
 
-use crate::auth::bearer::{AuthError, auth_error_body, extract_bearer, request_meta_from_parts, shared_challenge_header, status_for_error, verify_bearer_mcp};
+use crate::auth::bearer::verify_bearer_mcp;
+use crate::auth::bearer_error::{
+    AuthError, auth_error_body, shared_challenge_header, status_for_error,
+};
+use crate::auth::bearer_extractor::{extract_bearer, request_meta_from_parts};
+use crate::me::MeOutput;
 use crate::state::AppState;
 
 #[allow(dead_code)]
@@ -37,6 +43,14 @@ impl McpServer {
             tool_router: Self::tool_router(),
         }
     }
+
+    #[tool(name = "me", description = "Return the authenticated caller identity.")]
+    pub async fn me_tool(
+        &self,
+        Extension(parts): Extension<Parts>,
+    ) -> Result<Json<MeOutput>, ErrorData> {
+        crate::mcp::tools::me::build_mcp_me(&parts)
+    }
 }
 
 #[tool_handler]
@@ -44,7 +58,9 @@ impl ServerHandler for McpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_protocol_version(ProtocolVersion::V_2025_03_26)
-            .with_server_info(Implementation::new("opsgate", env!("CARGO_PKG_VERSION")).with_title("opsgate"))
+            .with_server_info(
+                Implementation::new("opsgate", env!("CARGO_PKG_VERSION")).with_title("opsgate"),
+            )
             .with_instructions("Identity tools for opsgate.")
     }
 }
@@ -82,11 +98,7 @@ pub async fn mcp_handler(State(state): State<AppState>, mut request: Request<Bod
 fn mcp_auth_response(state: &AppState, error: AuthError) -> Response {
     let status = status_for_error(&error);
     tracing::warn!(event = "mcp.auth.denied", error = %error, status = status.as_u16());
-    let mut response = (
-        status,
-        axum::Json(auth_error_body(state, &error)),
-    )
-        .into_response();
+    let mut response = (status, axum::Json(auth_error_body(state, &error))).into_response();
     if status == StatusCode::UNAUTHORIZED {
         response.headers_mut().insert(
             WWW_AUTHENTICATE,

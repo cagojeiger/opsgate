@@ -6,5 +6,5 @@
 pub mod identity;
 pub mod user;
 
-pub use identity::{Caller, Channel, IdentityError, ResolveAttrs, Resolver, Role, UserStore};
+pub use identity::{Caller, Channel, IdentityError, ResolveAttrs, Resolver, UserStore};
 pub use user::User;

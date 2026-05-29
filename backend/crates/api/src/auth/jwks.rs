@@ -124,11 +124,7 @@ impl JwksCache {
         }
 
         match self.refresh().await {
-            Ok(cache) => cache
-                .keys
-                .get(kid)
-                .cloned()
-                .ok_or(JwksError::InvalidToken),
+            Ok(cache) => cache.keys.get(kid).cloned().ok_or(JwksError::InvalidToken),
             Err(error) => {
                 let snapshot = { self.cache.read().await.clone() };
                 if let Some(cache) = snapshot {
@@ -179,8 +175,8 @@ fn parse_keys(document: JwksDocument) -> Result<HashMap<String, DecodingKey>, Jw
         if !is_rsa {
             continue;
         }
-        let key = DecodingKey::from_rsa_components(&n, &e)
-            .map_err(|_error| JwksError::FetchFailed)?;
+        let key =
+            DecodingKey::from_rsa_components(&n, &e).map_err(|_error| JwksError::FetchFailed)?;
         keys.insert(kid, key);
     }
     Ok(keys)
@@ -213,12 +209,18 @@ mod tests {
     #[test]
     fn normalizes_one_trailing_slash() {
         assert_eq!(normalize_aud("https://api.example/"), "https://api.example");
-        assert_eq!(normalize_aud("https://api.example//"), "https://api.example/");
+        assert_eq!(
+            normalize_aud("https://api.example//"),
+            "https://api.example/"
+        );
     }
 
     #[test]
     fn aud_accepts_string_or_array() {
-        assert!(aud_matches(&json!("https://api.example/"), "https://api.example"));
+        assert!(aud_matches(
+            &json!("https://api.example/"),
+            "https://api.example"
+        ));
         assert!(aud_matches(
             &json!(["other", "https://api.example"]),
             "https://api.example/"

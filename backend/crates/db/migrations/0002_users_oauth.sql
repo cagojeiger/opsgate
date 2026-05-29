@@ -3,8 +3,6 @@
 ALTER TABLE users
     ADD COLUMN sub          TEXT NOT NULL,
     ADD COLUMN display_name TEXT NOT NULL DEFAULT '',
-    ADD COLUMN role         TEXT NOT NULL DEFAULT 'viewer'
-        CHECK (role IN ('admin','viewer')),
     ADD COLUMN is_active    BOOLEAN NOT NULL DEFAULT true;
 
 ALTER TABLE users ADD CONSTRAINT users_sub_key UNIQUE (sub);

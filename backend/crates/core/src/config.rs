@@ -35,8 +35,6 @@ pub struct Config {
     pub oauth_redirect_url: String,
     /// Resource/audience URL for REST and MCP, with trailing slash trimmed.
     pub resource_url: String,
-    /// Single administrator allowlist email for M1 browser registration.
-    pub admin_email: String,
     /// Shared JWKS cache TTL.
     pub jwks_cache_ttl: Duration,
     /// Whether login flow cookies must carry the Secure flag.
@@ -59,7 +57,6 @@ impl Config {
         let oauth_client_id = env_required("OAUTH_CLIENT_ID")?;
         let oauth_redirect_url = env_required_http_url_verbatim("OAUTH_REDIRECT_URL")?;
         let resource_url = env_required_trimmed_http_url("RESOURCE_URL")?;
-        let admin_email = env_required("ADMIN_EMAIL")?;
         let jwks_cache_ttl_secs = env_u64_in_range(
             "JWKS_CACHE_TTL_SECS",
             DEFAULT_JWKS_CACHE_TTL_SECS,
@@ -77,7 +74,6 @@ impl Config {
             oauth_client_id,
             oauth_redirect_url,
             resource_url,
-            admin_email,
             jwks_cache_ttl: Duration::from_secs(jwks_cache_ttl_secs),
             secure_cookies,
         })
@@ -185,12 +181,17 @@ mod tests {
     #[test]
     fn secure_cookies_follow_redirect_scheme() {
         assert!(secure_cookies_for_redirect("https://example.test/callback"));
-        assert!(!secure_cookies_for_redirect("http://localhost:9091/callback"));
+        assert!(!secure_cookies_for_redirect(
+            "http://localhost:9091/callback"
+        ));
     }
 
     #[test]
     fn trims_trailing_slashes() {
-        assert_eq!(trim_trailing_slashes("https://auth.test///"), "https://auth.test");
+        assert_eq!(
+            trim_trailing_slashes("https://auth.test///"),
+            "https://auth.test"
+        );
     }
 
     #[test]

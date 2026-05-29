@@ -1,9 +1,27 @@
-FROM rust:1.95.0-alpine3.22 AS chef
+# syntax=docker/dockerfile:1.7
+
+FROM rust:1.95.0-bookworm AS chef
 
 WORKDIR /app
-# musl-dev for linking; cmake/make/g++/perl in case a TLS backend needs to build C.
-RUN apk add --no-cache musl-dev cmake make g++ perl
-RUN cargo install cargo-chef --locked
+# Native toolchain for crates with C build scripts, plus certificates for Cargo HTTPS.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        cmake \
+        g++ \
+        make \
+        perl \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+RUN rustup component add rustfmt clippy rust-src
+RUN --mount=type=cache,id=opsgate-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=opsgate-cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    cargo install cargo-chef --locked \
+    && cargo install sccache --locked --no-default-features
+
+ENV RUSTC_WRAPPER=sccache \
+    SCCACHE_DIR=/sccache \
+    CARGO_INCREMENTAL=0
 
 FROM chef AS planner
 
@@ -16,16 +34,27 @@ FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 # sqlx query! macros are checked against the cached metadata, not a live DB.
 ENV SQLX_OFFLINE=true
-RUN cargo chef cook --release --locked --recipe-path recipe.json
+RUN --mount=type=cache,id=opsgate-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=opsgate-cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=opsgate-sccache,target=/sccache,sharing=locked \
+    --mount=type=cache,id=opsgate-target-release,target=/app/target,sharing=locked \
+    cargo chef cook --release --locked --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY backend ./backend
-RUN cargo build --release --locked --bin opsgate-api
+RUN --mount=type=cache,id=opsgate-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=opsgate-cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=opsgate-sccache,target=/sccache,sharing=locked \
+    --mount=type=cache,id=opsgate-target-release,target=/app/target,sharing=locked \
+    cargo build --release --locked --bin opsgate-api \
+    && cp /app/target/release/opsgate-api /usr/local/bin/opsgate-api
 
-FROM alpine:3.22 AS runtime
+FROM debian:bookworm-slim AS runtime
 
-RUN addgroup -S app && adduser -S -D -H -u 10001 -G app appuser
+COPY --from=chef /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+RUN groupadd --gid 10001 app \
+    && useradd --uid 10001 --gid app --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin appuser
 WORKDIR /app
-COPY --from=builder /app/target/release/opsgate-api /usr/local/bin/opsgate-api
+COPY --from=builder /usr/local/bin/opsgate-api /usr/local/bin/opsgate-api
 
 ENV BIND_ADDR=0.0.0.0:9091
 EXPOSE 9091

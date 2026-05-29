@@ -2,8 +2,7 @@ use opsgate_domain::Caller;
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::auth::bearer::AuthenticatedCaller;
-use crate::state::AppState;
+use crate::auth::bearer_extractor::AuthenticatedCaller;
 
 #[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct MeOutput {
@@ -11,32 +10,25 @@ pub struct MeOutput {
     pub sub: String,
     pub email: String,
     pub name: String,
-    pub role: String,
-    pub is_admin: bool,
 }
 
-pub fn build_me(caller: &Caller, admin_email: &str) -> MeOutput {
+pub fn build_me(caller: &Caller) -> MeOutput {
     MeOutput {
         id: caller.user.id.to_string(),
         sub: caller.user.sub.clone(),
         email: caller.user.email.clone(),
         name: caller.user.display_name.clone(),
-        role: caller.role.as_str().to_owned(),
-        is_admin: caller.user.email == admin_email,
     }
 }
 
-pub async fn me(
-    AuthenticatedCaller(caller): AuthenticatedCaller,
-    axum::extract::State(state): axum::extract::State<AppState>,
-) -> axum::Json<MeOutput> {
-    axum::Json(build_me(&caller, &state.config.admin_email))
+pub async fn me(AuthenticatedCaller(caller): AuthenticatedCaller) -> axum::Json<MeOutput> {
+    axum::Json(build_me(&caller))
 }
 
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use opsgate_domain::{Caller, Channel, Role, User};
+    use opsgate_domain::{Caller, Channel, User};
     use uuid::Uuid;
 
     use super::build_me;
@@ -47,9 +39,8 @@ mod tests {
         let user = User {
             id: Uuid::nil(),
             sub: "sub-1".to_owned(),
-            email: "admin@example.test".to_owned(),
-            display_name: "Admin User".to_owned(),
-            role: Role::Viewer,
+            email: "user@example.test".to_owned(),
+            display_name: "Test User".to_owned(),
             is_active: true,
             created_at: now,
             updated_at: now,
@@ -57,12 +48,11 @@ mod tests {
         let caller = Caller {
             user,
             channel: Channel::Api,
-            role: Role::Admin,
         };
-        let out = build_me(&caller, "admin@example.test");
+        let out = build_me(&caller);
         assert_eq!(out.id, "00000000-0000-0000-0000-000000000000");
-        assert_eq!(out.name, "Admin User");
-        assert_eq!(out.role, "admin");
-        assert!(out.is_admin);
+        assert_eq!(out.sub, "sub-1");
+        assert_eq!(out.email, "user@example.test");
+        assert_eq!(out.name, "Test User");
     }
 }
