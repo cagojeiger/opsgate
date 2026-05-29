@@ -262,6 +262,7 @@ pub struct ApiCallInput {
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
     #[serde(default)]
+    #[schemars(schema_with = "opsgate_core::schema::optional_json_value_schema")]
     pub body: Option<Value>,
     #[serde(default)]
     pub content_type: String,
@@ -275,6 +276,7 @@ pub struct ApiCallOutput {
     pub status_code: i32,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub headers: BTreeMap<String, String>,
+    #[schemars(schema_with = "opsgate_core::schema::json_value_schema")]
     pub body: Value,
     pub original_bytes: usize,
     pub returned_bytes: usize,

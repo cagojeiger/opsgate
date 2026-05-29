@@ -155,6 +155,7 @@ pub struct SqlQueryInput {
     pub purpose: String,
     pub query: String,
     #[serde(default)]
+    #[schemars(schema_with = "opsgate_core::schema::json_value_array_schema")]
     pub params: Vec<Value>,
     #[serde(default)]
     pub shape: String,
@@ -166,10 +167,13 @@ pub struct SqlQueryInput {
 #[derive(Debug, Clone, JsonSchema)]
 pub struct SqlQueryOutput {
     pub columns: Vec<Column>,
+    #[schemars(schema_with = "opsgate_core::schema::json_object_array_schema")]
     pub rows: Vec<BTreeMap<String, Value>>,
     pub shape: String,
+    #[schemars(schema_with = "opsgate_core::schema::json_value_columns_schema")]
     pub data: BTreeMap<String, Vec<Value>>,
     pub column: Option<Column>,
+    #[schemars(schema_with = "opsgate_core::schema::json_value_array_schema")]
     pub values: Vec<Value>,
     pub row_count: usize,
     pub truncated: bool,

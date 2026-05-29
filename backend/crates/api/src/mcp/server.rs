@@ -430,3 +430,48 @@ fn mcp_auth_response(state: &AppState, error: AuthError) -> Response {
     }
     response
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::Value;
+
+    use super::{AdminMcpServer, RuntimeMcpServer};
+
+    #[test]
+    fn tool_schemas_do_not_use_boolean_schema_nodes() -> Result<(), String> {
+        let tools = RuntimeMcpServer::tool_router()
+            .list_all()
+            .into_iter()
+            .chain(AdminMcpServer::tool_router().list_all());
+
+        for tool in tools {
+            let input = Value::Object(tool.input_schema.as_ref().clone());
+            assert_no_boolean_schema(&input, &format!("{}.inputSchema", tool.name))?;
+            if let Some(output_schema) = tool.output_schema {
+                let output = Value::Object(output_schema.as_ref().clone());
+                assert_no_boolean_schema(&output, &format!("{}.outputSchema", tool.name))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn assert_no_boolean_schema(value: &Value, path: &str) -> Result<(), String> {
+        match value {
+            Value::Bool(_) if path.ends_with(".default") => Ok(()),
+            Value::Bool(_) => Err(format!("boolean schema at {path}")),
+            Value::Array(items) => {
+                for (index, item) in items.iter().enumerate() {
+                    assert_no_boolean_schema(item, &format!("{path}[{index}]"))?;
+                }
+                Ok(())
+            }
+            Value::Object(map) => {
+                for (key, item) in map {
+                    assert_no_boolean_schema(item, &format!("{path}.{key}"))?;
+                }
+                Ok(())
+            }
+            Value::Null | Value::Number(_) | Value::String(_) => Ok(()),
+        }
+    }
+}

@@ -38,6 +38,7 @@ impl Default for JsonOutputOptions {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct JsonOutput {
+    #[schemars(schema_with = "crate::schema::json_value_schema")]
     pub body: Value,
     pub original_bytes: usize,
     pub returned_bytes: usize,
