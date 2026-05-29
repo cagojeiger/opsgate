@@ -15,7 +15,7 @@ impl UserRepo {
     }
 }
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug)]
 struct UserRow {
     id: Uuid,
     sub: String,
@@ -42,7 +42,8 @@ impl UserRow {
 
 impl UserStore for UserRepo {
     async fn upsert_by_sub(&self, sub: &str, email: &str, name: &str) -> Result<User> {
-        let user = sqlx::query_as::<_, UserRow>(
+        let user = sqlx::query_as!(
+            UserRow,
             r#"
             INSERT INTO users (sub, email, display_name)
             VALUES ($1, $2, $3)
@@ -51,10 +52,10 @@ impl UserStore for UserRepo {
                     updated_at = now()
             RETURNING id, sub, email, display_name, is_active, created_at, updated_at
             "#,
+            sub,
+            email,
+            name,
         )
-        .bind(sub)
-        .bind(email)
-        .bind(name)
         .fetch_one(&self.pool)
         .await
         .map_err(map_sqlx_error)?
@@ -63,14 +64,15 @@ impl UserStore for UserRepo {
     }
 
     async fn find_by_sub(&self, sub: &str) -> Result<Option<User>> {
-        let row = sqlx::query_as::<_, UserRow>(
+        let row = sqlx::query_as!(
+            UserRow,
             r#"
             SELECT id, sub, email, display_name, is_active, created_at, updated_at
             FROM users
             WHERE sub = $1
             "#,
+            sub,
         )
-        .bind(sub)
         .fetch_optional(&self.pool)
         .await
         .map_err(map_sqlx_error)?;

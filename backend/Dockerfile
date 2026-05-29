@@ -40,6 +40,7 @@ RUN --mount=type=cache,id=opsgate-cargo-registry,target=/usr/local/cargo/registr
     --mount=type=cache,id=opsgate-target-release,target=/app/target,sharing=locked \
     cargo chef cook --release --locked --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY .sqlx ./.sqlx
 COPY backend ./backend
 RUN --mount=type=cache,id=opsgate-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=opsgate-cargo-git,target=/usr/local/cargo/git,sharing=locked \
