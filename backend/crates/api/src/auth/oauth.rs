@@ -22,7 +22,7 @@ pub struct CallbackQuery {
 }
 
 pub async fn login(State(state): State<AppState>, jar: CookieJar) -> Response {
-    let login_flow = match new_login_flow(&state.config, &state.http).await {
+    let login_flow = match new_login_flow(&state.oidc).await {
         Ok(flow) => flow,
         Err(error) => {
             tracing::error!(event = "oauth.login_flow_failed", %error);
@@ -128,7 +128,7 @@ pub async fn callback(
     };
 
     let userinfo =
-        match exchange_code_for_userinfo(&state.config, &state.http, code, &verifier, &nonce).await
+        match exchange_code_for_userinfo(&state.oidc, &state.http, code, &verifier, &nonce).await
         {
             Ok(userinfo) => userinfo,
             Err(error) => {

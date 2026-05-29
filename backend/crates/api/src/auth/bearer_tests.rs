@@ -155,10 +155,15 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
         config.resource_url.clone(),
         keys,
     ));
+    let oidc = Arc::new(crate::auth::oidc::OidcProvider::new(
+        &config,
+        reqwest::Client::new(),
+    ));
     Ok(AppState::new(
         pool,
         config,
         jwks,
+        oidc,
         Arc::new(TestResolver { mode }),
         reqwest::Client::new(),
     ))

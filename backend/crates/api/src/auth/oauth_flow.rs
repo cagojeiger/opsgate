@@ -4,7 +4,7 @@ use openidconnect::core::CoreAuthenticationFlow;
 use openidconnect::{CsrfToken, Nonce, PkceCodeChallenge, Scope};
 use time::Duration as CookieDuration;
 
-use crate::auth::oauth_client::oidc_client;
+use crate::auth::oidc::OidcProvider;
 
 pub(super) const LOGIN_STATE_COOKIE: &str = "opsgate_login_state";
 pub(super) const LOGIN_VERIFIER_COOKIE: &str = "opsgate_login_verifier";
@@ -18,11 +18,8 @@ pub(super) struct LoginFlow {
     pub nonce: String,
 }
 
-pub(super) async fn new_login_flow(
-    config: &opsgate_core::Config,
-    http: &reqwest::Client,
-) -> opsgate_core::Result<LoginFlow> {
-    let client = oidc_client(config, http).await?;
+pub(super) async fn new_login_flow(oidc: &OidcProvider) -> opsgate_core::Result<LoginFlow> {
+    let client = oidc.client().await?;
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
     let (redirect_url, csrf_state, nonce) = client
         .authorize_url(

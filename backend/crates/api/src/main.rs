@@ -53,10 +53,12 @@ async fn main() -> anyhow::Result<()> {
         config.jwks_cache_ttl,
         http.clone(),
     ));
+    let oidc = std::sync::Arc::new(auth::oidc::OidcProvider::new(&config, http.clone()));
     let state = AppState::new(
         pool.clone(),
         config.clone(),
         jwks,
+        oidc,
         std::sync::Arc::new(resolver),
         http,
     );

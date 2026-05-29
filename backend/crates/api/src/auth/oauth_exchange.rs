@@ -5,7 +5,7 @@ use openidconnect::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::auth::oauth_client::oidc_client;
+use crate::auth::oidc::OidcProvider;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct UserInfo {
@@ -17,13 +17,13 @@ pub struct UserInfo {
 }
 
 pub(super) async fn exchange_code_for_userinfo(
-    config: &opsgate_core::Config,
+    oidc: &OidcProvider,
     http: &reqwest::Client,
     code: &str,
     verifier: &str,
     nonce: &str,
 ) -> opsgate_core::Result<UserInfo> {
-    let client = oidc_client(config, http).await?;
+    let client = oidc.client().await?;
     let token_response = client
         .exchange_code(AuthorizationCode::new(code.to_owned()))
         .map_err(|error| {
