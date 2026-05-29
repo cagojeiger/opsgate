@@ -15,6 +15,7 @@ mod credential;
 mod error;
 mod identity;
 mod mcp;
+mod request_context;
 mod rest;
 mod routes;
 mod sql_query;

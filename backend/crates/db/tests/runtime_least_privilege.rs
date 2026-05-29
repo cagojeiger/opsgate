@@ -13,7 +13,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Connection, PgConnection, PgPool};
 use uuid::Uuid;
 
-const MIGRATIONS: [&str; 11] = [
+const MIGRATIONS: [&str; 12] = [
     include_str!("../migrations/0001_init.sql"),
     include_str!("../migrations/0002_users_oauth.sql"),
     include_str!("../migrations/0003_credentials.sql"),
@@ -25,6 +25,7 @@ const MIGRATIONS: [&str; 11] = [
     include_str!("../migrations/0009_identity_roles.sql"),
     include_str!("../migrations/0010_credential_lifecycle_history.sql"),
     include_str!("../migrations/0011_runtime_least_privilege.sql"),
+    include_str!("../migrations/0012_credential_audit_request_metadata.sql"),
 ];
 
 struct TestDb {
@@ -68,6 +69,11 @@ async fn opsgate_app_can_run_normal_runtime_operations() -> Result<(), Box<dyn s
             },
             CredentialAuditParams {
                 actor_user_id: user.id,
+                actor_role: Some("admin".to_owned()),
+                actor_ip: Some("127.0.0.1".to_owned()),
+                actor_user_agent: Some("least-privilege-test".to_owned()),
+                request_id: Some("req-credential-update".to_owned()),
+                channel: Some("mcp".to_owned()),
                 action: CredentialAuditAction::Update,
                 reason: Some("Update runtime credential safely".to_owned()),
                 changed_fields: vec!["description".to_owned()],
@@ -94,6 +100,11 @@ async fn opsgate_app_can_run_normal_runtime_operations() -> Result<(), Box<dyn s
             user.id,
             CredentialAuditParams {
                 actor_user_id: user.id,
+                actor_role: Some("admin".to_owned()),
+                actor_ip: Some("127.0.0.1".to_owned()),
+                actor_user_agent: Some("least-privilege-test".to_owned()),
+                request_id: Some("req-credential-delete".to_owned()),
+                channel: Some("mcp".to_owned()),
                 action: CredentialAuditAction::Delete,
                 reason: Some("Retire runtime credential safely".to_owned()),
                 changed_fields: Vec::new(),
@@ -257,6 +268,11 @@ fn insert_params(owner_user_id: Uuid, alias: &str) -> InsertCredentialParams {
 fn audit(actor_user_id: Uuid, action: CredentialAuditAction) -> CredentialAuditParams {
     CredentialAuditParams {
         actor_user_id,
+        actor_role: Some("admin".to_owned()),
+        actor_ip: Some("127.0.0.1".to_owned()),
+        actor_user_agent: Some("least-privilege-test".to_owned()),
+        request_id: Some("req-credential".to_owned()),
+        channel: Some("mcp".to_owned()),
         action,
         reason: None,
         changed_fields: Vec::new(),

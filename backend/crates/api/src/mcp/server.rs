@@ -10,8 +10,6 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::HeaderMap;
-use axum::http::header::USER_AGENT;
 use axum::http::header::WWW_AUTHENTICATE;
 use axum::http::request::Parts;
 use axum::http::{Request, StatusCode};
@@ -38,6 +36,7 @@ use crate::mcp::tools::credentials::{
     CredentialListOutput, DeleteCredentialOutput, RegisterCredentialOutput, UpdateCredentialOutput,
 };
 use crate::mcp::tools::me::{McpMeOutput, McpToolset};
+use crate::request_context::RequestMetadata;
 use crate::sql_query::{SqlQueryInput, SqlQueryOutput};
 use crate::sql_schema::{SqlSchemaInput, SqlSchemaOutput};
 use crate::state::AppState;
@@ -384,46 +383,30 @@ async fn verify_mcp_request(
     let Some(token) = extract_bearer(&parts.headers).map(str::to_owned) else {
         return Err(AuthError::MissingToken);
     };
-    let request_id = request_id(&parts.headers);
-    let remote_ip = remote_ip(&parts.headers);
-    let user_agent = user_agent(&parts.headers);
-    let caller = verify_bearer_mcp(state, &token)
-        .await?
-        .with_request_metadata(request_id, remote_ip, user_agent);
+    let metadata = RequestMetadata::from_headers(&parts.headers);
+    let caller = match verify_bearer_mcp(state, &token).await {
+        Ok(caller) => caller.with_request_metadata(
+            metadata.request_id.clone(),
+            metadata.remote_ip.clone(),
+            metadata.user_agent.clone(),
+        ),
+        Err(error) => {
+            crate::auth::audit::record_auth_denied(&state.audit, "mcp", &metadata, &error).await;
+            return Err(error);
+        }
+    };
     parts.extensions.insert(caller);
     Ok(Request::from_parts(parts, body))
 }
 
-fn request_id(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("x-request-id")
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
-}
-
-fn remote_ip(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("x-forwarded-for")
-        .or_else(|| headers.get("x-real-ip"))
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(',').next())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
-}
-
-fn user_agent(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get(USER_AGENT)
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
-}
-
 async fn record_mcp_admin_denied(state: &AppState, caller: &Caller) {
+    let params = mcp_admin_denied_audit_params(caller);
+    if let Err(error) = state.audit.append(params).await {
+        tracing::error!(event = "mcp.auth.audit_failed", detail = %error);
+    }
+}
+
+fn mcp_admin_denied_audit_params(caller: &Caller) -> AuditLogParams {
     let detail = serde_json::json!({
         "schema_version": 1,
         "denial_reason": "required_role",
@@ -431,7 +414,7 @@ async fn record_mcp_admin_denied(state: &AppState, caller: &Caller) {
         "actor_role": caller.role.as_str(),
         "sub": caller.user.sub.clone(),
     });
-    let params = AuditLogParams {
+    AuditLogParams {
         action: "mcp.auth.denied".to_owned(),
         channel: "mcp".to_owned(),
         outcome: "denied".to_owned(),
@@ -446,9 +429,6 @@ async fn record_mcp_admin_denied(state: &AppState, caller: &Caller) {
         request_id: caller.request_id.clone(),
         purpose: None,
         detail,
-    };
-    if let Err(error) = state.audit.append(params).await {
-        tracing::error!(event = "mcp.auth.audit_failed", detail = %error);
     }
 }
 
@@ -474,9 +454,12 @@ fn mcp_auth_response(state: &AppState, error: AuthError) -> Response {
 
 #[cfg(test)]
 mod tests {
+    use chrono::Utc;
+    use opsgate_domain::{Channel, Role, User};
     use serde_json::Value;
+    use uuid::Uuid;
 
-    use super::{AdminMcpServer, RuntimeMcpServer};
+    use super::{AdminMcpServer, RuntimeMcpServer, mcp_admin_denied_audit_params};
 
     #[test]
     fn tool_schemas_do_not_use_boolean_schema_nodes() -> Result<(), String> {
@@ -494,6 +477,40 @@ mod tests {
             }
         }
         Ok(())
+    }
+
+    #[test]
+    fn mcp_admin_denial_audit_row_carries_request_metadata() {
+        let now = Utc::now();
+        let caller = opsgate_domain::Caller {
+            user: User {
+                id: Uuid::nil(),
+                sub: "sub-1".to_owned(),
+                email: "operator@example.test".to_owned(),
+                display_name: "Operator".to_owned(),
+                role: Role::Operator,
+                is_active: true,
+                created_at: now,
+                updated_at: now,
+            },
+            channel: Channel::Mcp,
+            role: Role::Operator,
+            request_id: Some("req-mcp".to_owned()),
+            remote_ip: Some("203.0.113.10".to_owned()),
+            user_agent: Some("opsgate-test".to_owned()),
+        };
+
+        let params = mcp_admin_denied_audit_params(&caller);
+
+        assert_eq!(params.action, "mcp.auth.denied");
+        assert_eq!(params.outcome, "denied");
+        assert_eq!(params.request_id.as_deref(), Some("req-mcp"));
+        assert_eq!(params.actor_ip.as_deref(), Some("203.0.113.10"));
+        assert_eq!(params.actor_user_agent.as_deref(), Some("opsgate-test"));
+        assert_eq!(
+            params.detail.get("denial_reason"),
+            Some(&serde_json::json!("required_role"))
+        );
     }
 
     fn assert_no_boolean_schema(value: &Value, path: &str) -> Result<(), String> {

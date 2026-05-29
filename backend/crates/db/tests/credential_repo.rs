@@ -10,7 +10,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Connection, PgPool, Row};
 use uuid::Uuid;
 
-const MIGRATIONS: [&str; 10] = [
+const MIGRATIONS: [&str; 11] = [
     include_str!("../migrations/0001_init.sql"),
     include_str!("../migrations/0002_users_oauth.sql"),
     include_str!("../migrations/0003_credentials.sql"),
@@ -21,12 +21,22 @@ const MIGRATIONS: [&str; 10] = [
     include_str!("../migrations/0008_sql_query_history.sql"),
     include_str!("../migrations/0009_identity_roles.sql"),
     include_str!("../migrations/0010_credential_lifecycle_history.sql"),
+    include_str!("../migrations/0012_credential_audit_request_metadata.sql"),
 ];
 
 struct TestDb {
     database_url: String,
     schema: String,
     pool: PgPool,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct AuditMetadataRow {
+    actor_role: Option<String>,
+    actor_ip: Option<String>,
+    actor_user_agent: Option<String>,
+    request_id: Option<String>,
+    channel: Option<String>,
 }
 
 #[tokio::test]
@@ -117,6 +127,11 @@ async fn credential_mutations_write_actor_columns_and_history_versions()
         },
         CredentialAuditParams {
             actor_user_id: owner,
+            actor_role: Some("admin".to_owned()),
+            actor_ip: Some("203.0.113.20".to_owned()),
+            actor_user_agent: Some("opsgate-test".to_owned()),
+            request_id: Some("req-update".to_owned()),
+            channel: Some("mcp".to_owned()),
             action: CredentialAuditAction::Update,
             reason: Some("Rotate safely".to_owned()),
             changed_fields: vec!["env".to_owned()],
@@ -130,6 +145,11 @@ async fn credential_mutations_write_actor_columns_and_history_versions()
         owner,
         CredentialAuditParams {
             actor_user_id: owner,
+            actor_role: Some("admin".to_owned()),
+            actor_ip: Some("203.0.113.20".to_owned()),
+            actor_user_agent: Some("opsgate-test".to_owned()),
+            request_id: Some("req-delete".to_owned()),
+            channel: Some("mcp".to_owned()),
             action: CredentialAuditAction::Delete,
             reason: Some("Retire safely".to_owned()),
             changed_fields: Vec::new(),
@@ -164,6 +184,26 @@ async fn credential_mutations_write_actor_columns_and_history_versions()
     assert!(!history_json.contains("secret-token"));
     assert!(history_json.contains("Rotate safely"));
     assert!(history_json.contains("Retire safely"));
+
+    let audit_metadata: Vec<AuditMetadataRow> = sqlx::query_as(
+        "SELECT actor_role, actor_ip, actor_user_agent, request_id, channel \
+             FROM credential_audit_events \
+             WHERE owner_user_id = $1 AND alias = 'prod-api' \
+             ORDER BY created_at, id",
+    )
+    .bind(owner)
+    .fetch_all(&db.pool)
+    .await?;
+    let [register, update, delete] = audit_metadata.as_slice() else {
+        return Err(format!("expected 3 credential audit rows, got {audit_metadata:?}").into());
+    };
+    assert_eq!(register.actor_role.as_deref(), Some("admin"));
+    assert_eq!(register.actor_ip.as_deref(), Some("203.0.113.20"));
+    assert_eq!(register.actor_user_agent.as_deref(), Some("opsgate-test"));
+    assert_eq!(register.request_id.as_deref(), Some("req-credential"));
+    assert_eq!(register.channel.as_deref(), Some("mcp"));
+    assert_eq!(update.request_id.as_deref(), Some("req-update"));
+    assert_eq!(delete.request_id.as_deref(), Some("req-delete"));
 
     db.cleanup().await;
     Ok(())
@@ -359,6 +399,11 @@ fn insert_params(owner: Uuid, alias: &str) -> InsertCredentialParams {
 fn audit(actor_user_id: Uuid, action: CredentialAuditAction) -> CredentialAuditParams {
     CredentialAuditParams {
         actor_user_id,
+        actor_role: Some("admin".to_owned()),
+        actor_ip: Some("203.0.113.20".to_owned()),
+        actor_user_agent: Some("opsgate-test".to_owned()),
+        request_id: Some("req-credential".to_owned()),
+        channel: Some("mcp".to_owned()),
         action,
         reason: None,
         changed_fields: Vec::new(),

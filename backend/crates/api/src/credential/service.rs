@@ -70,7 +70,7 @@ impl CredentialService {
             .tls_server_ca
             .as_ref()
             .map(|ca| ca.as_bytes().to_vec());
-        let audit = register_audit(owner_user_id, &input);
+        let audit = register_audit(caller, &input);
         self.repo
             .insert_credential(
                 InsertCredentialParams {
@@ -106,7 +106,7 @@ impl CredentialService {
         let secret_ciphertext = self
             .sealer
             .seal(SECRET_DOMAIN, &input.alias, &secret_plaintext)?;
-        let audit = register_audit(owner_user_id, &input);
+        let audit = register_audit(caller, &input);
         self.repo
             .insert_credential(
                 InsertCredentialParams {
@@ -207,7 +207,7 @@ impl CredentialService {
                 owner_user_id,
                 &alias,
                 owner_user_id,
-                delete_audit(owner_user_id, reason),
+                delete_audit(caller, reason),
             )
             .await
     }
@@ -246,7 +246,7 @@ impl CredentialService {
             ));
         }
 
-        let audit = update_audit(owner_user_id, reason, &changed_fields);
+        let audit = update_audit(caller, reason, &changed_fields);
         let credential = self
             .repo
             .update_credential_mutable_fields(
@@ -601,9 +601,14 @@ fn changed_fields(
     fields
 }
 
-fn register_audit(actor_user_id: Uuid, input: &RegisterCredentialInput) -> CredentialAuditParams {
+fn register_audit(caller: &Caller, input: &RegisterCredentialInput) -> CredentialAuditParams {
     CredentialAuditParams {
-        actor_user_id,
+        actor_user_id: caller.user.id,
+        actor_role: Some(caller.role.as_str().to_owned()),
+        actor_ip: caller.remote_ip.clone(),
+        actor_user_agent: caller.user_agent.clone(),
+        request_id: caller.request_id.clone(),
+        channel: Some(channel_str(caller.channel).to_owned()),
         action: CredentialAuditAction::Register,
         reason: None,
         changed_fields: Vec::new(),
@@ -618,7 +623,7 @@ fn register_audit(actor_user_id: Uuid, input: &RegisterCredentialInput) -> Crede
 }
 
 fn update_audit(
-    actor_user_id: Uuid,
+    caller: &Caller,
     reason: String,
     changed_fields: &[&'static str],
 ) -> CredentialAuditParams {
@@ -627,7 +632,12 @@ fn update_audit(
         .map(|field| (*field).to_owned())
         .collect::<Vec<_>>();
     CredentialAuditParams {
-        actor_user_id,
+        actor_user_id: caller.user.id,
+        actor_role: Some(caller.role.as_str().to_owned()),
+        actor_ip: caller.remote_ip.clone(),
+        actor_user_agent: caller.user_agent.clone(),
+        request_id: caller.request_id.clone(),
+        channel: Some(channel_str(caller.channel).to_owned()),
         action: CredentialAuditAction::Update,
         reason: Some(reason.trim().to_owned()),
         changed_fields: changed_fields.clone(),
@@ -637,15 +647,28 @@ fn update_audit(
     }
 }
 
-fn delete_audit(actor_user_id: Uuid, reason: String) -> CredentialAuditParams {
+fn delete_audit(caller: &Caller, reason: String) -> CredentialAuditParams {
     CredentialAuditParams {
-        actor_user_id,
+        actor_user_id: caller.user.id,
+        actor_role: Some(caller.role.as_str().to_owned()),
+        actor_ip: caller.remote_ip.clone(),
+        actor_user_agent: caller.user_agent.clone(),
+        request_id: caller.request_id.clone(),
+        channel: Some(channel_str(caller.channel).to_owned()),
         action: CredentialAuditAction::Delete,
         reason: Some(reason.trim().to_owned()),
         changed_fields: Vec::new(),
         detail: serde_json::json!({
             "secret_destroyed": true,
         }),
+    }
+}
+
+fn channel_str(channel: opsgate_domain::Channel) -> &'static str {
+    match channel {
+        opsgate_domain::Channel::Browser => "browser",
+        opsgate_domain::Channel::Api => "api",
+        opsgate_domain::Channel::Mcp => "mcp",
     }
 }
 
@@ -715,9 +738,9 @@ mod tests {
             },
             channel: Channel::Mcp,
             role,
-            request_id: None,
-            remote_ip: None,
-            user_agent: None,
+            request_id: Some("req-credential".to_owned()),
+            remote_ip: Some("203.0.113.30".to_owned()),
+            user_agent: Some("opsgate-test".to_owned()),
         }
     }
 
@@ -770,10 +793,15 @@ mod tests {
     #[test]
     fn register_audit_detail_excludes_endpoint_and_secret_material() {
         let input = http_input(false);
-        let audit = register_audit(Uuid::nil(), &input);
+        let audit = register_audit(&caller(Role::Admin), &input);
         let detail = audit.detail.to_string();
 
         assert!(matches!(audit.action, CredentialAuditAction::Register));
+        assert_eq!(audit.actor_role.as_deref(), Some("admin"));
+        assert_eq!(audit.channel.as_deref(), Some("mcp"));
+        assert_eq!(audit.request_id.as_deref(), Some("req-credential"));
+        assert_eq!(audit.actor_ip.as_deref(), Some("203.0.113.30"));
+        assert_eq!(audit.actor_user_agent.as_deref(), Some("opsgate-test"));
         assert!(detail.contains("k8s"));
         assert!(!detail.contains("service.example.test"));
         assert!(!detail.contains("secret-token"));
@@ -782,18 +810,20 @@ mod tests {
 
     #[test]
     fn update_and_delete_audit_store_reason_without_secret_material() {
+        let caller = caller(Role::Admin);
         let update = update_audit(
-            Uuid::nil(),
+            &caller,
             "  Allow readonly metadata query  ".to_owned(),
             &["policy"],
         );
-        let delete = delete_audit(Uuid::nil(), "  Retire old credential  ".to_owned());
+        let delete = delete_audit(&caller, "  Retire old credential  ".to_owned());
 
         assert!(matches!(update.action, CredentialAuditAction::Update));
         assert_eq!(
             update.reason.as_deref(),
             Some("Allow readonly metadata query")
         );
+        assert_eq!(update.request_id.as_deref(), Some("req-credential"));
         assert!(update.changed_fields.iter().any(|field| field == "policy"));
         assert!(!update.detail.to_string().contains("secret-token"));
         assert!(matches!(delete.action, CredentialAuditAction::Delete));

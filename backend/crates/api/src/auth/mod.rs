@@ -1,3 +1,4 @@
+pub(crate) mod audit;
 pub mod bearer;
 #[cfg(test)]
 mod bearer_tests;

@@ -1,7 +1,6 @@
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
-use axum::http::header::USER_AGENT;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum_extra::extract::CookieJar;
 use opsgate_domain::{IdentityError, ResolveAttrs};
@@ -14,6 +13,7 @@ use crate::auth::oauth_flow::{
     new_login_flow,
 };
 use crate::auth::page::html_page;
+use crate::request_context::RequestMetadata;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -60,8 +60,7 @@ pub async fn callback(
     headers: HeaderMap,
     Query(query): Query<CallbackQuery>,
 ) -> Response {
-    let remote_ip = remote_ip(&headers);
-    let user_agent = user_agent(&headers);
+    let metadata = RequestMetadata::from_headers(&headers);
     let cookie_state = jar
         .get(LOGIN_STATE_COOKIE)
         .map(|cookie| cookie.value().to_owned());
@@ -155,8 +154,12 @@ pub async fn callback(
     };
     match state.resolver.resolve_browser(attrs.clone()).await {
         Ok(caller) => {
-            let caller = caller.with_request_metadata(None, remote_ip, user_agent);
-            audit_signup(&state, Some(&caller), "ok", None, &attrs).await;
+            let caller = caller.with_request_metadata(
+                metadata.request_id.clone(),
+                metadata.remote_ip.clone(),
+                metadata.user_agent.clone(),
+            );
+            audit_signup(&state, Some(&caller), "ok", None, &attrs, &metadata).await;
             let body = format!(
                 "You're registered, sub={}. Reconnect your MCP client to {}.",
                 attrs.sub, state.config.resource_url
@@ -164,18 +167,29 @@ pub async fn callback(
             (jar, html_page(StatusCode::OK, "Login complete", &body)).into_response()
         }
         Err(IdentityError::NotAdmin) => {
-            audit_signup(&state, None, "denied", Some("not_admin"), &attrs).await;
+            audit_signup(&state, None, "denied", Some("not_admin"), &attrs, &metadata).await;
             (
                 jar,
                 html_page(StatusCode::FORBIDDEN, "Login forbidden", "not allowed"),
             )
                 .into_response()
         }
-        Err(IdentityError::Inactive) => (
-            jar,
-            html_page(StatusCode::FORBIDDEN, "Login forbidden", "user is inactive"),
-        )
-            .into_response(),
+        Err(IdentityError::Inactive) => {
+            audit_signup(
+                &state,
+                None,
+                "denied",
+                Some("inactive_user"),
+                &attrs,
+                &metadata,
+            )
+            .await;
+            (
+                jar,
+                html_page(StatusCode::FORBIDDEN, "Login forbidden", "user is inactive"),
+            )
+                .into_response()
+        }
         Err(error) => {
             tracing::error!(event = "oauth.resolve_failed", %error);
             (
@@ -191,33 +205,27 @@ pub async fn callback(
     }
 }
 
-fn remote_ip(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("x-forwarded-for")
-        .or_else(|| headers.get("x-real-ip"))
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(',').next())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
-}
-
-fn user_agent(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get(USER_AGENT)
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
-}
-
 async fn audit_signup(
     state: &AppState,
     caller: Option<&opsgate_domain::Caller>,
     outcome: &str,
     denial_reason: Option<&str>,
     attrs: &ResolveAttrs,
+    metadata: &RequestMetadata,
 ) {
+    let params = signup_audit_params(caller, outcome, denial_reason, attrs, metadata);
+    if let Err(error) = state.audit.append(params).await {
+        tracing::error!(event = "browser.signup.audit_failed", detail = %error);
+    }
+}
+
+fn signup_audit_params(
+    caller: Option<&opsgate_domain::Caller>,
+    outcome: &str,
+    denial_reason: Option<&str>,
+    attrs: &ResolveAttrs,
+    metadata: &RequestMetadata,
+) -> opsgate_db::AuditLogParams {
     let mut detail = serde_json::Map::new();
     detail.insert("schema_version".to_owned(), serde_json::json!(1));
     detail.insert("sub".to_owned(), serde_json::json!(attrs.sub.clone()));
@@ -225,23 +233,101 @@ async fn audit_signup(
     if let Some(reason) = denial_reason {
         detail.insert("denial_reason".to_owned(), serde_json::json!(reason));
     }
-    let params = opsgate_db::AuditLogParams {
+    opsgate_db::AuditLogParams {
         action: "browser.signup".to_owned(),
         channel: "browser".to_owned(),
         outcome: outcome.to_owned(),
         severity: if outcome == "ok" { "info" } else { "warning" }.to_owned(),
         actor_user_id: caller.map(|caller| caller.user.id),
         actor_role: caller.map(|caller| caller.role.as_str().to_owned()),
-        actor_ip: caller.and_then(|caller| caller.remote_ip.clone()),
-        actor_user_agent: caller.and_then(|caller| caller.user_agent.clone()),
+        actor_ip: caller
+            .and_then(|caller| caller.remote_ip.clone())
+            .or_else(|| metadata.remote_ip.clone()),
+        actor_user_agent: caller
+            .and_then(|caller| caller.user_agent.clone())
+            .or_else(|| metadata.user_agent.clone()),
         target_type: Some("identity".to_owned()),
         target_id: caller.map(|caller| caller.user.id.to_string()),
         target_key: Some(attrs.sub.clone()),
-        request_id: None,
+        request_id: caller
+            .and_then(|caller| caller.request_id.clone())
+            .or_else(|| metadata.request_id.clone()),
         purpose: None,
         detail: serde_json::Value::Object(detail),
-    };
-    if let Err(error) = state.audit.append(params).await {
-        tracing::error!(event = "browser.signup.audit_failed", detail = %error);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use opsgate_domain::{Caller, Channel, Role, User};
+    use uuid::Uuid;
+
+    use super::*;
+
+    fn attrs() -> ResolveAttrs {
+        ResolveAttrs {
+            sub: "sub-1".to_owned(),
+            email: "user@example.test".to_owned(),
+            name: "User".to_owned(),
+        }
+    }
+
+    fn metadata() -> RequestMetadata {
+        RequestMetadata {
+            request_id: Some("req-browser".to_owned()),
+            remote_ip: Some("203.0.113.12".to_owned()),
+            user_agent: Some("opsgate-test".to_owned()),
+        }
+    }
+
+    #[test]
+    fn signup_denial_audit_row_records_identity_and_request_metadata() {
+        let params = signup_audit_params(None, "denied", Some("not_admin"), &attrs(), &metadata());
+
+        assert_eq!(params.action, "browser.signup");
+        assert_eq!(params.outcome, "denied");
+        assert_eq!(params.actor_user_id, None);
+        assert_eq!(params.request_id.as_deref(), Some("req-browser"));
+        assert_eq!(params.actor_ip.as_deref(), Some("203.0.113.12"));
+        assert_eq!(params.actor_user_agent.as_deref(), Some("opsgate-test"));
+        assert_eq!(
+            params.detail.get("denial_reason"),
+            Some(&serde_json::json!("not_admin"))
+        );
+        let serialized = params.detail.to_string();
+        assert!(!serialized.contains("token"));
+        assert!(!serialized.contains("secret"));
+    }
+
+    #[test]
+    fn signup_success_audit_row_uses_caller_metadata() {
+        let now = Utc::now();
+        let caller = Caller {
+            user: User {
+                id: Uuid::nil(),
+                sub: "sub-1".to_owned(),
+                email: "admin@example.test".to_owned(),
+                display_name: "Admin".to_owned(),
+                role: Role::Admin,
+                is_active: true,
+                created_at: now,
+                updated_at: now,
+            },
+            channel: Channel::Browser,
+            role: Role::Admin,
+            request_id: Some("req-caller".to_owned()),
+            remote_ip: Some("198.51.100.8".to_owned()),
+            user_agent: Some("caller-agent".to_owned()),
+        };
+
+        let params = signup_audit_params(Some(&caller), "ok", None, &attrs(), &metadata());
+
+        assert_eq!(params.outcome, "ok");
+        assert_eq!(params.actor_user_id, Some(Uuid::nil()));
+        assert_eq!(params.actor_role.as_deref(), Some("admin"));
+        assert_eq!(params.request_id.as_deref(), Some("req-caller"));
+        assert_eq!(params.actor_ip.as_deref(), Some("198.51.100.8"));
+        assert_eq!(params.actor_user_agent.as_deref(), Some("caller-agent"));
     }
 }
