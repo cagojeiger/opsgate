@@ -361,7 +361,11 @@ pub async fn mcp_admin_handler(State(state): State<AppState>, request: Request<B
     };
     if !caller.role.is_admin() {
         record_mcp_admin_denied(&state, caller).await;
-        return mcp_auth_response(&state, AuthError::InsufficientRole);
+        return mcp_auth_response_with_status(
+            &state,
+            AuthError::InsufficientRole,
+            StatusCode::UNAUTHORIZED,
+        );
     }
     let config = streamable_config();
     let manager = Arc::new(NeverSessionManager::default());
@@ -441,6 +445,14 @@ fn streamable_config() -> StreamableHttpServerConfig {
 
 fn mcp_auth_response(state: &AppState, error: AuthError) -> Response {
     let status = status_for_error(&error);
+    mcp_auth_response_with_status(state, error, status)
+}
+
+fn mcp_auth_response_with_status(
+    state: &AppState,
+    error: AuthError,
+    status: StatusCode,
+) -> Response {
     tracing::warn!(event = "mcp.auth.denied", error = %error, status = status.as_u16());
     let mut response = (status, axum::Json(auth_error_body(state, &error))).into_response();
     if status == StatusCode::UNAUTHORIZED {

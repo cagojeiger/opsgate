@@ -494,7 +494,15 @@ async fn mcp_admin_rejects_registered_operator() -> Result<(), Box<dyn std::erro
         )
         .await?;
 
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let challenge = response
+        .headers()
+        .get(WWW_AUTHENTICATE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    assert!(challenge.starts_with("Bearer "));
+    assert!(challenge.contains("resource_metadata="));
+    assert!(challenge.contains(r#"scope="openid offline_access""#));
     Ok(())
 }
 

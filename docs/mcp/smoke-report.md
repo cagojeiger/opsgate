@@ -84,6 +84,7 @@ OAuth discovery and challenges:
 
 Boundary behavior:
   non-admin bearer cannot use /mcp/admin
+  non-admin /mcp/admin uses the same 401 scoped challenge as the Go SDK verifier
   registered operator can reach runtime /mcp
   runtime/admin tool names match the Go smoke contract exactly
   viewer cannot execute api.call/sql.schema/sql.query
