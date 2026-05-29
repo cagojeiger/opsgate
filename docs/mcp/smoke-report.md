@@ -85,6 +85,7 @@ OAuth discovery and challenges:
 Boundary behavior:
   non-admin bearer cannot use /mcp/admin
   registered operator can reach runtime /mcp
+  runtime/admin tool names match the Go smoke contract exactly
   viewer cannot execute api.call/sql.schema/sql.query
   credential.list validates fields, pagination, and filter boundaries
   credential outputs do not expose endpoints or secret material
@@ -176,9 +177,8 @@ real production Postgres query execution
 browser UI beyond the one-shot /login callback page
 client-specific MCP UX
 wire-level MCP SDK client handshake against the running Rust server
-exact MCP SDK tool-list equality against the running Rust server
 ```
 
-The Rust smoke currently validates MCP tool schemas, route-level auth/challenge
-behavior, and service boundaries through crate tests. A full MCP SDK
-Streamable HTTP client e2e test is not present yet.
+The Rust smoke currently validates exact tool names, MCP tool schemas,
+route-level auth/challenge behavior, and service boundaries through crate tests.
+A full MCP SDK Streamable HTTP client e2e test is not present yet.

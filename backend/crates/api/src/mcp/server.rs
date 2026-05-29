@@ -462,6 +462,45 @@ mod tests {
     use super::{AdminMcpServer, RuntimeMcpServer, mcp_admin_denied_audit_params};
 
     #[test]
+    fn runtime_and_admin_tool_surfaces_match_go_smoke_contract() {
+        let mut runtime_names = RuntimeMcpServer::tool_router()
+            .list_all()
+            .into_iter()
+            .map(|tool| tool.name.to_string())
+            .collect::<Vec<_>>();
+        runtime_names.sort();
+        assert_eq!(
+            runtime_names,
+            [
+                "api.call",
+                "credential.list",
+                "me",
+                "sql.query",
+                "sql.schema"
+            ]
+        );
+
+        let mut admin_names = AdminMcpServer::tool_router()
+            .list_all()
+            .into_iter()
+            .map(|tool| tool.name.to_string())
+            .collect::<Vec<_>>();
+        admin_names.sort();
+        assert_eq!(
+            admin_names,
+            [
+                "credential.delete",
+                "credential.list",
+                "credential.register_http",
+                "credential.register_sql",
+                "credential.update_http",
+                "credential.update_sql",
+                "me",
+            ]
+        );
+    }
+
+    #[test]
     fn tool_schemas_do_not_use_boolean_schema_nodes() -> Result<(), String> {
         let tools = RuntimeMcpServer::tool_router()
             .list_all()
