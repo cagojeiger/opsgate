@@ -3,7 +3,10 @@
 use opsgate_core::{Config, Error, Result};
 use sqlx::postgres::PgPoolOptions;
 
+pub mod user_repo;
+
 pub use sqlx::PgPool;
+pub use user_repo::UserRepo;
 
 /// Embedded migrations from `migrations/`, run at startup via [`run_migrations`].
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");

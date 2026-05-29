@@ -21,12 +21,19 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     environment:
-      BIND_ADDR: 0.0.0.0:8080
+      BIND_ADDR: 0.0.0.0:9091
       DATABASE_URL: postgres://opsgate:opsgate@postgres:5432/opsgate
       DB_MAX_CONNECTIONS: 10
       LOG_FORMAT: json
+      AUTHGATE_URL: https://authgate.project-jelly.io
+      OPSGATE_PUBLIC_URL: http://localhost:9091
+      OAUTH_CLIENT_ID: opsgate-web
+      OAUTH_REDIRECT_URL: http://localhost:9091/callback
+      RESOURCE_URL: http://localhost:9091/mcp
+      ADMIN_EMAIL: cagojeiger89@gmail.com
+      JWKS_CACHE_TTL_SECS: 300
     ports:
-      - "8080:8080"
+      - "9091:9091"
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,7 +53,7 @@ services:
   #     dockerfile: Dockerfile
   #   environment:
   #     # Server-side calls to the API use the compose network hostname.
-  #     API_URL: http://api:8080
+  #     API_URL: http://api:9091
   #   ports:
   #     - "3000:3000"
   #   depends_on:

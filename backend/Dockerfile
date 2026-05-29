@@ -27,8 +27,8 @@ RUN addgroup -S app && adduser -S -D -H -u 10001 -G app appuser
 WORKDIR /app
 COPY --from=builder /app/target/release/opsgate-api /usr/local/bin/opsgate-api
 
-ENV BIND_ADDR=0.0.0.0:8080
-EXPOSE 8080
+ENV BIND_ADDR=0.0.0.0:9091
+EXPOSE 9091
 
 USER appuser
 ENTRYPOINT ["/usr/local/bin/opsgate-api"]

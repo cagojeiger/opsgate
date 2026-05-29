@@ -8,7 +8,11 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+mod auth;
 mod error;
+mod identity;
+mod mcp;
+mod me;
 mod routes;
 mod state;
 
@@ -33,10 +37,31 @@ async fn main() -> anyhow::Result<()> {
         max_connections = config.db_max_connections
     );
 
-    let state = AppState::new(pool.clone());
+    let bind_addr = config.bind_addr;
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+    let jwks_url = format!("{}/keys", config.authgate_url);
+    let user_repo = opsgate_db::UserRepo::new(pool.clone());
+    let resolver = opsgate_domain::Resolver::new(user_repo, config.admin_email.clone());
+    let config = std::sync::Arc::new(config);
+    let jwks = std::sync::Arc::new(auth::jwks::JwksCache::new(
+        jwks_url,
+        config.authgate_url.clone(),
+        config.resource_url.clone(),
+        config.jwks_cache_ttl,
+        http.clone(),
+    ));
+    let state = AppState::new(
+        pool.clone(),
+        config.clone(),
+        jwks,
+        std::sync::Arc::new(resolver),
+        http,
+    );
 
-    let listener = TcpListener::bind(config.bind_addr).await?;
-    info!(event = "server.listening", addr = %config.bind_addr);
+    let listener = TcpListener::bind(bind_addr).await?;
+    info!(event = "server.listening", addr = %bind_addr);
 
     let http_shutdown_token = CancellationToken::new();
     let http_shutdown = http_shutdown_token.clone().cancelled_owned();

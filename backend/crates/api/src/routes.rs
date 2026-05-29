@@ -5,7 +5,7 @@ use std::time::Duration;
 use axum::extract::{MatchedPath, State};
 use axum::http::Request;
 use axum::http::header::HeaderName;
-use axum::routing::get;
+use axum::routing::{any, get};
 use axum::{Json, Router};
 use serde::Serialize;
 use tower::ServiceBuilder;
@@ -13,15 +13,25 @@ use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetReques
 use tower_http::trace::TraceLayer;
 use tracing::{Span, info, info_span};
 
+use crate::auth::metadata::{protected_resource_metadata, protected_resource_metadata_url};
+use crate::auth::oauth::{callback, login};
 use crate::error::ApiError;
+use crate::mcp::server::mcp_handler;
+use crate::me::me;
 use crate::state::AppState;
 
 pub fn app(state: AppState) -> Router {
     let x_request_id = HeaderName::from_static("x-request-id");
+    let metadata_path = protected_resource_metadata_url(&state.config.resource_url).route_path;
 
     Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
+        .route("/login", get(login))
+        .route("/callback", get(callback))
+        .route("/api/v1/me", get(me))
+        .route("/mcp", any(mcp_handler))
+        .route(&metadata_path, get(protected_resource_metadata))
         .with_state(state)
         .layer(
             ServiceBuilder::new()
