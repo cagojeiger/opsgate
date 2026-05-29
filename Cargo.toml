@@ -1,0 +1,91 @@
+[workspace]
+resolver = "3"
+members = ["backend/crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95.0"
+license = "Apache-2.0"
+repository = "https://github.com/cagojeiger/opsgate"
+
+[workspace.dependencies]
+# Internal crates
+opsgate-core = { path = "backend/crates/core" }
+opsgate-db = { path = "backend/crates/db" }
+opsgate-domain = { path = "backend/crates/domain" }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+
+# Web framework
+axum = { version = "0.8.9", features = ["macros"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["trace", "request-id", "cors"] }
+
+# Database
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "macros",
+    "migrate",
+    "uuid",
+    "chrono",
+] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+config = { version = "0.15", default-features = false, features = ["toml"] }
+validator = { version = "0.20", features = ["derive"] }
+
+# Errors
+thiserror = "2"
+anyhow = "1"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Utilities
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+dotenvy = "0.15"
+
+# Auth / OAuth / MCP
+jsonwebtoken = "9"
+openidconnect = { version = "4.0.1", default-features = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rand = "0.8"
+sha2 = "0.10"
+base64 = "0.22"
+url = "2"
+axum-extra = { version = "0.10", features = ["cookie"] }
+subtle = "2"
+rmcp = { version = "1.7.0", features = ["transport-streamable-http-server"] }
+schemars = { version = "1", features = ["derive"] }
+time = "0.3"
+
+# Lints applied to every crate via `[lints] workspace = true`.
+# Mirrors the house style: deny-by-warning the panic-prone patterns so they
+# surface in CI instead of in production.
+[workspace.lints.clippy]
+await_holding_lock = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unreachable = "warn"
+indexing_slicing = "warn"
+unwrap_in_result = "warn"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+# Faster incremental builds during development.
+debug = 1

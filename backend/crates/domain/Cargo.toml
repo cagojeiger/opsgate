@@ -1,0 +1,18 @@
+[package]
+name = "opsgate-domain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+opsgate-core.workspace = true
+serde.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

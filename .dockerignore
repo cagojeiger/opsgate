@@ -1,0 +1,9 @@
+target/
+.git/
+.omc/
+.omx/
+.repos/
+.tmp/
+.env
+**/*.md
+frontend/

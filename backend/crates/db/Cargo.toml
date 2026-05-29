@@ -1,0 +1,17 @@
+[package]
+name = "opsgate-db"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+opsgate-core.workspace = true
+opsgate-domain.workspace = true
+sqlx.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+
+[lints]
+workspace = true

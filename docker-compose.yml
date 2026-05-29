@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: opsgate
+      POSTGRES_PASSWORD: opsgate
+      POSTGRES_DB: opsgate
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opsgate"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      OPSGATE_BIND_ADDR: 0.0.0.0:9091
+      OPSGATE_DATABASE_URL: postgres://opsgate:opsgate@postgres:5432/opsgate
+      OPSGATE_DB_MAX_CONNECTIONS: 10
+      LOG_FORMAT: json
+      OPSGATE_AUTHGATE_URL: https://authgate.project-jelly.io
+      OPSGATE_PUBLIC_URL: http://localhost:9091
+      OPSGATE_OAUTH_CLIENT_ID: opsgate-web
+      OPSGATE_OAUTH_REDIRECT_URL: http://localhost:9091/callback
+      OPSGATE_RESOURCE_URL: http://localhost:9091/mcp
+      OPSGATE_JWKS_CACHE_TTL_SECS: 300
+    ports:
+      - "9091:9091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  # Frontend (Next.js) — uncomment once frontend/ exists.
+  # Separate Dockerfile + context: backend and web have different base images,
+  # build caches, and deploy cadences, so they never share one build.
+  # web:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     # Server-side calls to the API use the compose network hostname.
+  #     API_URL: http://api:9091
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - api
+  #   restart: unless-stopped
+
+volumes:
+  pgdata:
