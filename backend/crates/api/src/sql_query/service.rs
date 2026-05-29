@@ -413,6 +413,13 @@ fn validate_query_ast(query: &Query) -> Result<()> {
     if !query.locks.is_empty() {
         return Err(Error::validation("SELECT locking clauses are not allowed"));
     }
+    // Reject data-modifying CTEs (`WITH x AS (INSERT ... RETURNING) ...`) at the
+    // policy layer instead of relying on the BEGIN READ ONLY runtime backstop.
+    if let Some(with) = &query.with {
+        for cte in &with.cte_tables {
+            validate_query_ast(&cte.query)?;
+        }
+    }
     validate_set_expr(&query.body)
 }
 
@@ -466,43 +473,56 @@ impl Visitor for SqlPolicyVisitor<'_> {
             );
             return ControlFlow::Break(());
         }
+        // A table function (`FROM dblink(...)`) surfaces here as a relation name,
+        // never as `Expr::Function`, so apply the function denylist to it too.
+        if let Some(candidate) = object_name_last(name) {
+            return self.check_function(&candidate, true);
+        }
         ControlFlow::Continue(())
     }
 
     fn pre_visit_expr(&mut self, expr: &Expr) -> ControlFlow<Self::Break> {
-        let candidate = match expr {
+        match expr {
             // Function calls (`pg_sleep(...)`): match on the parsed call name.
-            Expr::Function(function) => object_name_last(&function.name),
-            // Niladic value functions (`current_user`) parse as identifiers.
-            Expr::Identifier(ident) => Some(ident.value.to_ascii_lowercase()),
-            Expr::CompoundIdentifier(parts) => parts
-                .last()
-                .map(|ident| ident.value.to_ascii_lowercase()),
-            _ => None,
-        };
-        let Some(candidate) = candidate else {
-            return ControlFlow::Continue(());
-        };
+            Expr::Function(function) => match object_name_last(&function.name) {
+                Some(candidate) => self.check_function(&candidate, true),
+                None => ControlFlow::Continue(()),
+            },
+            // Niladic value functions (`current_user`) may parse as identifiers;
+            // only the credential's denylist applies (not the builtin call list).
+            Expr::Identifier(ident) => {
+                self.check_function(&ident.value.to_ascii_lowercase(), false)
+            }
+            Expr::CompoundIdentifier(parts) => match parts.last() {
+                Some(ident) => self.check_function(&ident.value.to_ascii_lowercase(), false),
+                None => ControlFlow::Continue(()),
+            },
+            _ => ControlFlow::Continue(()),
+        }
+    }
+}
 
-        if matches!(expr, Expr::Function(_))
+impl SqlPolicyVisitor<'_> {
+    /// Check a function/relation name against the builtin (call sites only) and
+    /// credential-policy denylists, recording the first violation.
+    fn check_function(&mut self, candidate: &str, is_call: bool) -> ControlFlow<()> {
+        if is_call
             && BUILTIN_DENIED_FUNCTIONS
                 .iter()
-                .any(|denied| denied.eq_ignore_ascii_case(&candidate))
+                .any(|denied| denied.eq_ignore_ascii_case(candidate))
         {
             self.violation = Some(format!(
                 "function {candidate:?} is blocked by built-in SQL policy"
             ));
             return ControlFlow::Break(());
         }
-        if let Some(denied) = self.denied_policy_function(&candidate) {
+        if let Some(denied) = self.denied_policy_function(candidate) {
             self.violation = Some(format!("function {denied:?} is denied by credential policy"));
             return ControlFlow::Break(());
         }
         ControlFlow::Continue(())
     }
-}
 
-impl SqlPolicyVisitor<'_> {
     /// Return the matching denied-function entry (its short form) if `candidate`
     /// matches a policy-denied function by full or unqualified name.
     fn denied_policy_function(&self, candidate: &str) -> Option<String> {
@@ -1365,6 +1385,36 @@ mod tests {
         // `pg_total` is a column alias, not a relation or denied function: allowed.
         let policy = CredentialPolicy::default();
         assert!(enforce_sql_policy("select count(*) as pg_total from payments", &policy).is_ok());
+    }
+
+    #[test]
+    fn ast_policy_blocks_table_functions_in_from() {
+        // Table functions surface as a relation, not Expr::Function; the builtin
+        // denylist must still catch them (regression: dblink is not pg_-prefixed
+        // so the metadata gate alone misses it).
+        let policy = CredentialPolicy::default();
+        assert!(
+            enforce_sql_policy("select * from dblink('h','select 1') as t(a int)", &policy)
+                .is_err()
+        );
+        // Policy-denied function in FROM position is rejected too.
+        let policy = CredentialPolicy {
+            denied_functions: vec!["my_udf".to_owned()],
+            ..CredentialPolicy::default()
+        };
+        assert!(enforce_sql_policy("select * from my_udf(1)", &policy).is_err());
+    }
+
+    #[test]
+    fn ast_policy_blocks_data_modifying_cte() {
+        let policy = CredentialPolicy::default();
+        assert!(
+            enforce_sql_policy(
+                "with x as (insert into t values (1) returning id) select * from x",
+                &policy,
+            )
+            .is_err()
+        );
     }
 
     #[test]
