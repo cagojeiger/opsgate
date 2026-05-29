@@ -124,6 +124,10 @@ impl JwksCache {
                 let snapshot = { self.cache.read().await.clone() };
                 if let Some(cache) = snapshot {
                     if let Some(key) = cache.keys.get(kid) {
+                        // Serve the stale key so verification keeps working while
+                        // authgate is briefly unreachable; log so operators can see
+                        // refresh has been failing before a key rotation breaks it.
+                        tracing::warn!(event = "jwks.refresh_stale", %error);
                         return Ok(key.clone());
                     }
                     return Err(JwksError::InvalidToken);
