@@ -66,7 +66,10 @@ fn metadata_routes(state: &AppState) -> Router<AppState> {
 
 fn rest_api_routes(state: AppState) -> Router<AppState> {
     Router::new()
+        .merge(crate::rest::api_call::routes())
+        .merge(crate::rest::credentials::routes())
         .merge(crate::rest::me::routes())
+        .merge(crate::rest::sql_query::routes())
         .fallback(api_not_found)
         .layer(from_fn_with_state(state, require_bearer))
 }

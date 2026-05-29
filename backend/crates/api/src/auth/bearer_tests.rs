@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use axum::http::{Method, Request, StatusCode};
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, encode};
 use opsgate_domain::{Caller, Channel, IdentityError, ResolveAttrs, Role, User};
@@ -219,6 +219,30 @@ fn state(mode: ResolverMode) -> Result<AppState, Box<dyn std::error::Error>> {
 
 fn state_with_role(role: Role) -> Result<AppState, Box<dyn std::error::Error>> {
     state(ResolverMode::RegisteredRole { active: true, role })
+}
+
+fn valid_api_token() -> Result<String, Box<dyn std::error::Error>> {
+    token(
+        "sub-1",
+        "https://auth.example.test",
+        json!("https://api.example.test"),
+        future_exp(),
+        "kid-1",
+    )
+}
+
+fn authed_json_request(
+    method: Method,
+    uri: &str,
+    body: &str,
+) -> Result<Request<Body>, Box<dyn std::error::Error>> {
+    let valid = valid_api_token()?;
+    Ok(Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("authorization", format!("Bearer {valid}"))
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_owned()))?)
 }
 
 fn token(
@@ -450,6 +474,159 @@ async fn unknown_api_routes_still_require_bearer() -> Result<(), Box<dyn std::er
         .await?;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+#[tokio::test]
+async fn rest_parity_routes_require_bearer() -> Result<(), Box<dyn std::error::Error>> {
+    let app = crate::routes::app(state_with_role(Role::Operator)?);
+    let cases = [
+        (Method::POST, "/api/v1/api/call", "{}"),
+        (Method::POST, "/api/v1/sql/query", "{}"),
+        (Method::POST, "/api/v1/credentials", "{}"),
+        (Method::GET, "/api/v1/credentials", ""),
+        (Method::DELETE, "/api/v1/credentials/prod-api", "{}"),
+    ];
+
+    for (method, uri, body) in cases {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method.clone())
+                    .uri(uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_owned()))?,
+            )
+            .await?;
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "{method} {uri}"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn rest_parity_routes_return_validation_errors_instead_of_not_found()
+-> Result<(), Box<dyn std::error::Error>> {
+    let operator_app = crate::routes::app(state_with_role(Role::Operator)?);
+
+    let api_call = operator_app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            "/api/v1/api/call",
+            r#"{"alias":"","purpose":"Inspect health response","path":"/health"}"#,
+        )?)
+        .await?;
+    assert_eq!(api_call.status(), StatusCode::BAD_REQUEST);
+
+    let sql_query = operator_app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            "/api/v1/sql/query",
+            r#"{"alias":"","purpose":"Inspect rows safely","query":"SELECT 1"}"#,
+        )?)
+        .await?;
+    assert_eq!(sql_query.status(), StatusCode::BAD_REQUEST);
+
+    let list = operator_app
+        .oneshot(authed_json_request(
+            Method::GET,
+            "/api/v1/credentials?limit=101",
+            "",
+        )?)
+        .await?;
+    assert_eq!(list.status(), StatusCode::BAD_REQUEST);
+
+    let admin_app = crate::routes::app(state_with_role(Role::Admin)?);
+    let register = admin_app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            "/api/v1/credentials",
+            r#"{"category":"not-a-category"}"#,
+        )?)
+        .await?;
+    assert_eq!(register.status(), StatusCode::BAD_REQUEST);
+
+    let delete = admin_app
+        .oneshot(authed_json_request(
+            Method::DELETE,
+            "/api/v1/credentials/bad%20alias",
+            r#"{"reason":"Retire stale credential"}"#,
+        )?)
+        .await?;
+    assert_eq!(delete.status(), StatusCode::BAD_REQUEST);
+    Ok(())
+}
+
+#[tokio::test]
+async fn rest_parity_post_routes_do_not_require_content_type_header()
+-> Result<(), Box<dyn std::error::Error>> {
+    let app = crate::routes::app(state_with_role(Role::Operator)?);
+    let valid = valid_api_token()?;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/api/call")
+                .header("authorization", format!("Bearer {valid}"))
+                .body(Body::from(
+                    r#"{"alias":"","purpose":"Inspect health response","path":"/health"}"#,
+                ))?,
+        )
+        .await?;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    Ok(())
+}
+
+#[tokio::test]
+async fn rest_parity_routes_enforce_roles() -> Result<(), Box<dyn std::error::Error>> {
+    let viewer_app = crate::routes::app(state_with_role(Role::Viewer)?);
+    let api_call = viewer_app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            "/api/v1/api/call",
+            r#"{"alias":"prod-api","purpose":"Inspect health response","path":"/health"}"#,
+        )?)
+        .await?;
+    assert_eq!(api_call.status(), StatusCode::FORBIDDEN);
+
+    let sql_query = viewer_app
+        .oneshot(authed_json_request(
+            Method::POST,
+            "/api/v1/sql/query",
+            r#"{"alias":"prod-db","purpose":"Inspect rows safely","query":"SELECT 1"}"#,
+        )?)
+        .await?;
+    assert_eq!(sql_query.status(), StatusCode::FORBIDDEN);
+
+    let operator_app = crate::routes::app(state_with_role(Role::Operator)?);
+    let register = operator_app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            "/api/v1/credentials",
+            r#"{"category":"http","provider":"k8s","alias":"prod-api","endpoint":"https://api.example.test","secret":{"headers":[{"name":"Authorization","value":"Bearer token"}]}}"#,
+        )?)
+        .await?;
+    assert_eq!(register.status(), StatusCode::FORBIDDEN);
+
+    let delete = operator_app
+        .oneshot(authed_json_request(
+            Method::DELETE,
+            "/api/v1/credentials/prod-api",
+            r#"{"reason":"Retire stale credential"}"#,
+        )?)
+        .await?;
+    assert_eq!(delete.status(), StatusCode::FORBIDDEN);
     Ok(())
 }
 
