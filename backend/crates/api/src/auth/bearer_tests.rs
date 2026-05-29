@@ -20,7 +20,7 @@ use crate::auth::jwks::JwksCache;
 use crate::identity::CallerResolver;
 use crate::state::AppState;
 
-use crate::auth::bearer::{AuthError, RequestMeta, verify_bearer};
+use crate::auth::bearer::{AuthError, verify_bearer};
 
 const KEY: &str = r#"-----BEGIN PRIVATE KEY-----
 MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCx8TUdJX0WeXTQ
@@ -209,7 +209,7 @@ async fn verify_accepts_valid_token() -> Result<(), Box<dyn std::error::Error>> 
         future_exp(),
         "kid-1",
     )?;
-    let caller = verify_bearer(&state, &token, RequestMeta).await?;
+    let caller = verify_bearer(&state, &token).await?;
     assert_eq!(caller.user.sub, "sub-1");
     Ok(())
 }
@@ -250,7 +250,7 @@ async fn verify_rejects_invalid_claims_without_panic() -> Result<(), Box<dyn std
         alg_none_token(),
     ];
     for (idx, candidate) in cases.into_iter().enumerate() {
-        let err = verify_bearer(&state, &candidate, RequestMeta).await.err();
+        let err = verify_bearer(&state, &candidate).await.err();
         assert!(
             matches!(err, Some(AuthError::InvalidToken)),
             "case {idx}: {err:?}"
@@ -269,7 +269,7 @@ async fn verify_accepts_aud_array_and_trailing_slash() -> Result<(), Box<dyn std
         future_exp(),
         "kid-1",
     )?;
-    let caller = verify_bearer(&state, &token, RequestMeta).await?;
+    let caller = verify_bearer(&state, &token).await?;
     assert_eq!(caller.user.sub, "sub-1");
     Ok(())
 }
@@ -284,11 +284,11 @@ async fn verify_maps_registered_state_errors() -> Result<(), Box<dyn std::error:
         "kid-1",
     )?;
     let missing = state(ResolverMode::Missing)?;
-    let missing_err = verify_bearer(&missing, &valid, RequestMeta).await.err();
+    let missing_err = verify_bearer(&missing, &valid).await.err();
     assert!(matches!(missing_err, Some(AuthError::NotRegistered)));
 
     let inactive = state(ResolverMode::Registered(false))?;
-    let inactive_err = verify_bearer(&inactive, &valid, RequestMeta).await.err();
+    let inactive_err = verify_bearer(&inactive, &valid).await.err();
     assert!(matches!(inactive_err, Some(AuthError::Inactive)));
     Ok(())
 }

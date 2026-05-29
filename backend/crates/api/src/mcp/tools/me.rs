@@ -5,7 +5,7 @@ use rmcp::Json;
 
 use crate::identity::me::{MeOutput, build_me};
 
-pub fn build_mcp_me(parts: &Parts) -> Result<Json<MeOutput>, ErrorData> {
+pub fn call(parts: &Parts) -> Result<Json<MeOutput>, ErrorData> {
     let caller = parts
         .extensions
         .get::<Caller>()

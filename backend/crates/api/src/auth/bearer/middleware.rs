@@ -4,9 +4,7 @@ use axum::http::Request;
 use axum::middleware::Next;
 use axum::response::Response;
 
-use crate::auth::bearer::{
-    AuthError, RequestMeta, auth_error_response, extract_bearer, verify_bearer,
-};
+use crate::auth::bearer::{AuthError, auth_error_response, extract_bearer, verify_bearer};
 use crate::state::AppState;
 
 pub async fn require_bearer(
@@ -18,7 +16,7 @@ pub async fn require_bearer(
         return auth_error_response(&state, AuthError::MissingToken);
     };
 
-    let caller = match verify_bearer(&state, &token, RequestMeta).await {
+    let caller = match verify_bearer(&state, &token).await {
         Ok(caller) => caller,
         Err(error) => return auth_error_response(&state, error),
     };

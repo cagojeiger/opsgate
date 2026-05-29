@@ -21,8 +21,8 @@ use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, Stream
 use rmcp::{ErrorData, Json, ServerHandler, tool, tool_handler, tool_router};
 
 use crate::auth::bearer::{
-    AuthError, RequestMeta, auth_error_body, extract_bearer, shared_challenge_header,
-    status_for_error, verify_bearer_mcp,
+    AuthError, auth_error_body, extract_bearer, shared_challenge_header, status_for_error,
+    verify_bearer_mcp,
 };
 use crate::identity::me::MeOutput;
 use crate::state::AppState;
@@ -41,7 +41,7 @@ impl McpServer {
         &self,
         Extension(parts): Extension<Parts>,
     ) -> Result<Json<MeOutput>, ErrorData> {
-        crate::mcp::tools::me::build_mcp_me(&parts)
+        crate::mcp::tools::me::call(&parts)
     }
 }
 
@@ -62,7 +62,7 @@ pub async fn mcp_handler(State(state): State<AppState>, mut request: Request<Bod
     let Some(token) = extract_bearer(&parts.headers).map(str::to_owned) else {
         return mcp_auth_response(&state, AuthError::MissingToken);
     };
-    let caller = match verify_bearer_mcp(&state, &token, RequestMeta).await {
+    let caller = match verify_bearer_mcp(&state, &token).await {
         Ok(caller) => caller,
         Err(error) => return mcp_auth_response(&state, error),
     };

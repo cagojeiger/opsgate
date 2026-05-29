@@ -12,6 +12,7 @@ mod auth;
 mod error;
 mod identity;
 mod mcp;
+mod rest;
 mod routes;
 mod state;
 

@@ -8,7 +8,6 @@ pub enum Channel {
     Browser,
     Api,
     Mcp,
-    System,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

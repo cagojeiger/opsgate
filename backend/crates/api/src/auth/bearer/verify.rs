@@ -3,21 +3,11 @@ use opsgate_domain::{Caller, IdentityError, ResolveAttrs};
 use crate::auth::bearer::AuthError;
 use crate::state::AppState;
 
-pub struct RequestMeta;
-
-pub async fn verify_bearer(
-    state: &AppState,
-    token: &str,
-    meta: RequestMeta,
-) -> Result<Caller, AuthError> {
-    verify_bearer_api(state, token, meta).await
+pub async fn verify_bearer(state: &AppState, token: &str) -> Result<Caller, AuthError> {
+    verify_bearer_api(state, token).await
 }
 
-pub async fn verify_bearer_api(
-    state: &AppState,
-    token: &str,
-    _meta: RequestMeta,
-) -> Result<Caller, AuthError> {
+pub async fn verify_bearer_api(state: &AppState, token: &str) -> Result<Caller, AuthError> {
     let claims = state
         .jwks
         .verify(token)
@@ -33,11 +23,7 @@ pub async fn verify_bearer_api(
         .map_err(map_identity_error)
 }
 
-pub async fn verify_bearer_mcp(
-    state: &AppState,
-    token: &str,
-    _meta: RequestMeta,
-) -> Result<Caller, AuthError> {
+pub async fn verify_bearer_mcp(state: &AppState, token: &str) -> Result<Caller, AuthError> {
     let claims = state
         .jwks
         .verify(token)

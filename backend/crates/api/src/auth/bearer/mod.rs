@@ -8,4 +8,4 @@ pub use error::{
 };
 pub use extractor::extract_bearer;
 pub use middleware::require_bearer;
-pub use verify::{RequestMeta, verify_bearer, verify_bearer_mcp};
+pub use verify::{verify_bearer, verify_bearer_mcp};
