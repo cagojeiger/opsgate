@@ -9,6 +9,7 @@
 - [sql.query boundary model](mcp/sql-query-boundary.md)
 - [MCP smoke report](mcp/smoke-report.md)
 - [0.1.0 release readiness checklist](release-checklist.md)
+- [Rust port parity review](rust-port-parity-review.md)
 - [MCP 도구 worst-case 설계와 TC 매트릭스](mcp/worst-cases.md)
 - MCP surfaces:
   - [`/mcp` runtime](mcp/surfaces/runtime.md)

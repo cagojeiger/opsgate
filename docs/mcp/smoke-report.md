@@ -180,6 +180,7 @@ client-specific MCP UX
 wire-level MCP SDK client handshake against the running Rust server
 ```
 
-The Rust smoke currently validates exact tool names, MCP tool schemas,
-route-level auth/challenge behavior, and service boundaries through crate tests.
-A full MCP SDK Streamable HTTP client e2e test is not present yet.
+The Rust smoke currently validates exact tool names, route-level auth/challenge
+behavior, service boundaries, and MCP schema structural sanity through crate
+tests. Full MCP schema parity comparison and an MCP SDK Streamable HTTP client
+e2e test are not present yet.
