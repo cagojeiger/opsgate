@@ -14,9 +14,14 @@ Current target:
 release-check: PASS
 ```
 
-There is no repo-local release wrapper in the Rust port. Run the release check
-as the explicit command set below so CI/local failures map directly to a tool
-output.
+Run the repo-local release gate:
+
+```sh
+make release-check
+```
+
+It expands to the explicit command set below so CI/local failures map directly
+to a tool output.
 
 ## Required Local Checks
 
@@ -64,7 +69,13 @@ Bring up the Rust stack with the external AuthGate configuration from
 `.env.example` / `docker-compose.yml`:
 
 ```sh
-docker compose up --build -d
+make up
+make curl-meta
+```
+
+`make curl-meta` runs:
+
+```sh
 curl -fsS http://localhost:9091/health
 curl -fsS http://localhost:9091/ready
 curl -fsS http://localhost:9091/.well-known/oauth-authorization-server

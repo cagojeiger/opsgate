@@ -53,10 +53,7 @@ local opsgate user row, then reconnect the MCP client to `OPSGATE_RESOURCE_URL`.
 ## Checks
 
 ```sh
-cargo fmt --all --check
-cargo check --workspace
-cargo test --workspace
-cargo clippy --all-targets --all-features -- -D warnings
+make release-check
 ```
 
 Release and MCP smoke details are tracked in
