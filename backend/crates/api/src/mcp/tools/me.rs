@@ -9,37 +9,37 @@ use crate::credential::CredentialSummary;
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum McpToolset {
+pub(crate) enum McpToolset {
     Runtime,
     Admin,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
-pub struct McpMeOutput {
-    pub service: ServiceInfo,
-    pub capabilities: Vec<Capability>,
-    pub credential_summary: CredentialSummary,
-    pub id: String,
-    pub sub: String,
-    pub email: String,
-    pub name: String,
+pub(crate) struct McpMeOutput {
+    pub(crate) service: ServiceInfo,
+    pub(crate) capabilities: Vec<Capability>,
+    pub(crate) credential_summary: CredentialSummary,
+    pub(crate) id: String,
+    pub(crate) sub: String,
+    pub(crate) email: String,
+    pub(crate) name: String,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
-pub struct ServiceInfo {
-    pub name: String,
-    pub purpose: String,
-    pub secret_model: String,
-    pub workflow: Vec<String>,
+pub(crate) struct ServiceInfo {
+    pub(crate) name: String,
+    pub(crate) purpose: String,
+    pub(crate) secret_model: String,
+    pub(crate) workflow: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
-pub struct Capability {
-    pub tool: String,
-    pub description: String,
+pub(crate) struct Capability {
+    pub(crate) tool: String,
+    pub(crate) description: String,
 }
 
-pub async fn call(
+pub(crate) async fn call(
     state: &AppState,
     parts: &Parts,
     toolset: McpToolset,
