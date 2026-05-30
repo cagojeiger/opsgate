@@ -45,14 +45,13 @@ impl ApiCallService {
         history: ApiCallHistoryRepo,
         audit: AuditRepo,
         sealer: opsgate_core::crypto::Sealer,
-        http: reqwest::Client,
     ) -> Result<Self> {
         Ok(Self {
             credentials,
             history,
             audit,
             sealer,
-            target_clients: TargetHttpClients::new(http, TARGET_TIMEOUT)?,
+            target_clients: TargetHttpClients::new(TARGET_TIMEOUT)?,
         })
     }
 

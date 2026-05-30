@@ -23,9 +23,9 @@ pub struct TargetHttpClients {
 }
 
 impl TargetHttpClients {
-    pub fn new(private_allowed: reqwest::Client, timeout: Duration) -> Result<Self> {
+    pub fn new(timeout: Duration) -> Result<Self> {
         Ok(Self {
-            private_allowed,
+            private_allowed: build_client(timeout, None, false)?,
             guarded_no_ca: build_client(timeout, None, true)?,
             timeout,
             cached_tls: Arc::new(Mutex::new(HashMap::new())),
@@ -110,7 +110,8 @@ fn build_client(
 ) -> Result<reqwest::Client> {
     let mut builder = reqwest::Client::builder()
         .timeout(timeout)
-        .redirect(reqwest::redirect::Policy::none());
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy();
     if guard_private_network {
         builder = builder.dns_resolver(Arc::new(GuardedResolver));
     }
@@ -191,7 +192,7 @@ mod tests {
 
     #[test]
     fn no_ca_clients_do_not_enter_tls_cache() -> Result<()> {
-        let clients = TargetHttpClients::new(reqwest::Client::new(), Duration::from_secs(1))?;
+        let clients = TargetHttpClients::new(Duration::from_secs(1))?;
         let credential = credential(Uuid::nil(), false);
         let _client = clients.client_for(&credential, None, false)?;
         let _guarded_client = clients.client_for(&credential, None, true)?;
@@ -201,7 +202,7 @@ mod tests {
 
     #[test]
     fn tls_ca_client_cache_is_per_credential_and_guard_mode() -> Result<()> {
-        let clients = TargetHttpClients::new(reqwest::Client::new(), Duration::from_secs(1))?;
+        let clients = TargetHttpClients::new(Duration::from_secs(1))?;
         let ca = valid_ca_pem();
         let first = credential(Uuid::from_u128(1), true);
         let second = credential(Uuid::from_u128(2), true);

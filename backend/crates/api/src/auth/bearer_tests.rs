@@ -190,7 +190,6 @@ fn state_with_resource_url(
         opsgate_db::ApiCallHistoryRepo::new(pool.clone()),
         opsgate_db::AuditRepo::new(pool.clone()),
         sealer.clone(),
-        reqwest::Client::new(),
     )?);
     let audit_repo = opsgate_db::AuditRepo::new(pool.clone());
     let audit = Arc::new(audit_repo.clone());
