@@ -14,10 +14,11 @@ use opsgate_domain::credential::{contains_fold, header_blocked};
 use opsgate_domain::{Caller, Channel};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use schemars::JsonSchema;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::credential::secret;
 use crate::credential::snapshot::CredentialSnapshot;
 use crate::target::http::TargetHttpClients;
 
@@ -31,7 +32,6 @@ const MAX_QUERY_VALUE_LEN: usize = 4096;
 const MAX_HEADERS: usize = 16;
 const MAX_HEADER_NAME_LEN: usize = 128;
 const MAX_HEADER_VALUE_LEN: usize = 1024;
-const SECRET_DOMAIN: &str = "credentials";
 const TARGET_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
@@ -114,7 +114,8 @@ impl ApiCallService {
                 return Err(Error::validation("credential secret is destroyed"));
             }
         };
-        let secret = self.open_http_secret(&credential.alias, &secret_ciphertext)?;
+        let secret =
+            secret::open_http_headers(&self.sealer, &credential.alias, &secret_ciphertext)?;
         if let Err(error) = validate_no_secret_header_override(&secret, &input) {
             recorder.denied("policy_denied", &error.to_string()).await;
             return Err(error);
@@ -216,20 +217,6 @@ impl ApiCallService {
         {
             tracing::error!(event = "api.call.history_failed", detail = %error);
         }
-    }
-
-    fn open_http_secret(&self, alias: &str, ciphertext: &[u8]) -> Result<Vec<SecretHeader>> {
-        let plaintext = self.sealer.open(SECRET_DOMAIN, alias, ciphertext)?;
-        let secret = serde_json::from_slice::<StoredSecret>(&plaintext)
-            .map_err(|error| Error::internal(format!("decode credential secret: {error}")))?;
-        Ok(secret
-            .headers
-            .into_iter()
-            .map(|header| SecretHeader {
-                name: header.name,
-                value: SecretString::from(header.value),
-            })
-            .collect())
     }
 
     async fn send_target(
@@ -342,17 +329,6 @@ struct NormalizedApiCallInput {
     content_type: Option<String>,
     jsonpath: Vec<String>,
     max_bytes: usize,
-}
-
-#[derive(Debug, Deserialize)]
-struct StoredSecret {
-    headers: Vec<StoredSecretHeader>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StoredSecretHeader {
-    name: String,
-    value: String,
 }
 
 struct TargetResponseHead {

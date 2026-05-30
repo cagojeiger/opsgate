@@ -1,4 +1,5 @@
 mod output;
+pub(crate) mod secret;
 mod service;
 pub(crate) mod snapshot;
 

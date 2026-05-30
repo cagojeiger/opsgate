@@ -15,13 +15,13 @@ use opsgate_domain::credential::{
     validate_policy_for_category, validate_provider as validate_credential_provider,
     validate_register_input, validate_tag as validate_credential_tag,
 };
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use super::secret;
 use crate::target::ssrf::{BLOCKED_TARGET_IP_MESSAGE, target_ip_is_blocked};
 
-const SECRET_DOMAIN: &str = "credentials";
 const DEFAULT_LIST_LIMIT: i64 = 50;
 const MAX_LIST_LIMIT: i64 = 100;
 const MAX_LIST_Q: usize = 128;
@@ -57,14 +57,27 @@ impl CredentialService {
         caller: &Caller,
         input: RegisterHttpCredentialInput,
     ) -> Result<Credential> {
+        self.register(caller, input.into_domain()).await
+    }
+
+    pub async fn register_sql(
+        &self,
+        caller: &Caller,
+        input: RegisterSqlCredentialInput,
+    ) -> Result<Credential> {
+        self.register(caller, input.into_domain()).await
+    }
+
+    async fn register(
+        &self,
+        caller: &Caller,
+        input: RegisterCredentialInput,
+    ) -> Result<Credential> {
         let owner_user_id = caller.user.id;
-        let input = normalize_register_input(input.into_domain());
+        let input = normalize_register_input(input);
         validate_register_input(&input)?;
         self.validate_register_endpoint_ips(&input).await?;
-        let secret_plaintext = secret_json(&input.secret)?;
-        let secret_ciphertext = self
-            .sealer
-            .seal(SECRET_DOMAIN, &input.alias, &secret_plaintext)?;
+        let secret_ciphertext = secret::seal(&self.sealer, &input.alias, &input.secret)?;
         let tls_ca = input
             .tls_server_ca
             .as_ref()
@@ -86,42 +99,6 @@ impl CredentialService {
                     policy: input.policy,
                     allow_private_network: input.allow_private_network,
                     tls_ca,
-                },
-                audit,
-            )
-            .await
-    }
-
-    pub async fn register_sql(
-        &self,
-        caller: &Caller,
-        input: RegisterSqlCredentialInput,
-    ) -> Result<Credential> {
-        let owner_user_id = caller.user.id;
-        let input = normalize_register_input(input.into_domain());
-        validate_register_input(&input)?;
-        self.validate_register_endpoint_ips(&input).await?;
-        let secret_plaintext = secret_json(&input.secret)?;
-        let secret_ciphertext = self
-            .sealer
-            .seal(SECRET_DOMAIN, &input.alias, &secret_plaintext)?;
-        let audit = register_audit(caller, &input);
-        self.repo
-            .insert_credential(
-                InsertCredentialParams {
-                    owner_user_id,
-                    actor_user_id: owner_user_id,
-                    category: input.category,
-                    provider: input.provider,
-                    alias: input.alias,
-                    endpoint: input.endpoint,
-                    secret_ciphertext,
-                    description: input.description,
-                    env: input.env,
-                    tags: input.tags,
-                    policy: input.policy,
-                    allow_private_network: input.allow_private_network,
-                    tls_ca: None,
                 },
                 audit,
             )
@@ -510,38 +487,6 @@ impl CredentialService {
     }
 }
 
-fn secret_json(secret: &CredentialSecret) -> Result<Vec<u8>> {
-    let value = match secret {
-        CredentialSecret::Http { headers } => serde_json::json!({
-            "headers": headers.iter().map(secret_header_json).collect::<Vec<_>>()
-        }),
-        CredentialSecret::Sql { username, password } => serde_json::json!({
-            "username": username.expose_secret(),
-            "password": password.expose_secret(),
-        }),
-    };
-    serde_json::to_vec(&value)
-        .map_err(|error| Error::internal(format!("serialize credential secret: {error}")))
-}
-
-fn secret_header_json(header: &SecretHeader) -> serde_json::Value {
-    serde_json::json!({
-        "name": header.name,
-        "value": header.value.expose_secret(),
-    })
-}
-
-#[derive(Deserialize)]
-struct StoredHttpSecret {
-    #[serde(default)]
-    headers: Vec<StoredSecretHeader>,
-}
-
-#[derive(Deserialize)]
-struct StoredSecretHeader {
-    name: String,
-}
-
 fn ensure_update_category(credential: &Credential, expected: CredentialCategory) -> Result<()> {
     if credential.category == expected {
         Ok(())
@@ -563,14 +508,7 @@ fn validate_http_policy_secret_overlap(
 ) -> Result<()> {
     let ciphertext =
         secret_ciphertext.ok_or_else(|| Error::internal("credential secret missing"))?;
-    let plaintext = sealer.open(SECRET_DOMAIN, alias, ciphertext)?;
-    let secret = serde_json::from_slice::<StoredHttpSecret>(&plaintext)
-        .map_err(|error| Error::internal(format!("decode credential secret: {error}")))?;
-    let names = secret
-        .headers
-        .into_iter()
-        .map(|header| header.name)
-        .collect::<Vec<_>>();
+    let names = secret::open_http_header_names(sealer, alias, ciphertext)?;
     validate_allowed_headers_do_not_overlap_secret(policy, &names)
 }
 
@@ -861,26 +799,6 @@ mod tests {
     }
 
     #[test]
-    fn secret_json_contains_secret_only_before_sealing() -> Result<()> {
-        let secret = CredentialSecret::Http {
-            headers: vec![SecretHeader {
-                name: "Authorization".to_owned(),
-                value: SecretString::from("Bearer secret-token".to_owned()),
-            }],
-        };
-        let json = secret_json(&secret)?;
-        assert!(String::from_utf8_lossy(&json).contains("secret-token"));
-
-        let key = base64::engine::general_purpose::STANDARD.encode([12_u8; 32]);
-        let cipher = opsgate_core::crypto::Cipher::new(&key)?;
-        let sealer = Sealer::new(cipher);
-        let ciphertext = sealer.seal(SECRET_DOMAIN, "prod", &json)?;
-        assert!(!String::from_utf8_lossy(&ciphertext).contains("secret-token"));
-        assert!(sealer.open(SECRET_DOMAIN, "other", &ciphertext).is_err());
-        Ok(())
-    }
-
-    #[test]
     fn register_audit_detail_excludes_endpoint_and_secret_material() {
         let input = http_input(false);
         let audit = register_audit(&caller(), &input);
@@ -969,7 +887,7 @@ mod tests {
                 value: SecretString::from("secret-token".to_owned()),
             }],
         };
-        let ciphertext = sealer.seal(SECRET_DOMAIN, "prod", &secret_json(&secret)?)?;
+        let ciphertext = crate::credential::secret::seal(&sealer, "prod", &secret)?;
         let policy = normalize_policy_for_category(
             CredentialPolicy {
                 allowed_request_headers: vec!["x-api-key".to_owned()],
