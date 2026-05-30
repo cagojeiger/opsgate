@@ -144,7 +144,12 @@ struct RegisterCredentialInput {
     category: CredentialCategory,
     provider: String,
     alias: String,
-    endpoint: String,
+    #[serde(default)]
+    origin: String,
+    #[serde(default)]
+    base_path: String,
+    #[serde(default)]
+    database_url: String,
     #[serde(default)]
     secret: RegisterSecretInput,
     #[serde(default)]
@@ -190,7 +195,8 @@ impl RegisterCredentialInput {
                 Ok(RegisterServiceInput::Http(RegisterHttpCredentialInput {
                     provider: self.provider,
                     alias: self.alias,
-                    endpoint: self.endpoint,
+                    origin: self.origin,
+                    base_path: self.base_path,
                     secret_headers: self.secret.headers,
                     description: self.description,
                     env: self.env,
@@ -210,7 +216,7 @@ impl RegisterCredentialInput {
                 Ok(RegisterServiceInput::Sql(RegisterSqlCredentialInput {
                     provider: self.provider,
                     alias: self.alias,
-                    endpoint: self.endpoint,
+                    database_url: self.database_url,
                     username: self.secret.username,
                     password: self.secret.password,
                     description: self.description,
@@ -241,7 +247,9 @@ mod tests {
             category: CredentialCategory::Http,
             provider: "k8s".to_owned(),
             alias: "prod-api".to_owned(),
-            endpoint: "https://api.example.test".to_owned(),
+            origin: "https://api.example.test".to_owned(),
+            base_path: String::new(),
+            database_url: String::new(),
             secret: RegisterSecretInput {
                 headers: vec![SecretHeaderInput {
                     name: "Authorization".to_owned(),
@@ -284,7 +292,9 @@ mod tests {
             category: CredentialCategory::Sql,
             provider: String::new(),
             alias: "prod-db".to_owned(),
-            endpoint: "postgres://db.example.test/app?sslmode=require".to_owned(),
+            origin: String::new(),
+            base_path: String::new(),
+            database_url: "postgres://db.example.test/app?sslmode=require".to_owned(),
             secret: RegisterSecretInput {
                 headers: Vec::new(),
                 username: "app".to_owned(),
@@ -318,7 +328,9 @@ mod tests {
             category: CredentialCategory::Http,
             provider: "k8s".to_owned(),
             alias: "prod-api".to_owned(),
-            endpoint: "https://api.example.test".to_owned(),
+            origin: "https://api.example.test".to_owned(),
+            base_path: String::new(),
+            database_url: String::new(),
             secret: RegisterSecretInput {
                 headers: vec![SecretHeaderInput {
                     name: "Authorization".to_owned(),
@@ -341,7 +353,9 @@ mod tests {
             category: CredentialCategory::Sql,
             provider: String::new(),
             alias: "prod-db".to_owned(),
-            endpoint: "postgres://db.example.test/app?sslmode=require".to_owned(),
+            origin: String::new(),
+            base_path: String::new(),
+            database_url: "postgres://db.example.test/app?sslmode=require".to_owned(),
             secret: RegisterSecretInput {
                 headers: vec![SecretHeaderInput {
                     name: "Authorization".to_owned(),

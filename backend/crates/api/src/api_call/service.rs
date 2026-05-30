@@ -9,8 +9,8 @@ use opsgate_core::validation::{
 };
 use opsgate_core::{Error, Result};
 use opsgate_db::{ApiCallHistoryParams, ApiCallHistoryRepo, AuditRepo, CredentialRepo};
-use opsgate_domain::credential::{Credential, CredentialCategory, SecretHeader};
-use opsgate_domain::credential::{contains_fold, header_blocked};
+use opsgate_domain::credential::{Credential, CredentialCategory, CredentialTarget, SecretHeader};
+use opsgate_domain::credential::{contains_fold, header_blocked, request_path_matches_prefix};
 use opsgate_domain::{Caller, Channel};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use schemars::JsonSchema;
@@ -134,7 +134,7 @@ impl ApiCallService {
             return Err(error);
         }
 
-        let url = match build_target_url(&credential.endpoint, &input) {
+        let url = match build_target_url(&credential.target, &input) {
             Ok(url) => url,
             Err(error) => {
                 recorder
@@ -307,7 +307,7 @@ pub(crate) struct ApiCallInput {
     pub purpose: String,
     #[serde(default)]
     pub method: String,
-    pub path: String,
+    pub request_path: String,
     #[serde(default)]
     pub query: BTreeMap<String, String>,
     #[serde(default)]
@@ -342,7 +342,7 @@ struct NormalizedApiCallInput {
     alias: String,
     purpose: String,
     method: String,
-    path: String,
+    request_path: String,
     query: BTreeMap<String, String>,
     headers: BTreeMap<String, String>,
     body: Option<Value>,
@@ -371,7 +371,7 @@ fn normalize_input(input: ApiCallInput) -> Result<NormalizedApiCallInput> {
     if method == "GET" && input.body.is_some() {
         return Err(Error::validation("GET must not carry a body"));
     }
-    let path = validate_http_path(&input.path)?;
+    let request_path = validate_http_path(&input.request_path)?;
     let max_bytes = validate_max_bytes(
         input.max_bytes,
         DEFAULT_MAX_BYTES,
@@ -414,7 +414,7 @@ fn normalize_input(input: ApiCallInput) -> Result<NormalizedApiCallInput> {
         alias,
         purpose,
         method,
-        path,
+        request_path,
         query,
         headers,
         body: input.body,
@@ -450,11 +450,13 @@ fn validate_policy_boundary(credential: &Credential, input: &NormalizedApiCallIn
     }
     if !credential
         .policy
-        .allowed_path_prefixes
+        .allowed_request_path_prefixes
         .iter()
-        .any(|prefix| input.path.starts_with(prefix))
+        .any(|prefix| request_path_matches_prefix(&input.request_path, prefix))
     {
-        return Err(Error::validation("path not allowed by credential policy"));
+        return Err(Error::validation(
+            "request_path not allowed by credential policy",
+        ));
     }
     for key in input.query.keys() {
         if contains_fold(&credential.policy.denied_query_keys, key) {
@@ -492,10 +494,13 @@ fn validate_no_secret_header_override(
     Ok(())
 }
 
-fn build_target_url(endpoint: &str, input: &NormalizedApiCallInput) -> Result<url::Url> {
-    let mut url = url::Url::parse(endpoint)
-        .map_err(|error| Error::validation(format!("credential endpoint URL: {error}")))?;
-    let path = join_endpoint_path(url.path(), &input.path);
+fn build_target_url(target: &CredentialTarget, input: &NormalizedApiCallInput) -> Result<url::Url> {
+    let CredentialTarget::Http { origin, base_path } = target else {
+        return Err(Error::validation("credential target is not HTTP"));
+    };
+    let mut url = url::Url::parse(origin)
+        .map_err(|error| Error::validation(format!("credential origin URL: {error}")))?;
+    let path = join_base_path(base_path, &input.request_path);
     url.set_path(&path);
     url.set_query(None);
     if !input.query.is_empty() {
@@ -507,8 +512,8 @@ fn build_target_url(endpoint: &str, input: &NormalizedApiCallInput) -> Result<ur
     Ok(url)
 }
 
-fn join_endpoint_path(endpoint_path: &str, request_path: &str) -> String {
-    let base = endpoint_path.trim_end_matches('/');
+fn join_base_path(base_path: &str, request_path: &str) -> String {
+    let base = base_path.trim_end_matches('/');
     if base.is_empty() {
         request_path.to_owned()
     } else {
@@ -656,7 +661,7 @@ impl<'a> CallRecorder<'a> {
                 .map(|credential| credential.env.clone())
                 .unwrap_or_default(),
             method: self.input.method.clone(),
-            path: self.input.path.clone(),
+            request_path: self.input.request_path.clone(),
             query_keys: serde_json::json!(self.input.query.keys().cloned().collect::<Vec<_>>()),
             request_header_keys: serde_json::json!(
                 self.input.headers.keys().cloned().collect::<Vec<_>>()
@@ -719,7 +724,10 @@ fn audit_detail(
     let mut detail = serde_json::Map::new();
     detail.insert("schema_version".to_owned(), serde_json::json!(1));
     detail.insert("method".to_owned(), serde_json::json!(input.method));
-    detail.insert("path".to_owned(), serde_json::json!(input.path));
+    detail.insert(
+        "request_path".to_owned(),
+        serde_json::json!(input.request_path),
+    );
     detail.insert("purpose".to_owned(), serde_json::json!(input.purpose));
     let query_keys = input.query.keys().cloned().collect::<Vec<_>>();
     if !query_keys.is_empty() {
@@ -797,7 +805,7 @@ fn pre_input_denial_history_params(
         credential_provider: String::new(),
         credential_env: String::new(),
         method: String::new(),
-        path: String::new(),
+        request_path: String::new(),
         query_keys: serde_json::json!([]),
         request_header_keys: serde_json::json!([]),
         projection_keys: serde_json::json!([]),
@@ -818,7 +826,7 @@ fn pre_input_denial_history_params(
 mod tests {
     use super::*;
     use chrono::Utc;
-    use opsgate_domain::credential::CredentialPolicy;
+    use opsgate_domain::credential::{CredentialPolicy, CredentialTarget};
     use secrecy::SecretString;
     use uuid::Uuid;
 
@@ -827,7 +835,7 @@ mod tests {
             alias: "prod".to_owned(),
             purpose: "Check pod phases".to_owned(),
             method: "GET".to_owned(),
-            path: "/api/v1/pods".to_owned(),
+            request_path: "/api/v1/pods".to_owned(),
             query: BTreeMap::new(),
             headers: BTreeMap::new(),
             body: None,
@@ -845,7 +853,10 @@ mod tests {
             category: CredentialCategory::Http,
             provider: "k8s".to_owned(),
             alias: "prod".to_owned(),
-            endpoint: "https://api.example.test".to_owned(),
+            target: CredentialTarget::Http {
+                origin: "https://api.example.test".to_owned(),
+                base_path: "/".to_owned(),
+            },
             description: String::new(),
             env: "prod".to_owned(),
             tags: Vec::new(),
@@ -875,9 +886,9 @@ mod tests {
         input.purpose = "bad\nsecret-token".to_owned();
         assert!(normalize_input(input.clone()).is_err());
         input.purpose = "Check pod phases".to_owned();
-        input.path = "/api/../secret".to_owned();
+        input.request_path = "/api/../secret".to_owned();
         assert!(normalize_input(input.clone()).is_err());
-        input.path = "/api/v1/pods".to_owned();
+        input.request_path = "/api/v1/pods".to_owned();
         input.jsonpath = vec!["$..metadata.name".to_owned()];
         assert!(normalize_input(input.clone()).is_err());
         input.jsonpath = Vec::new();
@@ -945,7 +956,7 @@ mod tests {
     fn policy_boundary_rejects_docs_denials() -> Result<()> {
         let credential = http_credential(CredentialPolicy {
             allowed_methods: vec!["GET".to_owned()],
-            allowed_path_prefixes: vec!["/api/".to_owned()],
+            allowed_request_path_prefixes: vec!["/api".to_owned()],
             denied_query_keys: vec!["token".to_owned()],
             allowed_request_headers: vec!["Accept".to_owned()],
             ..CredentialPolicy::default()
@@ -979,7 +990,7 @@ mod tests {
         assert!(validate_policy_boundary(&credential, &method_denied).is_err());
 
         let path_denied = normalize_input(ApiCallInput {
-            path: "/other".to_owned(),
+            request_path: "/other".to_owned(),
             ..base_input()
         })?;
         assert!(validate_policy_boundary(&credential, &path_denied).is_err());
@@ -1003,11 +1014,15 @@ mod tests {
     #[test]
     fn runtime_target_preflight_blocks_private_ip_literal_urls() -> Result<()> {
         let input = normalize_input(ApiCallInput {
-            path: "/status".to_owned(),
+            request_path: "/status".to_owned(),
             ..base_input()
         })?;
-        for endpoint in ["https://127.0.0.1", "https://[::ffff:127.0.0.1]"] {
-            let url = build_target_url(endpoint, &input)?;
+        for origin in ["https://127.0.0.1", "https://[::ffff:127.0.0.1]"] {
+            let target = CredentialTarget::Http {
+                origin: origin.to_owned(),
+                base_path: "/".to_owned(),
+            };
+            let url = build_target_url(&target, &input)?;
             let err = crate::target::http::ensure_url_allowed(&url, true, false)
                 .err()
                 .map(|error| error.to_string())
@@ -1018,19 +1033,27 @@ mod tests {
     }
 
     #[test]
-    fn target_url_preserves_endpoint_base_path() -> Result<()> {
+    fn target_url_joins_hidden_base_path() -> Result<()> {
         let input = normalize_input(ApiCallInput {
-            path: "/v1/pods".to_owned(),
+            request_path: "/v1/pods".to_owned(),
             query: BTreeMap::from([("label".to_owned(), "app=web".to_owned())]),
             ..base_input()
         })?;
-        let url = build_target_url("https://api.example.test/base/", &input)?;
+        let target = CredentialTarget::Http {
+            origin: "https://api.example.test".to_owned(),
+            base_path: "/base".to_owned(),
+        };
+        let url = build_target_url(&target, &input)?;
         assert_eq!(
             url.as_str(),
             "https://api.example.test/base/v1/pods?label=app%3Dweb"
         );
 
-        let url = build_target_url("https://api.example.test", &input)?;
+        let target = CredentialTarget::Http {
+            origin: "https://api.example.test".to_owned(),
+            base_path: "/".to_owned(),
+        };
+        let url = build_target_url(&target, &input)?;
         assert_eq!(
             url.as_str(),
             "https://api.example.test/v1/pods?label=app%3Dweb"
@@ -1070,7 +1093,7 @@ mod tests {
         assert!(serialized.contains("denial_reason"));
         assert!(!serialized.contains("query-secret"));
         assert!(!serialized.contains("body-secret"));
-        assert!(!serialized.contains("endpoint"));
+        assert!(!serialized.contains("api.example.test"));
         assert!(!serialized.contains("secret"));
         assert!(!serialized.contains("\"reason\""));
         Ok(())

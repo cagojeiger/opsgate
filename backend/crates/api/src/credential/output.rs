@@ -158,7 +158,10 @@ mod tests {
             category: CredentialCategory::Http,
             provider: "k8s".to_owned(),
             alias: "prod-api".to_owned(),
-            endpoint: "https://internal.example.test/secret-path".to_owned(),
+            target: opsgate_domain::credential::CredentialTarget::Http {
+                origin: "https://internal.example.test".to_owned(),
+                base_path: "/secret-path".to_owned(),
+            },
             description: "cluster api".to_owned(),
             env: "prod".to_owned(),
             tags: vec!["prod".to_owned(), "k8s".to_owned()],
@@ -172,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn output_excludes_endpoint_and_secret_material() -> Result<(), serde_json::Error> {
+    fn output_excludes_target_and_secret_material() -> Result<(), serde_json::Error> {
         let output = CredentialOutput::from_with_fields(credential(), None);
         let json = serde_json::to_string(&output)?;
 

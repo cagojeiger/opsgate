@@ -11,7 +11,7 @@ pub struct CredentialPolicy {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_methods: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub allowed_path_prefixes: Vec<String>,
+    pub allowed_request_path_prefixes: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub denied_query_keys: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -65,8 +65,8 @@ fn normalize_http_policy(policy: &mut CredentialPolicy) {
     if policy.allowed_methods.is_empty() {
         policy.allowed_methods.push("GET".to_owned());
     }
-    if policy.allowed_path_prefixes.is_empty() {
-        policy.allowed_path_prefixes.push("/".to_owned());
+    if policy.allowed_request_path_prefixes.is_empty() {
+        policy.allowed_request_path_prefixes.push("/".to_owned());
     }
     for method in &mut policy.allowed_methods {
         *method = method.trim().to_ascii_uppercase();
@@ -90,10 +90,10 @@ fn validate_http_policy(policy: &CredentialPolicy) -> Result<()> {
             )));
         }
     }
-    for prefix in &policy.allowed_path_prefixes {
-        if !prefix.starts_with('/') {
+    for prefix in &policy.allowed_request_path_prefixes {
+        if !valid_request_path_prefix(prefix) {
             return Err(Error::validation(format!(
-                "allowed_path_prefix {prefix:?} must start with /"
+                "allowed_request_path_prefix {prefix:?} must be an absolute request path prefix"
             )));
         }
     }
@@ -117,6 +117,21 @@ fn validate_http_policy(policy: &CredentialPolicy) -> Result<()> {
         }
     }
     Ok(())
+}
+
+pub fn request_path_matches_prefix(request_path: &str, prefix: &str) -> bool {
+    prefix == "/"
+        || request_path == prefix
+        || request_path
+            .strip_prefix(prefix.trim_end_matches('/'))
+            .is_some_and(|tail| tail.starts_with('/'))
+}
+
+fn valid_request_path_prefix(prefix: &str) -> bool {
+    prefix.starts_with('/')
+        && !prefix.contains(['\0', '\r', '\n', '?', '#'])
+        && !prefix.contains("..")
+        && !prefix.contains("//")
 }
 
 fn validate_sql_policy(policy: &CredentialPolicy) -> Result<()> {
@@ -144,7 +159,7 @@ mod tests {
         let policy =
             normalize_policy_for_category(CredentialPolicy::default(), CredentialCategory::Http);
         assert_eq!(policy.allowed_methods, ["GET"]);
-        assert_eq!(policy.allowed_path_prefixes, ["/"]);
+        assert_eq!(policy.allowed_request_path_prefixes, ["/"]);
         assert!(validate_policy_for_category(&policy, CredentialCategory::Http).is_ok());
     }
 
@@ -179,5 +194,12 @@ mod tests {
             CredentialCategory::Sql,
         );
         assert!(validate_policy_for_category(&policy, CredentialCategory::Sql).is_err());
+    }
+
+    #[test]
+    fn request_path_prefix_matching_is_segment_aware() {
+        assert!(request_path_matches_prefix("/api/v1", "/api"));
+        assert!(request_path_matches_prefix("/api", "/api"));
+        assert!(!request_path_matches_prefix("/apis", "/api"));
     }
 }

@@ -6,10 +6,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Connection, PgPool, Row};
 use uuid::Uuid;
 
-const MIGRATIONS: [&str; 2] = [
-    include_str!("../migrations/0001_init.sql"),
-    include_str!("../migrations/0007_audit_logs.sql"),
-];
+const MIGRATIONS: [&str; 1] = [include_str!("../migrations/0001_schema.sql")];
 
 struct TestDb {
     database_url: String,

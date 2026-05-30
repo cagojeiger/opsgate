@@ -64,7 +64,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "credential.list",
-        description = "List visible credential aliases, metadata, and policy without returning secrets or endpoints."
+        description = "List visible credential aliases, metadata, and policy without returning secrets or target URLs."
     )]
     pub async fn credential_list(
         &self,
@@ -82,7 +82,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "api.call",
-        description = "Call category=http alias. JSON-only; use 1-3 jsonpath paths for large lists before max_bytes. Secrets/endpoints hidden."
+        description = "Call category=http alias. JSON-only; use 1-3 jsonpath paths for large lists before max_bytes. Secrets/target URLs hidden."
     )]
     pub async fn api_call(
         &self,
@@ -174,7 +174,7 @@ impl AdminMcpServer {
 
     #[tool(
         name = "credential.list",
-        description = "List visible credential aliases, metadata, and policy without returning secrets or endpoints."
+        description = "List visible credential aliases, metadata, and policy without returning secrets or target URLs."
     )]
     pub async fn credential_list(
         &self,
@@ -228,7 +228,7 @@ impl AdminMcpServer {
 
     #[tool(
         name = "credential.update_http",
-        description = "Update mutable metadata and policy for an existing HTTP credential. Secrets and endpoints are immutable."
+        description = "Update mutable metadata and policy for an existing HTTP credential. Secrets and target URLs are immutable."
     )]
     pub async fn credential_update_http(
         &self,
@@ -246,7 +246,7 @@ impl AdminMcpServer {
 
     #[tool(
         name = "credential.update_sql",
-        description = "Update mutable metadata and policy for an existing SQL credential. Secrets and endpoints are immutable."
+        description = "Update mutable metadata and policy for an existing SQL credential. Secrets and target URLs are immutable."
     )]
     pub async fn credential_update_sql(
         &self,
@@ -289,7 +289,7 @@ impl ServerHandler for AdminMcpServer {
             .with_server_info(
                 Implementation::new("opsgate", env!("CARGO_PKG_VERSION")).with_title("opsgate"),
             )
-            .with_instructions("Admin: register/update/delete credentials. Secrets/endpoints are not returned; rotate by delete + re-register.")
+            .with_instructions("Admin: register/update/delete credentials. Secrets/target URLs are not returned; rotate by delete + re-register.")
     }
 }
 

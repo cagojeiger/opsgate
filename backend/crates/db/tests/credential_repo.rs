@@ -2,23 +2,17 @@ use std::str::FromStr;
 
 use opsgate_db::{CredentialAuditAction, CredentialAuditParams, CredentialRepo};
 use opsgate_domain::credential::{
-    CredentialCategory, CredentialListParams, CredentialPolicy, InsertCredentialParams,
-    UpdateCredentialParams,
+    CredentialCategory, CredentialListParams, CredentialPolicy, CredentialTarget,
+    InsertCredentialParams, UpdateCredentialParams,
 };
 use serde_json::Value;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Connection, PgPool, Row};
 use uuid::Uuid;
 
-const MIGRATIONS: [&str; 8] = [
-    include_str!("../migrations/0001_init.sql"),
-    include_str!("../migrations/0003_credentials.sql"),
-    include_str!("../migrations/0005_credential_audit_events.sql"),
-    include_str!("../migrations/0006_api_call_history.sql"),
-    include_str!("../migrations/0007_audit_logs.sql"),
-    include_str!("../migrations/0008_sql_query_history.sql"),
-    include_str!("../migrations/0010_credential_lifecycle_history.sql"),
-    include_str!("../migrations/0011_runtime_least_privilege.sql"),
+const MIGRATIONS: [&str; 2] = [
+    include_str!("../migrations/0001_schema.sql"),
+    include_str!("../migrations/0002_runtime_least_privilege.sql"),
 ];
 
 struct TestDb {
@@ -181,7 +175,7 @@ async fn credential_mutations_write_actor_columns_and_history_versions()
 
     let audit_metadata: Vec<AuditMetadataRow> = sqlx::query_as(
         "SELECT actor_ip, actor_user_agent, request_id, channel \
-             FROM credential_audit_events \
+             FROM credential_history \
              WHERE owner_user_id = $1 AND alias = 'prod-api' \
              ORDER BY created_at, id",
     )
@@ -390,8 +384,8 @@ struct SeedCredential<'a> {
 async fn seed_credential(pool: &PgPool, credential: SeedCredential<'_>) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO credentials \
-         (owner_user_id, created_by, updated_by, category, provider, alias, endpoint, secret_ciphertext, description, env, tags, policy) \
-         VALUES ($1, $1, $1, $2, $3, $4, 'https://seed.example.test', $5, $6, $7, $8, '{}'::jsonb)",
+         (owner_user_id, created_by, updated_by, category, provider, alias, http_origin, http_base_path, sql_database_url, secret_ciphertext, description, env, tags, policy) \
+         VALUES ($1, $1, $1, $2, $3, $4, $9, $10, $11, $5, $6, $7, $8, '{}'::jsonb)",
     )
     .bind(credential.owner)
     .bind(credential.category)
@@ -407,6 +401,11 @@ async fn seed_credential(pool: &PgPool, credential: SeedCredential<'_>) -> Resul
             .map(|tag| (*tag).to_owned())
             .collect::<Vec<_>>(),
     )
+    .bind((credential.category == "http").then_some("https://seed.example.test"))
+    .bind((credential.category == "http").then_some("/"))
+    .bind((credential.category == "sql").then_some(
+        "postgres://seed.example.test/app?sslmode=require",
+    ))
     .execute(pool)
     .await?;
     Ok(())
@@ -445,7 +444,10 @@ fn insert_params(owner: Uuid, alias: &str) -> InsertCredentialParams {
         category: CredentialCategory::Http,
         provider: "k8s".to_owned(),
         alias: alias.to_owned(),
-        endpoint: "https://api.example.test".to_owned(),
+        target: CredentialTarget::Http {
+            origin: "https://api.example.test".to_owned(),
+            base_path: "/".to_owned(),
+        },
         secret_ciphertext: b"secret-token".to_vec(),
         description: String::new(),
         env: "prod".to_owned(),

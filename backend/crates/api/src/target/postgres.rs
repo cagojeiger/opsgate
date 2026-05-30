@@ -8,7 +8,7 @@ use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
 #[derive(Debug, Clone)]
 pub(crate) struct GuardedPostgresTarget {
-    endpoint: String,
+    database_url: String,
     connect_addr: SocketAddr,
     allow_private_network: bool,
     allow_insecure_transport: bool,
@@ -20,8 +20,8 @@ impl GuardedPostgresTarget {
         username: &str,
         password: &str,
     ) -> Result<PgConnectOptions> {
-        let options = PgConnectOptions::from_str(&self.endpoint)
-            .map_err(|error| Error::validation(format!("postgres endpoint: {error}")))?;
+        let options = PgConnectOptions::from_str(&self.database_url)
+            .map_err(|error| Error::validation(format!("postgres database_url: {error}")))?;
         validate_ssl_mode(
             options.get_ssl_mode(),
             self.allow_private_network,
@@ -42,16 +42,16 @@ impl GuardedPostgresTarget {
 }
 
 pub(crate) async fn prepare_postgres_target(
-    endpoint: &str,
+    database_url: &str,
     allow_private_network: bool,
     allow_insecure_transport: bool,
 ) -> Result<GuardedPostgresTarget> {
-    let url = url::Url::parse(endpoint)
-        .map_err(|error| Error::validation(format!("postgres endpoint: {error}")))?;
+    let url = url::Url::parse(database_url)
+        .map_err(|error| Error::validation(format!("postgres database_url: {error}")))?;
     validate_postgres_transport(&url, allow_private_network, allow_insecure_transport)?;
     let host = url
         .host()
-        .ok_or_else(|| Error::validation("postgres endpoint requires host"))?;
+        .ok_or_else(|| Error::validation("postgres database_url requires host"))?;
     let port = url.port_or_known_default().unwrap_or(5432);
     let connect_addr = match host {
         url::Host::Ipv4(ip) => {
@@ -70,7 +70,7 @@ pub(crate) async fn prepare_postgres_target(
         }
     };
     Ok(GuardedPostgresTarget {
-        endpoint: endpoint.to_owned(),
+        database_url: database_url.to_owned(),
         connect_addr,
         allow_private_network,
         allow_insecure_transport,
@@ -86,13 +86,13 @@ fn validate_postgres_transport(
     for (key, value) in url.query_pairs() {
         if matches!(&*key, "sslmode" | "ssl-mode") {
             let mode = PgSslMode::from_str(&value).map_err(|error| {
-                Error::validation(format!("postgres endpoint sslmode: {error}"))
+                Error::validation(format!("postgres database_url sslmode: {error}"))
             })?;
             ssl_mode = Some(mode);
             continue;
         }
         return Err(Error::validation(format!(
-            "unsupported postgres endpoint query parameter {key:?}"
+            "unsupported postgres database_url query parameter {key:?}"
         )));
     }
     validate_ssl_mode(
@@ -110,11 +110,11 @@ fn validate_ssl_mode(
     match mode {
         PgSslMode::Require => Ok(()),
         PgSslMode::VerifyFull => Err(Error::validation(
-            "postgres endpoint sslmode=verify-full is unsupported by guarded SQL targets",
+            "postgres database_url sslmode=verify-full is unsupported by guarded SQL targets",
         )),
         _ if allow_private_network && allow_insecure_transport => Ok(()),
         _ => Err(Error::validation(
-            "postgres endpoint requires sslmode=require unless allow_private_network=true and allow_insecure_transport=true",
+            "postgres database_url requires sslmode=require unless allow_private_network=true and allow_insecure_transport=true",
         )),
     }
 }
@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn connect_options_reject_verify_full_before_ip_overwrite() {
         let target = GuardedPostgresTarget {
-            endpoint: "postgres://db.example.test:6543/app?sslmode=verify-full".to_owned(),
+            database_url: "postgres://db.example.test:6543/app?sslmode=verify-full".to_owned(),
             connect_addr: SocketAddr::from(([93, 184, 216, 34], 6543)),
             allow_private_network: false,
             allow_insecure_transport: false,
@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn connect_options_use_guarded_target_addr() -> Result<()> {
         let target = GuardedPostgresTarget {
-            endpoint: "postgres://db.example.test:6543/app?sslmode=require".to_owned(),
+            database_url: "postgres://db.example.test:6543/app?sslmode=require".to_owned(),
             connect_addr: SocketAddr::from(([93, 184, 216, 34], 6543)),
             allow_private_network: false,
             allow_insecure_transport: false,
@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn insecure_ssl_modes_require_explicit_private_transport_opt_in() -> Result<()> {
         let rejected = GuardedPostgresTarget {
-            endpoint: "postgres://db.example.test:6543/app?sslmode=disable".to_owned(),
+            database_url: "postgres://db.example.test:6543/app?sslmode=disable".to_owned(),
             connect_addr: SocketAddr::from(([93, 184, 216, 34], 6543)),
             allow_private_network: true,
             allow_insecure_transport: false,
@@ -258,7 +258,7 @@ mod tests {
         assert!(err.contains("allow_insecure_transport"));
 
         let allowed = GuardedPostgresTarget {
-            endpoint: "postgres://db.example.test:6543/app?sslmode=disable".to_owned(),
+            database_url: "postgres://db.example.test:6543/app?sslmode=disable".to_owned(),
             connect_addr: SocketAddr::from(([93, 184, 216, 34], 6543)),
             allow_private_network: true,
             allow_insecure_transport: true,

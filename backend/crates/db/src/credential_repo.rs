@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use opsgate_core::{Error, Result};
 use opsgate_domain::credential::{
-    Credential, CredentialCategory, CredentialListParams, CredentialPolicy, InsertCredentialParams,
-    UpdateCredentialParams,
+    Credential, CredentialCategory, CredentialListParams, CredentialPolicy, CredentialTarget,
+    InsertCredentialParams, UpdateCredentialParams,
 };
 use serde_json::Value;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
@@ -24,6 +24,7 @@ impl CredentialRepo {
         audit: CredentialAuditParams,
     ) -> Result<Credential> {
         let category = params.category.as_str();
+        let (http_origin, http_base_path, sql_database_url) = target_columns(params.target);
         let policy = serde_json::to_value(&params.policy)
             .map_err(|error| Error::internal(format!("serialize credential policy: {error}")))?;
         let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
@@ -34,7 +35,9 @@ impl CredentialRepo {
                 category,
                 provider,
                 alias,
-                endpoint,
+                http_origin,
+                http_base_path,
+                sql_database_url,
                 secret_ciphertext,
                 description,
                 env,
@@ -46,14 +49,16 @@ impl CredentialRepo {
                 created_by,
                 updated_by
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16)
             RETURNING
                 id,
                 owner_user_id,
                 category,
                 provider,
                 alias,
-                endpoint,
+                http_origin,
+                http_base_path,
+                sql_database_url,
                 description,
                 env,
                 tags,
@@ -69,7 +74,9 @@ impl CredentialRepo {
         .bind(category)
         .bind(params.provider)
         .bind(params.alias)
-        .bind(params.endpoint)
+        .bind(http_origin)
+        .bind(http_base_path)
+        .bind(sql_database_url)
         .bind(params.secret_ciphertext)
         .bind(params.description)
         .bind(params.env)
@@ -84,7 +91,6 @@ impl CredentialRepo {
         .map_err(map_sqlx_error)?;
         let credential = row.into_credential()?;
         insert_history_event(&mut tx, &credential, &audit).await?;
-        insert_audit_event(&mut tx, &credential, audit).await?;
         tx.commit().await.map_err(map_sqlx_error)?;
         Ok(credential)
     }
@@ -102,7 +108,9 @@ impl CredentialRepo {
                 category,
                 provider,
                 alias,
-                endpoint,
+                http_origin,
+                http_base_path,
+                sql_database_url,
                 description,
                 env,
                 tags,
@@ -139,7 +147,9 @@ impl CredentialRepo {
                 category,
                 provider,
                 alias,
-                endpoint,
+                http_origin,
+                http_base_path,
+                sql_database_url,
                 description,
                 env,
                 tags,
@@ -197,7 +207,9 @@ impl CredentialRepo {
                 category,
                 provider,
                 alias,
-                endpoint,
+                http_origin,
+                http_base_path,
+                sql_database_url,
                 description,
                 env,
                 tags,
@@ -222,7 +234,6 @@ impl CredentialRepo {
         .map_err(map_sqlx_error)?;
         let credential = row.into_credential()?;
         insert_history_event(&mut tx, &credential, &audit).await?;
-        insert_audit_event(&mut tx, &credential, audit).await?;
         tx.commit().await.map_err(map_sqlx_error)?;
         Ok(credential)
     }
@@ -253,7 +264,9 @@ impl CredentialRepo {
                 category,
                 provider,
                 alias,
-                endpoint,
+                http_origin,
+                http_base_path,
+                sql_database_url,
                 description,
                 env,
                 tags,
@@ -273,7 +286,6 @@ impl CredentialRepo {
         .map_err(map_sqlx_error)?;
         let credential = row.into_credential()?;
         insert_history_event(&mut tx, &credential, &audit).await?;
-        insert_audit_event(&mut tx, &credential, audit).await?;
         tx.commit().await.map_err(map_sqlx_error)?;
         Ok(credential)
     }
@@ -299,7 +311,9 @@ impl CredentialRepo {
                 category,
                 provider,
                 alias,
-                endpoint,
+                http_origin,
+                http_base_path,
+                sql_database_url,
                 description,
                 env,
                 tags,
@@ -474,10 +488,16 @@ async fn insert_history_event(
             alias,
             action,
             actor_user_id,
+            actor_ip,
+            actor_user_agent,
+            request_id,
+            channel,
+            reason,
+            changed_fields,
             version,
             detail
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
         "#,
     )
     .bind(credential.id)
@@ -485,6 +505,12 @@ async fn insert_history_event(
     .bind(&credential.alias)
     .bind(audit.action.as_str())
     .bind(audit.actor_user_id)
+    .bind(&audit.actor_ip)
+    .bind(&audit.actor_user_agent)
+    .bind(&audit.request_id)
+    .bind(&audit.channel)
+    .bind(&audit.reason)
+    .bind(&audit.changed_fields)
     .bind(version)
     .bind(history_detail(credential, audit))
     .execute(&mut **tx)
@@ -519,6 +545,7 @@ fn history_detail(credential: &Credential, audit: &CredentialAuditParams) -> Val
             "alias": &credential.alias,
             "category": credential.category.as_str(),
             "provider": &credential.provider,
+            "detail": &audit.detail,
         }),
         CredentialAuditAction::Update => serde_json::json!({
             "alias": &credential.alias,
@@ -526,56 +553,14 @@ fn history_detail(credential: &Credential, audit: &CredentialAuditParams) -> Val
             "provider": &credential.provider,
             "update_reason": audit.reason.as_deref(),
             "changed_fields": &audit.changed_fields,
+            "detail": &audit.detail,
         }),
         CredentialAuditAction::Delete => serde_json::json!({
             "alias": &credential.alias,
             "delete_reason": audit.reason.as_deref(),
+            "detail": &audit.detail,
         }),
     }
-}
-
-async fn insert_audit_event(
-    tx: &mut Transaction<'_, Postgres>,
-    credential: &Credential,
-    audit: CredentialAuditParams,
-) -> Result<()> {
-    sqlx::query(
-        r#"
-        INSERT INTO credential_audit_events (
-            owner_user_id,
-            actor_user_id,
-            actor_ip,
-            actor_user_agent,
-            request_id,
-            channel,
-            credential_id,
-            alias,
-            category,
-            action,
-            reason,
-            changed_fields,
-            detail
-        )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-        "#,
-    )
-    .bind(credential.owner_user_id)
-    .bind(audit.actor_user_id)
-    .bind(audit.actor_ip)
-    .bind(audit.actor_user_agent)
-    .bind(audit.request_id)
-    .bind(audit.channel)
-    .bind(credential.id)
-    .bind(&credential.alias)
-    .bind(credential.category.as_str())
-    .bind(audit.action.as_str())
-    .bind(audit.reason)
-    .bind(audit.changed_fields)
-    .bind(audit.detail)
-    .execute(&mut **tx)
-    .await
-    .map_err(map_sqlx_error)?;
-    Ok(())
 }
 
 #[derive(Debug, FromRow)]
@@ -585,7 +570,9 @@ struct CredentialRow {
     category: String,
     provider: String,
     alias: String,
-    endpoint: String,
+    http_origin: Option<String>,
+    http_base_path: Option<String>,
+    sql_database_url: Option<String>,
     description: String,
     env: String,
     tags: Vec<String>,
@@ -604,7 +591,9 @@ pub struct CredentialSecretRow {
     category: String,
     provider: String,
     alias: String,
-    endpoint: String,
+    http_origin: Option<String>,
+    http_base_path: Option<String>,
+    sql_database_url: Option<String>,
     description: String,
     env: String,
     tags: Vec<String>,
@@ -632,7 +621,9 @@ impl CredentialSecretRow {
             category: self.category,
             provider: self.provider,
             alias: self.alias,
-            endpoint: self.endpoint,
+            http_origin: self.http_origin,
+            http_base_path: self.http_base_path,
+            sql_database_url: self.sql_database_url,
             description: self.description,
             env: self.env,
             tags: self.tags,
@@ -663,6 +654,12 @@ impl CredentialRow {
                 )));
             }
         };
+        let target = row_target(
+            category,
+            self.http_origin,
+            self.http_base_path,
+            self.sql_database_url,
+        )?;
         let policy = serde_json::from_value::<CredentialPolicy>(self.policy)
             .map_err(|error| Error::internal(format!("decode credential policy: {error}")))?;
         Ok(Credential {
@@ -671,7 +668,7 @@ impl CredentialRow {
             category,
             provider: self.provider,
             alias: self.alias,
-            endpoint: self.endpoint,
+            target,
             description: self.description,
             env: self.env,
             tags: self.tags,
@@ -682,6 +679,32 @@ impl CredentialRow {
             created_at: self.created_at,
             updated_at: self.updated_at,
         })
+    }
+}
+
+fn target_columns(target: CredentialTarget) -> (Option<String>, Option<String>, Option<String>) {
+    match target {
+        CredentialTarget::Http { origin, base_path } => (Some(origin), Some(base_path), None),
+        CredentialTarget::Sql { database_url } => (None, None, Some(database_url)),
+    }
+}
+
+fn row_target(
+    category: CredentialCategory,
+    http_origin: Option<String>,
+    http_base_path: Option<String>,
+    sql_database_url: Option<String>,
+) -> Result<CredentialTarget> {
+    match category {
+        CredentialCategory::Http => Ok(CredentialTarget::Http {
+            origin: http_origin.ok_or_else(|| Error::internal("http credential missing origin"))?,
+            base_path: http_base_path
+                .ok_or_else(|| Error::internal("http credential missing base_path"))?,
+        }),
+        CredentialCategory::Sql => Ok(CredentialTarget::Sql {
+            database_url: sql_database_url
+                .ok_or_else(|| Error::internal("sql credential missing database_url"))?,
+        }),
     }
 }
 

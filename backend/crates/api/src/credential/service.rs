@@ -8,8 +8,8 @@ use opsgate_db::{CredentialAuditAction, CredentialRepo, CredentialSummaryRows};
 use opsgate_domain::Caller;
 use opsgate_domain::credential::{
     Credential, CredentialCategory, CredentialListParams, CredentialPolicy, CredentialSecret,
-    InsertCredentialParams, RegisterCredentialInput, SecretHeader, UpdateCredentialParams,
-    normalize_policy_for_category, normalize_register_input,
+    CredentialTarget, InsertCredentialParams, RegisterCredentialInput, SecretHeader,
+    UpdateCredentialParams, normalize_policy_for_category, normalize_register_input,
     normalize_tags as normalize_credential_tags, validate_alias as validate_credential_alias,
     validate_allowed_headers_do_not_overlap_secret, validate_env as validate_credential_env,
     validate_policy_for_category, validate_provider as validate_credential_provider,
@@ -76,7 +76,7 @@ impl CredentialService {
         let owner_user_id = caller.user.id;
         let input = normalize_register_input(input);
         validate_register_input(&input)?;
-        self.validate_register_endpoint_ips(&input).await?;
+        self.validate_register_target_ips(&input).await?;
         let secret_ciphertext = secret::seal(&self.sealer, &input.alias, &input.secret)?;
         let tls_ca = input
             .tls_server_ca
@@ -91,7 +91,7 @@ impl CredentialService {
                     category: input.category,
                     provider: input.provider,
                     alias: input.alias,
-                    endpoint: input.endpoint,
+                    target: input.target,
                     secret_ciphertext,
                     description: input.description,
                     env: input.env,
@@ -330,7 +330,9 @@ fn count_map(rows: Vec<opsgate_db::credential_repo::CountRow>) -> BTreeMap<Strin
 pub(crate) struct RegisterHttpCredentialInput {
     pub provider: String,
     pub alias: String,
-    pub endpoint: String,
+    pub origin: String,
+    #[serde(default)]
+    pub base_path: String,
     pub secret_headers: Vec<SecretHeaderInput>,
     #[serde(default)]
     pub description: String,
@@ -353,7 +355,7 @@ pub(crate) struct RegisterSqlCredentialInput {
     #[serde(default)]
     pub provider: String,
     pub alias: String,
-    pub endpoint: String,
+    pub database_url: String,
     pub username: String,
     pub password: String,
     #[serde(default)]
@@ -404,7 +406,10 @@ impl RegisterHttpCredentialInput {
             category: CredentialCategory::Http,
             provider: self.provider,
             alias: self.alias,
-            endpoint: self.endpoint,
+            target: CredentialTarget::Http {
+                origin: self.origin,
+                base_path: self.base_path,
+            },
             secret: CredentialSecret::Http {
                 headers: self
                     .secret_headers
@@ -432,7 +437,9 @@ impl RegisterSqlCredentialInput {
             category: CredentialCategory::Sql,
             provider: self.provider,
             alias: self.alias,
-            endpoint: self.endpoint,
+            target: CredentialTarget::Sql {
+                database_url: self.database_url,
+            },
             secret: CredentialSecret::Sql {
                 username: SecretString::from(self.username),
                 password: SecretString::from(self.password),
@@ -460,7 +467,7 @@ impl EndpointResolver {
         match self {
             Self::System => tokio::net::lookup_host((host, port))
                 .await
-                .map_err(|error| Error::validation(format!("resolve endpoint host: {error}")))
+                .map_err(|error| Error::validation(format!("resolve target host: {error}")))
                 .map(|addrs| addrs.map(|addr| addr.ip()).collect()),
             #[cfg(test)]
             Self::Fixed(ips) => Ok(ips.clone()),
@@ -469,15 +476,19 @@ impl EndpointResolver {
 }
 
 impl CredentialService {
-    async fn validate_register_endpoint_ips(&self, input: &RegisterCredentialInput) -> Result<()> {
+    async fn validate_register_target_ips(&self, input: &RegisterCredentialInput) -> Result<()> {
         if input.allow_private_network {
             return Ok(());
         }
-        let url = url::Url::parse(&input.endpoint)
-            .map_err(|error| Error::validation(format!("endpoint URL: {error}")))?;
+        let raw_url = match &input.target {
+            CredentialTarget::Http { origin, .. } => origin,
+            CredentialTarget::Sql { database_url } => database_url,
+        };
+        let url = url::Url::parse(raw_url)
+            .map_err(|error| Error::validation(format!("target URL: {error}")))?;
         let host = url
             .host_str()
-            .ok_or_else(|| Error::validation("endpoint requires host"))?;
+            .ok_or_else(|| Error::validation("target requires host"))?;
         let default_port = match input.category {
             CredentialCategory::Http => 443,
             CredentialCategory::Sql => 5432,
@@ -485,7 +496,7 @@ impl CredentialService {
         let port = url.port().unwrap_or(default_port);
         let ips = self.resolver.resolve(host, port).await?;
         if ips.is_empty() {
-            return Err(Error::validation("resolve endpoint host: no IPs"));
+            return Err(Error::validation("resolve target host: no IPs"));
         }
         if ips.into_iter().any(target_ip_is_blocked) {
             return Err(Error::validation(BLOCKED_TARGET_IP_MESSAGE));
@@ -711,7 +722,8 @@ mod tests {
         RegisterHttpCredentialInput {
             provider: "k8s".to_owned(),
             alias: "prod".to_owned(),
-            endpoint: "https://service.example.test".to_owned(),
+            origin: "https://service.example.test".to_owned(),
+            base_path: String::new(),
             secret_headers: vec![SecretHeaderInput {
                 name: "Authorization".to_owned(),
                 value: "Bearer secret-token".to_owned(),
@@ -738,11 +750,15 @@ mod tests {
             }
             .to_owned(),
             alias: "prod".to_owned(),
-            endpoint: match category {
-                CredentialCategory::Http => "https://service.example.test",
-                CredentialCategory::Sql => "postgres://db.example.test/app?sslmode=require",
-            }
-            .to_owned(),
+            target: match category {
+                CredentialCategory::Http => CredentialTarget::Http {
+                    origin: "https://service.example.test".to_owned(),
+                    base_path: "/".to_owned(),
+                },
+                CredentialCategory::Sql => CredentialTarget::Sql {
+                    database_url: "postgres://db.example.test/app?sslmode=require".to_owned(),
+                },
+            },
             description: "old description".to_owned(),
             env: "prod".to_owned(),
             tags: vec!["prod".to_owned()],
@@ -778,7 +794,7 @@ mod tests {
     async fn service_rejects_private_register_target_ip() -> Result<()> {
         let service = service_with_ips(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))])?;
         let err = service
-            .validate_register_endpoint_ips(&http_input(false))
+            .validate_register_target_ips(&http_input(false))
             .await
             .err()
             .map(|error| error.to_string())
@@ -794,7 +810,7 @@ mod tests {
             0, 0, 0, 0, 0, 0xffff, 0x7f00, 0x0001,
         ))])?;
         let err = service
-            .validate_register_endpoint_ips(&http_input(false))
+            .validate_register_target_ips(&http_input(false))
             .await
             .err()
             .map(|error| error.to_string())
@@ -809,7 +825,7 @@ mod tests {
         let service = service_with_ips(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))])?;
         assert!(
             service
-                .validate_register_endpoint_ips(&http_input(true))
+                .validate_register_target_ips(&http_input(true))
                 .await
                 .is_ok()
         );
@@ -817,7 +833,7 @@ mod tests {
     }
 
     #[test]
-    fn register_audit_detail_excludes_endpoint_and_secret_material() {
+    fn register_audit_detail_excludes_target_and_secret_material() {
         let input = http_input(false);
         let audit = register_audit(&caller(), &input);
         let detail = audit.detail.to_string();
@@ -966,7 +982,7 @@ mod tests {
                 ..valid.clone()
             },
             ListCredentialsInput {
-                fields: Some(vec!["endpoint".to_owned()]),
+                fields: Some(vec!["origin".to_owned()]),
                 ..valid.clone()
             },
             ListCredentialsInput {

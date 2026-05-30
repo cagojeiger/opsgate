@@ -82,7 +82,7 @@ impl TargetHttpClients {
             client.last_used = now;
             return Ok(client.client.clone());
         }
-        // Credential updates intentionally cannot mutate endpoint, secret, or
+        // Credential updates intentionally cannot mutate target URL, secret, or
         // TLS material. A credential id plus guard mode is therefore a stable
         // cache key for the lifetime of the registered target.
         let client = build_client(self.timeout, Some(tls_ca), guard_private_network)?;
@@ -228,7 +228,7 @@ fn boxed_error(message: impl Into<String>) -> DnsError {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use opsgate_domain::credential::{CredentialCategory, CredentialPolicy};
+    use opsgate_domain::credential::{CredentialCategory, CredentialPolicy, CredentialTarget};
 
     #[test]
     fn target_client_rejects_bad_tls_ca() -> Result<()> {
@@ -371,7 +371,10 @@ mod tests {
             category: CredentialCategory::Http,
             provider: "k8s".to_owned(),
             alias: "prod-api".to_owned(),
-            endpoint: "https://api.example.test".to_owned(),
+            target: CredentialTarget::Http {
+                origin: "https://api.example.test".to_owned(),
+                base_path: "/".to_owned(),
+            },
             description: String::new(),
             env: "prod".to_owned(),
             tags: Vec::new(),

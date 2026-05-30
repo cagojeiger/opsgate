@@ -6,22 +6,17 @@ use opsgate_db::{
 };
 use opsgate_domain::UserStore;
 use opsgate_domain::credential::{
-    CredentialCategory, CredentialPolicy, InsertCredentialParams, UpdateCredentialParams,
+    CredentialCategory, CredentialPolicy, CredentialTarget, InsertCredentialParams,
+    UpdateCredentialParams,
 };
 use serde_json::json;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Connection, PgConnection, PgPool};
 use uuid::Uuid;
 
-const MIGRATIONS: [&str; 8] = [
-    include_str!("../migrations/0001_init.sql"),
-    include_str!("../migrations/0003_credentials.sql"),
-    include_str!("../migrations/0005_credential_audit_events.sql"),
-    include_str!("../migrations/0006_api_call_history.sql"),
-    include_str!("../migrations/0007_audit_logs.sql"),
-    include_str!("../migrations/0008_sql_query_history.sql"),
-    include_str!("../migrations/0010_credential_lifecycle_history.sql"),
-    include_str!("../migrations/0011_runtime_least_privilege.sql"),
+const MIGRATIONS: [&str; 2] = [
+    include_str!("../migrations/0001_schema.sql"),
+    include_str!("../migrations/0002_runtime_least_privilege.sql"),
 ];
 
 struct TestDb {
@@ -248,7 +243,10 @@ fn insert_params(owner_user_id: Uuid, alias: &str) -> InsertCredentialParams {
         category: CredentialCategory::Http,
         provider: "k8s".to_owned(),
         alias: alias.to_owned(),
-        endpoint: "https://api.example.test".to_owned(),
+        target: CredentialTarget::Http {
+            origin: "https://api.example.test".to_owned(),
+            base_path: "/".to_owned(),
+        },
         secret_ciphertext: b"sealed-secret-token".to_vec(),
         description: String::new(),
         env: "prod".to_owned(),
@@ -286,7 +284,7 @@ fn api_history(user_id: Uuid, credential_id: Uuid) -> ApiCallHistoryParams {
         credential_provider: "k8s".to_owned(),
         credential_env: "prod".to_owned(),
         method: "GET".to_owned(),
-        path: "/api/v1/pods".to_owned(),
+        request_path: "/api/v1/pods".to_owned(),
         query_keys: json!(["limit"]),
         request_header_keys: json!(["Accept"]),
         projection_keys: json!([]),

@@ -8,7 +8,7 @@ use super::header::{
     validate_allowed_headers_do_not_overlap_secret,
 };
 use super::{
-    CredentialCategory, CredentialPolicy, CredentialSecret, RegisterCredentialInput,
+    CredentialCategory, CredentialSecret, CredentialTarget, RegisterCredentialInput,
     normalize_policy_for_category, validate_policy_for_category,
 };
 
@@ -22,7 +22,15 @@ pub fn normalize_register_input(mut input: RegisterCredentialInput) -> RegisterC
         input.provider = "postgres".to_owned();
     }
     input.alias = input.alias.trim().to_owned();
-    input.endpoint = input.endpoint.trim().to_owned();
+    match &mut input.target {
+        CredentialTarget::Http { origin, base_path } => {
+            *origin = origin.trim().trim_end_matches('/').to_owned();
+            *base_path = normalize_base_path(base_path);
+        }
+        CredentialTarget::Sql { database_url } => {
+            *database_url = database_url.trim().to_owned();
+        }
+    }
     input.description = input.description.trim().to_owned();
     input.env = default_string(input.env.trim(), DEFAULT_ENV);
     input.tags = normalize_tags(input.tags);
@@ -42,13 +50,18 @@ pub fn normalize_register_input(mut input: RegisterCredentialInput) -> RegisterC
 pub fn validate_register_input(input: &RegisterCredentialInput) -> Result<()> {
     validate_common(input)?;
     validate_policy_for_category(&input.policy, input.category)?;
-    match (&input.category, &input.secret) {
-        (CredentialCategory::Http, CredentialSecret::Http { headers }) => {
-            validate_http_endpoint(
-                &input.endpoint,
+    match (&input.category, &input.target, &input.secret) {
+        (
+            CredentialCategory::Http,
+            CredentialTarget::Http { origin, base_path },
+            CredentialSecret::Http { headers },
+        ) => {
+            validate_http_origin(
+                origin,
                 input.allow_private_network,
                 input.allow_insecure_transport,
             )?;
+            validate_http_base_path(base_path)?;
             validate_http_secret(headers)?;
             let names = headers
                 .iter()
@@ -59,14 +72,18 @@ pub fn validate_register_input(input: &RegisterCredentialInput) -> Result<()> {
                 opsgate_core::tls::parse_certificate_pem_bundle(ca)?;
             }
         }
-        (CredentialCategory::Sql, CredentialSecret::Sql { username, password }) => {
+        (
+            CredentialCategory::Sql,
+            CredentialTarget::Sql { database_url },
+            CredentialSecret::Sql { username, password },
+        ) => {
             if input.provider != "postgres" {
                 return Err(Error::validation(
                     "sql category currently supports provider=postgres only",
                 ));
             }
-            validate_postgres_endpoint(
-                &input.endpoint,
+            validate_postgres_database_url(
+                database_url,
                 input.allow_private_network,
                 input.allow_insecure_transport,
             )?;
@@ -82,7 +99,11 @@ pub fn validate_register_input(input: &RegisterCredentialInput) -> Result<()> {
 }
 
 fn validate_common(input: &RegisterCredentialInput) -> Result<()> {
-    require_non_empty("endpoint", &input.endpoint)?;
+    if input.target.category() != input.category {
+        return Err(Error::validation(
+            "credential target kind must match credential category",
+        ));
+    }
     validate_provider(&input.provider)?;
     validate_alias(&input.alias)?;
     validate_env(&input.env)?;
@@ -148,68 +169,91 @@ pub fn validate_tags(tags: &[String]) -> Result<()> {
     Ok(())
 }
 
-pub fn validate_http_endpoint(
+pub fn validate_http_origin(
     raw: &str,
     allow_private_network: bool,
     allow_insecure_transport: bool,
 ) -> Result<Url> {
     let url =
-        Url::parse(raw).map_err(|error| Error::validation(format!("http endpoint: {error}")))?;
+        Url::parse(raw).map_err(|error| Error::validation(format!("http origin: {error}")))?;
     if url.host_str().is_none() {
-        return Err(Error::validation("http endpoint requires host"));
+        return Err(Error::validation("http origin requires host"));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(Error::validation(
+            "http origin must not include username or password",
+        ));
     }
     match url.scheme() {
         "https" => {}
         "http" if allow_private_network && allow_insecure_transport => {}
         "http" => {
             return Err(Error::validation(
-                "http endpoint requires allow_private_network=true and allow_insecure_transport=true",
+                "http origin requires allow_private_network=true and allow_insecure_transport=true",
             ));
         }
         _ => {
             return Err(Error::validation(
-                "http endpoint must use http:// or https://",
+                "http origin must use http:// or https://",
             ));
         }
     }
+    if !matches!(url.path(), "" | "/") {
+        return Err(Error::validation("http origin must not include path"));
+    }
     if url.query().is_some() || url.fragment().is_some() {
         return Err(Error::validation(
-            "http endpoint must not include query or fragment",
+            "http origin must not include query or fragment",
         ));
     }
     Ok(url)
 }
 
-pub fn validate_postgres_endpoint(
+pub fn validate_http_base_path(base_path: &str) -> Result<()> {
+    if !base_path.starts_with('/') {
+        return Err(Error::validation("http base_path must start with /"));
+    }
+    if base_path.contains(['\0', '\r', '\n', '?', '#'])
+        || base_path.contains("..")
+        || base_path.contains("//")
+    {
+        return Err(Error::validation(
+            "http base_path must not contain query, fragment, //, .., or control characters",
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_postgres_database_url(
     raw: &str,
     allow_private_network: bool,
     allow_insecure_transport: bool,
 ) -> Result<Url> {
     let url = Url::parse(raw)
-        .map_err(|error| Error::validation(format!("postgres endpoint: {error}")))?;
+        .map_err(|error| Error::validation(format!("postgres database_url: {error}")))?;
     if !matches!(url.scheme(), "postgres" | "postgresql") {
         return Err(Error::validation(
-            "postgres endpoint must use postgres:// or postgresql://",
+            "postgres database_url must use postgres:// or postgresql://",
         ));
     }
     if url.host_str().is_none() {
-        return Err(Error::validation("postgres endpoint requires host"));
+        return Err(Error::validation("postgres database_url requires host"));
     }
     if !url.username().is_empty() || url.password().is_some() {
         return Err(Error::validation(
-            "postgres endpoint must not include username or password",
+            "postgres database_url must not include username or password",
         ));
     }
     if url.fragment().is_some() {
         return Err(Error::validation(
-            "postgres endpoint must not include fragment",
+            "postgres database_url must not include fragment",
         ));
     }
     let mut sslmode = None;
     for (key, value) in url.query_pairs() {
         if key != "sslmode" {
             return Err(Error::validation(format!(
-                "unsupported postgres endpoint query parameter {key:?}"
+                "unsupported postgres database_url query parameter {key:?}"
             )));
         }
         sslmode = Some(value.to_ascii_lowercase());
@@ -218,13 +262,13 @@ pub fn validate_postgres_endpoint(
         Some("require") => {}
         Some("verify-full") => {
             return Err(Error::validation(
-                "postgres endpoint sslmode=verify-full is unsupported by guarded SQL targets",
+                "postgres database_url sslmode=verify-full is unsupported by guarded SQL targets",
             ));
         }
         _ if allow_private_network && allow_insecure_transport => {}
         _ => {
             return Err(Error::validation(
-                "postgres endpoint requires sslmode=require unless allow_private_network=true and allow_insecure_transport=true",
+                "postgres database_url requires sslmode=require unless allow_private_network=true and allow_insecure_transport=true",
             ));
         }
     }
@@ -277,14 +321,6 @@ fn validate_sql_secret(username: &str, password: &str) -> Result<()> {
     Ok(())
 }
 
-fn require_non_empty(field: &str, value: &str) -> Result<()> {
-    if value.trim().is_empty() {
-        Err(Error::validation(format!("{field} is required")))
-    } else {
-        Ok(())
-    }
-}
-
 pub fn normalize_tags(tags: Vec<String>) -> Vec<String> {
     let mut out = Vec::new();
     for tag in tags {
@@ -302,6 +338,15 @@ fn default_string(value: &str, default: &str) -> String {
         default.to_owned()
     } else {
         value.to_owned()
+    }
+}
+
+fn normalize_base_path(value: &str) -> String {
+    let value = value.trim();
+    if value.is_empty() || value == "/" {
+        "/".to_owned()
+    } else {
+        value.trim_end_matches('/').to_owned()
     }
 }
 
@@ -346,9 +391,6 @@ fn is_lower_ascii(byte: u8) -> bool {
     byte.is_ascii_lowercase()
 }
 
-#[allow(dead_code)]
-fn _assert_policy_send_sync(_: &CredentialPolicy) {}
-
 #[cfg(test)]
 mod tests {
     use secrecy::SecretString;
@@ -366,7 +408,10 @@ mod tests {
             category: CredentialCategory::Http,
             provider: " k8s ".to_owned(),
             alias: " prod ".to_owned(),
-            endpoint: " https://example.com ".to_owned(),
+            target: CredentialTarget::Http {
+                origin: " https://example.com ".to_owned(),
+                base_path: String::new(),
+            },
             secret: CredentialSecret::Http {
                 headers: vec![SecretHeader {
                     name: "x-api-key".to_owned(),
@@ -389,12 +434,15 @@ mod tests {
     }
 
     #[test]
-    fn rejects_http_endpoint_query_and_secret_overlap() {
+    fn rejects_http_origin_query_and_secret_overlap() {
         let input = normalize_register_input(RegisterCredentialInput {
             category: CredentialCategory::Http,
             provider: "k8s".to_owned(),
             alias: "prod".to_owned(),
-            endpoint: "https://example.com?token=nope".to_owned(),
+            target: CredentialTarget::Http {
+                origin: "https://example.com?token=nope".to_owned(),
+                base_path: String::new(),
+            },
             secret: CredentialSecret::Http {
                 headers: vec![SecretHeader {
                     name: "X-Api-Key".to_owned(),
@@ -421,7 +469,10 @@ mod tests {
             category: CredentialCategory::Http,
             provider: "k8s".to_owned(),
             alias: "prod".to_owned(),
-            endpoint: "https://example.com".to_owned(),
+            target: CredentialTarget::Http {
+                origin: "https://example.com".to_owned(),
+                base_path: String::new(),
+            },
             secret: CredentialSecret::Http {
                 headers: vec![SecretHeader {
                     name: "Authorization".to_owned(),
@@ -446,7 +497,10 @@ mod tests {
                 category: CredentialCategory::Http,
                 provider: "k8s".to_owned(),
                 alias: "prod".to_owned(),
-                endpoint: "https://example.com".to_owned(),
+                target: CredentialTarget::Http {
+                    origin: "https://example.com".to_owned(),
+                    base_path: String::new(),
+                },
                 secret: CredentialSecret::Http {
                     headers: vec![SecretHeader {
                         name: name.to_owned(),
@@ -474,7 +528,10 @@ mod tests {
             category: CredentialCategory::Http,
             provider: "k8s".to_owned(),
             alias: "prod".to_owned(),
-            endpoint: "https://example.com".to_owned(),
+            target: CredentialTarget::Http {
+                origin: "https://example.com".to_owned(),
+                base_path: String::new(),
+            },
             secret: CredentialSecret::Http {
                 headers: vec![SecretHeader {
                     name: "X-Api-Key".to_owned(),
@@ -503,7 +560,9 @@ mod tests {
             category: CredentialCategory::Sql,
             provider: "postgres".to_owned(),
             alias: "db".to_owned(),
-            endpoint: "postgres://db.example.com/app?sslmode=require".to_owned(),
+            target: CredentialTarget::Sql {
+                database_url: "postgres://db.example.com/app?sslmode=require".to_owned(),
+            },
             secret: CredentialSecret::Http {
                 headers: vec![SecretHeader {
                     name: "X-Api-Key".to_owned(),
@@ -523,7 +582,7 @@ mod tests {
 
     #[test]
     fn rejects_postgres_verify_full_until_guarded_tls_identity_is_supported() {
-        let err = validate_postgres_endpoint(
+        let err = validate_postgres_database_url(
             "postgres://db.example.test/app?sslmode=verify-full",
             false,
             false,
@@ -535,32 +594,33 @@ mod tests {
     }
 
     #[test]
-    fn rejects_postgres_endpoint_with_credentials() {
+    fn rejects_postgres_database_url_with_credentials() {
         let err =
-            validate_postgres_endpoint("postgres://user:pass@example.com/db", false, false).err();
+            validate_postgres_database_url("postgres://user:pass@example.com/db", false, false)
+                .err();
         assert!(err.is_some());
     }
 
     #[test]
     fn insecure_transports_require_explicit_private_opt_in() {
-        assert!(validate_http_endpoint("http://service.local", true, true).is_ok());
-        assert!(validate_http_endpoint("http://service.local", true, false).is_err());
-        assert!(validate_http_endpoint("http://service.local", false, true).is_err());
+        assert!(validate_http_origin("http://service.local", true, true).is_ok());
+        assert!(validate_http_origin("http://service.local", true, false).is_err());
+        assert!(validate_http_origin("http://service.local", false, true).is_err());
 
         assert!(
-            validate_postgres_endpoint("postgres://db.local/app?sslmode=disable", true, true)
+            validate_postgres_database_url("postgres://db.local/app?sslmode=disable", true, true)
                 .is_ok()
         );
         assert!(
-            validate_postgres_endpoint("postgres://db.local/app?sslmode=disable", true, false)
+            validate_postgres_database_url("postgres://db.local/app?sslmode=disable", true, false)
                 .is_err()
         );
         assert!(
-            validate_postgres_endpoint("postgres://db.local/app?sslmode=disable", false, true)
+            validate_postgres_database_url("postgres://db.local/app?sslmode=disable", false, true)
                 .is_err()
         );
         assert!(
-            validate_postgres_endpoint("postgres://db.local/app?sslmode=require", false, false)
+            validate_postgres_database_url("postgres://db.local/app?sslmode=require", false, false)
                 .is_ok()
         );
     }
@@ -571,7 +631,10 @@ mod tests {
             category: CredentialCategory::Http,
             provider: "k8s".to_owned(),
             alias: "internal-api".to_owned(),
-            endpoint: "http://service.local".to_owned(),
+            target: CredentialTarget::Http {
+                origin: "http://service.local".to_owned(),
+                base_path: String::new(),
+            },
             secret: CredentialSecret::Http {
                 headers: vec![SecretHeader {
                     name: "Authorization".to_owned(),
@@ -598,7 +661,9 @@ mod tests {
             category: CredentialCategory::Sql,
             provider: "postgres".to_owned(),
             alias: "internal-db".to_owned(),
-            endpoint: "postgres://db.local/app?sslmode=disable".to_owned(),
+            target: CredentialTarget::Sql {
+                database_url: "postgres://db.local/app?sslmode=disable".to_owned(),
+            },
             secret: CredentialSecret::Sql {
                 username: secret("user"),
                 password: secret("pass"),
@@ -616,7 +681,9 @@ mod tests {
         missing_transport.allow_insecure_transport = false;
         assert!(validate_register_input(&normalize_register_input(missing_transport)).is_err());
         let mut require_tls = sql;
-        require_tls.endpoint = "postgres://db.local/app?sslmode=require".to_owned();
+        require_tls.target = CredentialTarget::Sql {
+            database_url: "postgres://db.local/app?sslmode=require".to_owned(),
+        };
         require_tls.allow_private_network = false;
         require_tls.allow_insecure_transport = false;
         assert!(validate_register_input(&normalize_register_input(require_tls)).is_ok());
@@ -664,7 +731,9 @@ mod tests {
             category: CredentialCategory::Sql,
             provider: "mysql".to_owned(),
             alias: "db-prod".to_owned(),
-            endpoint: "postgres://db.example.com/app?sslmode=require".to_owned(),
+            target: CredentialTarget::Sql {
+                database_url: "postgres://db.example.com/app?sslmode=require".to_owned(),
+            },
             secret: CredentialSecret::Sql {
                 username: secret("user"),
                 password: secret("pass"),

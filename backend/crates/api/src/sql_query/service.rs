@@ -144,7 +144,7 @@ impl SqlQueryService {
             }
         };
         let target = match crate::target::postgres::prepare_postgres_target(
-            &credential.endpoint,
+            crate::sql_common::credential_database_url(&credential)?,
             credential.allow_private_network,
             credential.allow_insecure_transport,
         )
@@ -980,7 +980,7 @@ fn sha256_hex(value: &str) -> String {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use opsgate_domain::credential::CredentialPolicy;
+    use opsgate_domain::credential::{CredentialPolicy, CredentialTarget};
     use uuid::Uuid;
 
     fn base_input() -> SqlQueryInput {
@@ -1004,7 +1004,9 @@ mod tests {
             category: CredentialCategory::Sql,
             provider: "postgres".to_owned(),
             alias: "analytics".to_owned(),
-            endpoint: "postgres://db.example.test/app?sslmode=require".to_owned(),
+            target: CredentialTarget::Sql {
+                database_url: "postgres://db.example.test/app?sslmode=require".to_owned(),
+            },
             description: String::new(),
             env: "prod".to_owned(),
             tags: Vec::new(),
@@ -1366,7 +1368,7 @@ mod tests {
         assert!(!serialized.contains("select secret_col"));
         assert!(!serialized.contains("secret-param"));
         assert!(!serialized.contains("secret-value"));
-        assert!(!serialized.contains("endpoint"));
+        assert!(!serialized.contains("db.example.test"));
         Ok(())
     }
 

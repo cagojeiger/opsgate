@@ -27,7 +27,7 @@ impl ApiCallHistoryRepo {
                 credential_provider,
                 credential_env,
                 method,
-                path,
+                request_path,
                 query_keys,
                 request_header_keys,
                 projection_keys,
@@ -55,7 +55,7 @@ impl ApiCallHistoryRepo {
         .bind(params.credential_provider)
         .bind(params.credential_env)
         .bind(params.method)
-        .bind(params.path)
+        .bind(params.request_path)
         .bind(params.query_keys)
         .bind(params.request_header_keys)
         .bind(params.projection_keys)
@@ -88,7 +88,7 @@ pub struct ApiCallHistoryParams {
     pub credential_provider: String,
     pub credential_env: String,
     pub method: String,
-    pub path: String,
+    pub request_path: String,
     pub query_keys: Value,
     pub request_header_keys: Value,
     pub projection_keys: Value,

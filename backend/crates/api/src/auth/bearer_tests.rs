@@ -54,6 +54,8 @@ lq0mdqBAHuT8W8E2jRw9CejdITWxllSS0L8xhhSv5JMJ+3CUmpbsWP1X6ByQmF/E
 EmW0T9kajxWyy7ochOgNdA==
 -----END PRIVATE KEY-----"#;
 
+const TEST_DB_URL: &str = "postgres://opsgate:opsgate@localhost/opsgate?connect_timeout=1";
+
 const PUB_KEY: &str = r#"-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsfE1HSV9Fnl00COG8SPE
 tPGOMa95P4XMhpsnSV4lbfoUFyuAjPUc/uFtkmH2s3VoNKdYdHsi/PNycvS5sX0L
@@ -154,11 +156,13 @@ fn state_with_resource_url(
         "kid-1".to_owned(),
         DecodingKey::from_rsa_pem(PUB_KEY.as_bytes())?,
     );
-    let pool = PgPoolOptions::new().connect_lazy("postgres://opsgate:opsgate@localhost/opsgate")?;
+    let pool = PgPoolOptions::new()
+        .acquire_timeout(Duration::from_millis(50))
+        .connect_lazy(TEST_DB_URL)?;
     let config = Arc::new(opsgate_core::Config {
         bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9091),
-        database_url: "postgres://opsgate:opsgate@localhost/opsgate".to_owned(),
-        database_migrate_url: "postgres://opsgate:opsgate@localhost/opsgate".to_owned(),
+        database_url: TEST_DB_URL.to_owned(),
+        database_migrate_url: TEST_DB_URL.to_owned(),
         db_max_connections: 1,
         authgate_url: "https://auth.example.test".to_owned(),
         opsgate_public_url: "http://localhost:9091".to_owned(),
@@ -742,7 +746,7 @@ async fn rest_parity_routes_return_validation_errors_instead_of_not_found()
         .oneshot(authed_json_request(
             Method::POST,
             "/api/v1/api/call",
-            r#"{"alias":"","purpose":"Inspect health response","path":"/health"}"#,
+            r#"{"alias":"","purpose":"Inspect health response"}"#,
         )?)
         .await?;
     assert_eq!(api_call.status(), StatusCode::BAD_REQUEST);
@@ -752,7 +756,7 @@ async fn rest_parity_routes_return_validation_errors_instead_of_not_found()
         .oneshot(authed_json_request(
             Method::POST,
             "/api/v1/sql/query",
-            r#"{"alias":"","purpose":"Inspect rows safely","query":"SELECT 1"}"#,
+            r#"{"alias":"","purpose":"Inspect rows safely"}"#,
         )?)
         .await?;
     assert_eq!(sql_query.status(), StatusCode::BAD_REQUEST);
@@ -800,7 +804,7 @@ async fn rest_parity_post_routes_do_not_require_content_type_header()
                 .uri("/api/v1/api/call")
                 .header("authorization", format!("Bearer {valid}"))
                 .body(Body::from(
-                    r#"{"alias":"","purpose":"Inspect health response","path":"/health"}"#,
+                    r#"{"alias":"","purpose":"Inspect health response"}"#,
                 ))?,
         )
         .await?;

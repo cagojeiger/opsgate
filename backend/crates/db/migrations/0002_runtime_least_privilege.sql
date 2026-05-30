@@ -23,9 +23,9 @@ GRANT UPDATE (display_name, updated_at) ON users TO opsgate_app;
 
 GRANT SELECT ON credentials TO opsgate_app;
 GRANT INSERT (
-    owner_user_id, category, provider, alias, endpoint, secret_ciphertext,
-    description, env, tags, policy, allow_private_network, allow_insecure_transport, tls_ca,
-    created_by, updated_by
+    owner_user_id, category, provider, alias, http_origin, http_base_path,
+    sql_database_url, secret_ciphertext, description, env, tags, policy,
+    allow_private_network, allow_insecure_transport, tls_ca, created_by, updated_by
 ) ON credentials TO opsgate_app;
 GRANT UPDATE (
     description, env, tags, policy,
@@ -35,18 +35,14 @@ GRANT UPDATE (
 
 GRANT SELECT ON credential_history TO opsgate_app;
 GRANT INSERT (
-    credential_id, owner_user_id, alias, action, actor_user_id, version, detail
+    credential_id, owner_user_id, alias, action, actor_user_id, actor_ip,
+    actor_user_agent, request_id, channel, reason, changed_fields, version, detail
 ) ON credential_history TO opsgate_app;
-
-GRANT INSERT (
-    owner_user_id, actor_user_id, actor_ip, actor_user_agent, request_id,
-    channel, credential_id, alias, category, action, reason, changed_fields, detail
-) ON credential_audit_events TO opsgate_app;
 
 GRANT INSERT (
     owner_user_id, actor_user_id, channel, request_id,
     credential_id, credential_alias, credential_category, credential_provider,
-    credential_env, method, path, query_keys, request_header_keys,
+    credential_env, method, request_path, query_keys, request_header_keys,
     projection_keys, max_bytes, purpose, outcome, status_code, latency_ms,
     original_bytes, returned_bytes, truncated, error_kind, error_message_safe
 ) ON api_call_history TO opsgate_app;

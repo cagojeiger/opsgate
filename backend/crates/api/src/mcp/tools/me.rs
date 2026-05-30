@@ -58,7 +58,7 @@ fn build_me(caller: &Caller, toolset: McpToolset, summary: CredentialSummary) ->
         service: ServiceInfo {
             name: "opsgate".to_owned(),
             purpose: "Policy-gated HTTP/SQL broker for LLM clients.".to_owned(),
-            secret_model: "Secrets and endpoints are hidden from MCP clients; secret values are sealed at rest and never returned.".to_owned(),
+            secret_model: "Secrets and target URLs are hidden from MCP clients; secret values are sealed at rest and never returned.".to_owned(),
             workflow: workflow_for_toolset(toolset),
         },
         capabilities: capabilities_for_toolset(toolset),
@@ -134,7 +134,7 @@ fn workflow_for_toolset(toolset: McpToolset) -> Vec<String> {
             "me로 관리 capability와 credential_summary를 확인합니다.".to_owned(),
             "credential.register_*로 secret을 봉인해 등록합니다.".to_owned(),
             "credential.update_*로 metadata와 policy만 수정합니다.".to_owned(),
-            "secret 교체나 endpoint 변경은 credential.delete 후 재등록합니다.".to_owned(),
+            "secret 교체나 target URL 변경은 credential.delete 후 재등록합니다.".to_owned(),
         ],
     }
 }

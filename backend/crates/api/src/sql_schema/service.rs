@@ -112,7 +112,7 @@ impl SqlSchemaService {
             }
         };
         let target = match crate::target::postgres::prepare_postgres_target(
-            &credential.endpoint,
+            crate::sql_common::credential_database_url(&credential)?,
             credential.allow_private_network,
             credential.allow_insecure_transport,
         )
@@ -889,7 +889,7 @@ mod tests {
         assert!(!serialized.contains("error_message_safe"));
         assert!(!serialized.contains("bad"));
         assert!(!serialized.contains("secret"));
-        assert!(!serialized.contains("endpoint"));
+        assert!(!serialized.contains("database_url"));
         assert!(!serialized.contains("password"));
         assert!(!serialized.contains("\"reason\""));
         Ok(())

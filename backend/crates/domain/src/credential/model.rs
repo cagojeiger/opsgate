@@ -29,7 +29,7 @@ pub struct Credential {
     pub category: CredentialCategory,
     pub provider: String,
     pub alias: String,
-    pub endpoint: String,
+    pub target: CredentialTarget,
     pub description: String,
     pub env: String,
     pub tags: Vec<String>,
@@ -39,6 +39,22 @@ pub struct Credential {
     pub has_tls_ca: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum CredentialTarget {
+    Http { origin: String, base_path: String },
+    Sql { database_url: String },
+}
+
+impl CredentialTarget {
+    pub fn category(&self) -> CredentialCategory {
+        match self {
+            Self::Http { .. } => CredentialCategory::Http,
+            Self::Sql { .. } => CredentialCategory::Sql,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -62,7 +78,8 @@ pub enum CredentialSecret {
 pub struct RegisterHttpCredentialInput {
     pub provider: String,
     pub alias: String,
-    pub endpoint: String,
+    pub origin: String,
+    pub base_path: String,
     pub secret_headers: Vec<SecretHeader>,
     pub description: String,
     pub env: String,
@@ -77,7 +94,7 @@ pub struct RegisterHttpCredentialInput {
 pub struct RegisterSqlCredentialInput {
     pub provider: String,
     pub alias: String,
-    pub endpoint: String,
+    pub database_url: String,
     pub username: SecretString,
     pub password: SecretString,
     pub description: String,
@@ -93,7 +110,7 @@ pub struct RegisterCredentialInput {
     pub category: CredentialCategory,
     pub provider: String,
     pub alias: String,
-    pub endpoint: String,
+    pub target: CredentialTarget,
     pub secret: CredentialSecret,
     pub description: String,
     pub env: String,
@@ -110,7 +127,10 @@ impl From<RegisterHttpCredentialInput> for RegisterCredentialInput {
             category: CredentialCategory::Http,
             provider: input.provider,
             alias: input.alias,
-            endpoint: input.endpoint,
+            target: CredentialTarget::Http {
+                origin: input.origin,
+                base_path: input.base_path,
+            },
             secret: CredentialSecret::Http {
                 headers: input.secret_headers,
             },
@@ -136,7 +156,9 @@ impl From<RegisterSqlCredentialInput> for RegisterCredentialInput {
             category: CredentialCategory::Sql,
             provider,
             alias: input.alias,
-            endpoint: input.endpoint,
+            target: CredentialTarget::Sql {
+                database_url: input.database_url,
+            },
             secret: CredentialSecret::Sql {
                 username: input.username,
                 password: input.password,
@@ -159,7 +181,7 @@ pub struct InsertCredentialParams {
     pub category: CredentialCategory,
     pub provider: String,
     pub alias: String,
-    pub endpoint: String,
+    pub target: CredentialTarget,
     pub secret_ciphertext: Vec<u8>,
     pub description: String,
     pub env: String,
