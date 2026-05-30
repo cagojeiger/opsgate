@@ -76,16 +76,19 @@ async fn main() -> anyhow::Result<()> {
         audit_repo,
         sealer.clone(),
     )?);
+    let target_pg_pools = crate::target::pg_pool::TargetPgPools::new();
     let sql_schema_service = std::sync::Arc::new(crate::sql_schema::SqlSchemaService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
         sql_schema_audit_repo,
         sealer.clone(),
+        target_pg_pools.clone(),
     ));
     let sql_query_service = std::sync::Arc::new(crate::sql_query::SqlQueryService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
         sql_query_history,
         sql_query_audit_repo,
         sealer,
+        target_pg_pools,
     ));
     let config = std::sync::Arc::new(config);
     let jwks = std::sync::Arc::new(auth::jwks::JwksCache::new(

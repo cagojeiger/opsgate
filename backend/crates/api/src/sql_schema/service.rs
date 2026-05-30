@@ -31,6 +31,7 @@ pub(crate) struct SqlSchemaService {
     credentials: CredentialRepo,
     audit: AuditRepo,
     sealer: opsgate_core::crypto::Sealer,
+    pools: crate::target::pg_pool::TargetPgPools,
 }
 
 impl SqlSchemaService {
@@ -38,11 +39,13 @@ impl SqlSchemaService {
         credentials: CredentialRepo,
         audit: AuditRepo,
         sealer: opsgate_core::crypto::Sealer,
+        pools: crate::target::pg_pool::TargetPgPools,
     ) -> Self {
         Self {
             credentials,
             audit,
             sealer,
+            pools,
         }
     }
 
@@ -128,7 +131,15 @@ impl SqlSchemaService {
         };
 
         let started = Instant::now();
-        let mut output = match execute_schema_query(&target, &secret, &input).await {
+        let mut output = match execute_schema_query(
+            &self.pools,
+            credential.id,
+            &target,
+            &secret,
+            &input,
+        )
+        .await
+        {
             Ok(output) => output,
             Err(error) => {
                 recorder
@@ -362,12 +373,20 @@ fn validate_policy(credential: &Credential, input: &NormalizedInput) -> Result<(
 }
 
 async fn execute_schema_query(
+    pools: &crate::target::pg_pool::TargetPgPools,
+    credential_id: uuid::Uuid,
     target: &crate::target::postgres::GuardedPostgresTarget,
     secret: &SqlSecret,
     input: &NormalizedInput,
 ) -> Result<SqlSchemaOutput> {
-    let mut conn =
-        crate::sql_common::begin_read_only_connection(target, secret, input.timeout_ms).await?;
+    let mut conn = crate::sql_common::begin_read_only_connection(
+        pools,
+        credential_id,
+        target,
+        secret,
+        input.timeout_ms,
+    )
+    .await?;
     let result = if input.mode == MODE_TABLE {
         load_table(&mut conn, input).await
     } else {

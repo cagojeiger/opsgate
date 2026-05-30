@@ -2,29 +2,38 @@ use std::time::Duration;
 
 use opsgate_core::{Error, Result};
 use secrecy::ExposeSecret;
-use sqlx::{Connection, Executor, PgConnection};
+use sqlx::pool::PoolConnection;
+use sqlx::{Executor, PgConnection, Postgres};
+use uuid::Uuid;
 
 use crate::sql_common::SqlSecret;
+use crate::target::pg_pool::TargetPgPools;
 use crate::target::postgres::GuardedPostgresTarget;
 
 const POSTGRES_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Acquire a pooled, read-only Postgres connection for one tool call.
+///
+/// The connection is reused across calls via [`TargetPgPools`]; the per-call
+/// `BEGIN READ ONLY` transaction and transaction-local `statement_timeout` keep
+/// each call isolated, and both reset on COMMIT/ROLLBACK so the connection
+/// returns to the pool clean.
 pub(crate) async fn begin_read_only_connection(
+    pools: &TargetPgPools,
+    credential_id: Uuid,
     target: &GuardedPostgresTarget,
     secret: &SqlSecret,
     timeout_ms: u32,
-) -> Result<PgConnection> {
+) -> Result<PoolConnection<Postgres>> {
     let options = target.connect_options(
         secret.username.expose_secret(),
         secret.password.expose_secret(),
     )?;
-    let mut conn = tokio::time::timeout(
-        POSTGRES_CONNECT_TIMEOUT,
-        PgConnection::connect_with(&options),
-    )
-    .await
-    .map_err(|_error| Error::internal("postgres connection timed out"))?
-    .map_err(|_error| Error::internal("postgres connection failed"))?;
+    let pool = pools.pool_for(credential_id, options)?;
+    let mut conn = tokio::time::timeout(POSTGRES_CONNECT_TIMEOUT, pool.acquire())
+        .await
+        .map_err(|_error| Error::internal("postgres connection timed out"))?
+        .map_err(|_error| Error::internal("postgres connection failed"))?;
     conn.execute("BEGIN READ ONLY")
         .await
         .map_err(|_error| Error::internal("postgres transaction failed"))?;

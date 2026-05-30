@@ -53,6 +53,7 @@ pub(crate) struct SqlQueryService {
     history: SqlQueryHistoryRepo,
     audit: AuditRepo,
     sealer: opsgate_core::crypto::Sealer,
+    pools: crate::target::pg_pool::TargetPgPools,
 }
 
 impl SqlQueryService {
@@ -61,12 +62,14 @@ impl SqlQueryService {
         history: SqlQueryHistoryRepo,
         audit: AuditRepo,
         sealer: opsgate_core::crypto::Sealer,
+        pools: crate::target::pg_pool::TargetPgPools,
     ) -> Self {
         Self {
             credentials,
             history,
             audit,
             sealer,
+            pools,
         }
     }
 
@@ -160,13 +163,14 @@ impl SqlQueryService {
         };
 
         let started = Instant::now();
-        let mut output = match execute_postgres(&target, &secret, &input).await {
-            Ok(output) => output,
-            Err(error) => {
-                recorder.err(reason::QUERY_FAILED, "sql query failed").await;
-                return Err(error);
-            }
-        };
+        let mut output =
+            match execute_postgres(&self.pools, credential.id, &target, &secret, &input).await {
+                Ok(output) => output,
+                Err(error) => {
+                    recorder.err(reason::QUERY_FAILED, "sql query failed").await;
+                    return Err(error);
+                }
+            };
         output.latency_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
         recorder.ok(&output).await;
         Ok(output)
@@ -531,12 +535,20 @@ fn is_metadata_schema(schema: &str) -> bool {
 }
 
 async fn execute_postgres(
+    pools: &crate::target::pg_pool::TargetPgPools,
+    credential_id: uuid::Uuid,
     target: &crate::target::postgres::GuardedPostgresTarget,
     secret: &SqlSecret,
     input: &NormalizedInput,
 ) -> Result<SqlQueryOutput> {
-    let mut conn =
-        crate::sql_common::begin_read_only_connection(target, secret, input.timeout_ms).await?;
+    let mut conn = crate::sql_common::begin_read_only_connection(
+        pools,
+        credential_id,
+        target,
+        secret,
+        input.timeout_ms,
+    )
+    .await?;
     let result = if input
         .query
         .trim_start()
