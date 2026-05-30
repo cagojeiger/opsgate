@@ -1,8 +1,9 @@
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
-use opsgate_core::net::ssrf::is_blocked_target_ip;
 use opsgate_core::{Error, Result};
+
+use super::ssrf::{ensure_target_ip_allowed, target_ip_is_blocked};
 use sqlx::postgres::PgConnectOptions;
 
 #[derive(Debug, Clone)]
@@ -69,11 +70,9 @@ fn select_postgres_addr(
         .copied()
         .ok_or_else(|| Error::validation("resolve target host: no IPs"))?;
     if !allow_private_network
-        && let Some(_blocked) = ips.into_iter().find(|ip| is_blocked_target_ip(*ip))
+        && let Some(blocked) = ips.into_iter().find(|ip| target_ip_is_blocked(*ip))
     {
-        return Err(Error::validation(
-            "target IP is private/link-local/loopback",
-        ));
+        ensure_target_ip_allowed(blocked, allow_private_network)?;
     }
     Ok(SocketAddr::new(first, port))
 }

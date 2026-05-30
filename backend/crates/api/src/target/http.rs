@@ -3,8 +3,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use opsgate_core::net::ssrf::is_blocked_target_ip;
 use opsgate_core::{Error, Result};
+
+use super::ssrf::{BLOCKED_TARGET_IP_MESSAGE, ensure_target_ip_allowed};
 use opsgate_domain::credential::Credential;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use uuid::Uuid;
@@ -157,10 +158,7 @@ impl Resolve for GuardedResolver {
 }
 
 fn reject_blocked_ip(_host: &str, ip: IpAddr) -> std::result::Result<(), DnsError> {
-    if is_blocked_target_ip(ip) {
-        return Err(boxed_error("target IP is private/link-local/loopback"));
-    }
-    Ok(())
+    ensure_target_ip_allowed(ip, false).map_err(|_error| boxed_error(BLOCKED_TARGET_IP_MESSAGE))
 }
 
 fn boxed_error(message: impl Into<String>) -> DnsError {
