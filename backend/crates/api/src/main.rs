@@ -23,6 +23,7 @@ mod sql_common;
 mod sql_query;
 mod sql_schema;
 mod state;
+mod target;
 
 use state::{AppState, AppStateDeps};
 

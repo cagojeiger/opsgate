@@ -19,8 +19,8 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::target::TargetHttpClients;
 use crate::credential::snapshot::CredentialSnapshot;
+use crate::target::http::TargetHttpClients;
 
 const DEFAULT_METHOD: &str = "GET";
 const DEFAULT_MAX_BYTES: usize = 4096;
