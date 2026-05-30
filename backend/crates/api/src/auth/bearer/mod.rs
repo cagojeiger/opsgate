@@ -1,6 +1,6 @@
-pub mod error;
-pub mod extractor;
-pub mod middleware;
+pub(crate) mod error;
+pub(crate) mod extractor;
+pub(crate) mod middleware;
 mod verify;
 
 pub use error::{
