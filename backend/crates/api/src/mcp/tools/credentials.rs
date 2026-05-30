@@ -1,6 +1,6 @@
 use axum::http::request::Parts;
+use opsgate_domain::CredentialCategory;
 use opsgate_domain::credential::{Credential, CredentialPolicy};
-use opsgate_domain::{Caller, CredentialCategory};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{ErrorData, Json};
 use schemars::JsonSchema;
@@ -79,13 +79,13 @@ pub async fn list(
     parts: &Parts,
     Parameters(input): Parameters<ListCredentialsInput>,
 ) -> Result<Json<CredentialListOutput>, ErrorData> {
-    let caller = caller(parts)?;
+    let caller = crate::mcp::tools::context::caller(parts)?;
     let fields = input.fields.clone().and_then(normalize_fields);
     let page = state
         .credentials
         .list(caller.user.id, input)
         .await
-        .map_err(map_error)?;
+        .map_err(|error| crate::mcp::tools::error::map_core_error("credential", error))?;
     let returned = page.credentials.len();
     Ok(Json(CredentialListOutput {
         credentials: page
@@ -107,12 +107,12 @@ pub async fn register_http(
     parts: &Parts,
     Parameters(input): Parameters<RegisterHttpCredentialInput>,
 ) -> Result<Json<RegisterCredentialOutput>, ErrorData> {
-    let caller = caller(parts)?;
+    let caller = crate::mcp::tools::context::caller(parts)?;
     let credential = state
         .credentials
         .register_http(caller, input)
         .await
-        .map_err(map_error)?;
+        .map_err(|error| crate::mcp::tools::error::map_core_error("credential", error))?;
     Ok(Json(RegisterCredentialOutput::created(credential)))
 }
 
@@ -121,12 +121,12 @@ pub async fn register_sql(
     parts: &Parts,
     Parameters(input): Parameters<RegisterSqlCredentialInput>,
 ) -> Result<Json<RegisterCredentialOutput>, ErrorData> {
-    let caller = caller(parts)?;
+    let caller = crate::mcp::tools::context::caller(parts)?;
     let credential = state
         .credentials
         .register_sql(caller, input)
         .await
-        .map_err(map_error)?;
+        .map_err(|error| crate::mcp::tools::error::map_core_error("credential", error))?;
     Ok(Json(RegisterCredentialOutput::created(credential)))
 }
 
@@ -135,12 +135,12 @@ pub async fn update_http(
     parts: &Parts,
     Parameters(input): Parameters<UpdateCredentialInput>,
 ) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
-    let caller = caller(parts)?;
+    let caller = crate::mcp::tools::context::caller(parts)?;
     let update = state
         .credentials
         .update_http(caller, input)
         .await
-        .map_err(map_error)?;
+        .map_err(|error| crate::mcp::tools::error::map_core_error("credential", error))?;
     Ok(Json(UpdateCredentialOutput::from_update(update)))
 }
 
@@ -149,12 +149,12 @@ pub async fn update_sql(
     parts: &Parts,
     Parameters(input): Parameters<UpdateCredentialInput>,
 ) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
-    let caller = caller(parts)?;
+    let caller = crate::mcp::tools::context::caller(parts)?;
     let update = state
         .credentials
         .update_sql(caller, input)
         .await
-        .map_err(map_error)?;
+        .map_err(|error| crate::mcp::tools::error::map_core_error("credential", error))?;
     Ok(Json(UpdateCredentialOutput::from_update(update)))
 }
 
@@ -163,12 +163,12 @@ pub async fn delete(
     parts: &Parts,
     Parameters(input): Parameters<DeleteCredentialInput>,
 ) -> Result<Json<DeleteCredentialOutput>, ErrorData> {
-    let caller = caller(parts)?;
+    let caller = crate::mcp::tools::context::caller(parts)?;
     let credential = state
         .credentials
         .delete(caller, input)
         .await
-        .map_err(map_error)?;
+        .map_err(|error| crate::mcp::tools::error::map_core_error("credential", error))?;
     Ok(Json(DeleteCredentialOutput {
         alias: credential.alias,
         deleted: true,
@@ -229,25 +229,6 @@ fn normalize_fields(fields: Vec<String>) -> Option<BTreeSet<String>> {
 
 fn include_field(fields: Option<&BTreeSet<String>>, field: &str) -> bool {
     fields.is_none_or(|fields| fields.contains(field))
-}
-
-fn caller(parts: &Parts) -> Result<&Caller, ErrorData> {
-    parts
-        .extensions
-        .get::<Caller>()
-        .ok_or_else(|| ErrorData::invalid_params("authenticated caller extension missing", None))
-}
-
-fn map_error(error: opsgate_core::Error) -> ErrorData {
-    match error {
-        opsgate_core::Error::Forbidden(message) => ErrorData::invalid_params(message, None),
-        opsgate_core::Error::Validation(message) => ErrorData::invalid_params(message, None),
-        opsgate_core::Error::NotFound(message) => ErrorData::invalid_params(message, None),
-        opsgate_core::Error::Internal(message) => {
-            tracing::error!(event = "mcp.credential.internal_error", detail = %message);
-            ErrorData::internal_error("internal server error", None)
-        }
-    }
 }
 
 #[cfg(test)]

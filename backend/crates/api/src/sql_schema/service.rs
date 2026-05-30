@@ -1,19 +1,20 @@
-use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Instant;
 
-use opsgate_core::net::ssrf::is_blocked_target_ip;
 use opsgate_core::validation::{trim_required, validate_purpose};
 use opsgate_core::{Error, Result};
 use opsgate_db::{AuditRepo, CredentialRepo};
 use opsgate_domain::Caller;
 use opsgate_domain::credential::{Credential, CredentialCategory};
 use schemars::JsonSchema;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::{Connection, Executor, FromRow, PgConnection};
+
+use crate::credential::snapshot::CredentialSnapshot;
+use crate::sql_common::SqlSecret;
 
 const DEFAULT_MODE: &str = "tables";
 const MODE_TABLES: &str = "tables";
@@ -27,8 +28,6 @@ const MAX_MAX_BYTES: usize = 1024 * 1024;
 const DEFAULT_TIMEOUT_MS: u32 = 3000;
 const MAX_TIMEOUT_MS: u32 = 30000;
 const MAX_IDENT_LEN: usize = 128;
-const SECRET_DOMAIN: &str = "credentials";
-
 #[derive(Clone)]
 pub struct SqlSchemaService {
     credentials: CredentialRepo,
@@ -50,7 +49,7 @@ impl SqlSchemaService {
     }
 
     pub async fn execute(&self, caller: &Caller, input: SqlSchemaInput) -> Result<SqlSchemaOutput> {
-        let raw_alias = safe_audit_message(&input.alias);
+        let raw_alias = crate::audit::safe::message(&input.alias);
         let input = match normalize_input(input) {
             Ok(input) => input,
             Err(error) => {
@@ -100,9 +99,13 @@ impl SqlSchemaService {
                 return Err(Error::validation("credential secret is destroyed"));
             }
         };
-        let secret = self.open_sql_secret(&credential.alias, &secret_ciphertext)?;
+        let secret = crate::sql_common::open_sql_secret(
+            &self.sealer,
+            &credential.alias,
+            &secret_ciphertext,
+        )?;
         if !credential.allow_private_network {
-            validate_target_ips(&credential.endpoint).await?;
+            crate::sql_common::validate_postgres_target_ips(&credential.endpoint).await?;
         }
 
         let started = Instant::now();
@@ -119,12 +122,6 @@ impl SqlSchemaService {
         finalize_output(&mut output, &input)?;
         recorder.ok(&output).await;
         Ok(output)
-    }
-
-    fn open_sql_secret(&self, alias: &str, ciphertext: &[u8]) -> Result<SqlSecret> {
-        let plaintext = self.sealer.open(SECRET_DOMAIN, alias, ciphertext)?;
-        serde_json::from_slice::<SqlSecret>(&plaintext)
-            .map_err(|error| Error::internal(format!("decode sql credential secret: {error}")))
     }
 
     async fn record_pre_input_denial(
@@ -253,12 +250,6 @@ struct NormalizedInput {
     max_bytes: usize,
     timeout_ms: u32,
     include_indexes: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct SqlSecret {
-    username: SecretString,
-    password: SecretString,
 }
 
 fn normalize_input(input: SqlSchemaInput) -> Result<NormalizedInput> {
@@ -654,36 +645,6 @@ fn encoded_len(out: &SqlSchemaOutput) -> Result<usize> {
         .map_err(|error| Error::internal(format!("serialize sql schema output: {error}")))
 }
 
-async fn validate_target_ips(endpoint: &str) -> Result<()> {
-    let url = url::Url::parse(endpoint)
-        .map_err(|error| Error::validation(format!("postgres endpoint: {error}")))?;
-    let host = url
-        .host_str()
-        .ok_or_else(|| Error::validation("postgres endpoint requires host"))?;
-    let port = url.port_or_known_default().unwrap_or(5432);
-    if let Ok(ip) = host.parse::<IpAddr>() {
-        if is_blocked_target_ip(ip) {
-            return Err(Error::validation(
-                "target IP is private/link-local/loopback",
-            ));
-        }
-        return Ok(());
-    }
-    let addrs = tokio::net::lookup_host((host, port))
-        .await
-        .map_err(|error| Error::validation(format!("resolve target host: {error}")))?;
-    let ips = addrs.map(|addr: SocketAddr| addr.ip()).collect::<Vec<_>>();
-    if ips.is_empty() {
-        return Err(Error::validation("resolve target host: no IPs"));
-    }
-    if ips.into_iter().any(is_blocked_target_ip) {
-        return Err(Error::validation(
-            "target IP is private/link-local/loopback",
-        ));
-    }
-    Ok(())
-}
-
 #[derive(Debug, FromRow)]
 struct TableRow {
     namespace: String,
@@ -813,27 +774,6 @@ impl<'a> SchemaRecorder<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
-struct CredentialSnapshot {
-    id: uuid::Uuid,
-    alias: String,
-    category: CredentialCategory,
-    provider: String,
-    env: String,
-}
-
-impl From<&Credential> for CredentialSnapshot {
-    fn from(credential: &Credential) -> Self {
-        Self {
-            id: credential.id,
-            alias: credential.alias.clone(),
-            category: credential.category,
-            provider: credential.provider.clone(),
-            env: credential.env.clone(),
-        }
-    }
-}
-
 fn audit_detail(
     input: &NormalizedInput,
     credential: Option<&CredentialSnapshot>,
@@ -866,7 +806,7 @@ fn audit_detail(
     if let Some(message) = error_message {
         detail.insert(
             "error_message_safe".to_owned(),
-            serde_json::json!(safe_audit_message(message)),
+            serde_json::json!(crate::audit::safe::message(message)),
         );
     }
     if let Some(credential) = credential {
@@ -911,10 +851,6 @@ fn audit_detail(
     Value::Object(detail)
 }
 
-fn safe_audit_message(value: &str) -> String {
-    value.replace(['\r', '\n'], " ").chars().take(512).collect()
-}
-
 fn pre_input_denial_audit_event(
     caller: &Caller,
     alias: &str,
@@ -928,7 +864,7 @@ fn pre_input_denial_audit_event(
         reason,
         Some((
             "error_message_safe",
-            serde_json::json!(safe_audit_message(&error.to_string())),
+            serde_json::json!(crate::audit::safe::message(&error.to_string())),
         )),
     )
 }

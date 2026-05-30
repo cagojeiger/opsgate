@@ -1,5 +1,4 @@
 use axum::http::request::Parts;
-use opsgate_domain::Caller;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{ErrorData, Json};
 
@@ -11,26 +10,11 @@ pub async fn call(
     parts: &Parts,
     Parameters(input): Parameters<ApiCallInput>,
 ) -> Result<Json<ApiCallOutput>, ErrorData> {
-    let caller = parts
-        .extensions
-        .get::<Caller>()
-        .ok_or_else(|| ErrorData::invalid_params("authenticated caller extension missing", None))?;
+    let caller = crate::mcp::tools::context::caller(parts)?;
     state
         .api_calls
         .call(caller, input)
         .await
         .map(Json)
-        .map_err(map_error)
-}
-
-fn map_error(error: opsgate_core::Error) -> ErrorData {
-    match error {
-        opsgate_core::Error::Forbidden(message) => ErrorData::invalid_params(message, None),
-        opsgate_core::Error::Validation(message) => ErrorData::invalid_params(message, None),
-        opsgate_core::Error::NotFound(message) => ErrorData::invalid_params(message, None),
-        opsgate_core::Error::Internal(message) => {
-            tracing::error!(event = "mcp.api_call.internal_error", detail = %message);
-            ErrorData::internal_error("internal server error", None)
-        }
-    }
+        .map_err(|error| crate::mcp::tools::error::map_core_error("api.call", error))
 }

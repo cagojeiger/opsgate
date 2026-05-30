@@ -18,9 +18,9 @@ use schemars::JsonSchema;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use uuid::Uuid;
 
 use super::target::TargetHttpClients;
+use crate::credential::snapshot::CredentialSnapshot;
 
 const DEFAULT_METHOD: &str = "GET";
 const DEFAULT_MAX_BYTES: usize = 4096;
@@ -61,7 +61,7 @@ impl ApiCallService {
     pub async fn call(&self, caller: &Caller, input: ApiCallInput) -> Result<ApiCallOutput> {
         // Sanitize the raw alias up front: on the bad-input path it is the only
         // request field we record, and it has not been validated yet.
-        let raw_alias = safe_history_message(&input.alias);
+        let raw_alias = crate::audit::safe::message(&input.alias);
         let input = match normalize_input(input) {
             Ok(input) => input,
             Err(error) => {
@@ -670,7 +670,7 @@ impl<'a> CallRecorder<'a> {
                 .map(|output| i32::try_from(output.returned_bytes).unwrap_or(i32::MAX)),
             truncated: output.and_then(|output| output.more.as_ref()).is_some(),
             error_kind: error_kind.map(str::to_owned),
-            error_message_safe: error_message.map(safe_history_message),
+            error_message_safe: error_message.map(crate::audit::safe::message),
         };
         if let Err(error) = self.history.insert(params).await {
             tracing::error!(event = "api.call.history_failed", detail = %error);
@@ -696,29 +696,6 @@ impl<'a> CallRecorder<'a> {
             audit_detail(self.input, credential, outcome, error_kind, output),
         );
         crate::audit::append_event(self.audit, event, "api.call.audit_failed").await;
-    }
-}
-
-#[derive(Debug, Clone)]
-struct CredentialSnapshot {
-    id: Uuid,
-    owner_user_id: Uuid,
-    alias: String,
-    category: CredentialCategory,
-    provider: String,
-    env: String,
-}
-
-impl From<&Credential> for CredentialSnapshot {
-    fn from(credential: &Credential) -> Self {
-        Self {
-            id: credential.id,
-            owner_user_id: credential.owner_user_id,
-            alias: credential.alias.clone(),
-            category: credential.category,
-            provider: credential.provider.clone(),
-            env: credential.env.clone(),
-        }
     }
 }
 
@@ -798,11 +775,6 @@ fn audit_detail(
     Value::Object(detail)
 }
 
-fn safe_history_message(value: &str) -> String {
-    let replaced = value.replace(['\r', '\n'], " ");
-    replaced.chars().take(512).collect()
-}
-
 /// Audit row for a pre-normalization denial. Records only the channel, the
 /// (pre-sanitized) alias, and denial reason — never the raw input.
 fn pre_input_denial_audit_event(
@@ -845,7 +817,7 @@ fn pre_input_denial_history_params(
         returned_bytes: None,
         truncated: false,
         error_kind: Some(reason.to_owned()),
-        error_message_safe: Some(safe_history_message(&error.to_string())),
+        error_message_safe: Some(crate::audit::safe::message(&error.to_string())),
     }
 }
 
@@ -855,6 +827,7 @@ mod tests {
     use chrono::Utc;
     use opsgate_domain::credential::CredentialPolicy;
     use secrecy::SecretString;
+    use uuid::Uuid;
 
     fn base_input() -> ApiCallInput {
         ApiCallInput {
@@ -1014,7 +987,7 @@ mod tests {
     #[test]
     fn history_message_is_bounded_and_single_line() {
         let message = format!("secret\r\n{}", "x".repeat(600));
-        let safe = safe_history_message(&message);
+        let safe = crate::audit::safe::message(&message);
         assert!(!safe.contains(['\r', '\n']));
         assert_eq!(safe.chars().count(), 512);
     }

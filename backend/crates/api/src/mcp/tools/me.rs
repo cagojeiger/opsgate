@@ -44,15 +44,12 @@ pub async fn call(
     parts: &Parts,
     toolset: McpToolset,
 ) -> Result<Json<McpMeOutput>, ErrorData> {
-    let caller = parts
-        .extensions
-        .get::<Caller>()
-        .ok_or_else(|| ErrorData::invalid_params("authenticated caller extension missing", None))?;
+    let caller = crate::mcp::tools::context::caller(parts)?;
     let summary = state
         .credentials
         .summary(caller.user.id)
         .await
-        .map_err(map_error)?;
+        .map_err(|error| crate::mcp::tools::error::map_core_error("me", error))?;
     Ok(Json(build_me(caller, toolset, summary)))
 }
 
@@ -139,18 +136,6 @@ fn workflow_for_toolset(toolset: McpToolset) -> Vec<String> {
             "credential.update_*로 metadata와 policy만 수정합니다.".to_owned(),
             "secret 교체나 endpoint 변경은 credential.delete 후 재등록합니다.".to_owned(),
         ],
-    }
-}
-
-fn map_error(error: opsgate_core::Error) -> ErrorData {
-    match error {
-        opsgate_core::Error::Forbidden(message) => ErrorData::invalid_params(message, None),
-        opsgate_core::Error::Validation(message) => ErrorData::invalid_params(message, None),
-        opsgate_core::Error::NotFound(message) => ErrorData::invalid_params(message, None),
-        opsgate_core::Error::Internal(message) => {
-            tracing::error!(event = "mcp.me.internal_error", detail = %message);
-            ErrorData::internal_error("internal server error", None)
-        }
     }
 }
 

@@ -4,6 +4,7 @@ mod event;
 pub(crate) mod mcp;
 pub(crate) mod request;
 pub(crate) mod runtime;
+pub(crate) mod safe;
 mod target;
 
 pub(crate) use actor::credential_actor;

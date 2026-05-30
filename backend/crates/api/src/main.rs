@@ -19,6 +19,7 @@ mod mcp;
 mod request_context;
 mod rest;
 mod routes;
+mod sql_common;
 mod sql_query;
 mod sql_schema;
 mod state;
