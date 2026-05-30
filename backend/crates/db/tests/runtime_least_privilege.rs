@@ -315,7 +315,6 @@ fn sql_history(user_id: Uuid, credential_id: Uuid) -> SqlQueryHistoryParams {
         credential_env: "prod".to_owned(),
         query_sha256: "0".repeat(64),
         params_count: 0,
-        shape: "rows".to_owned(),
         max_rows: 5,
         max_bytes: 4096,
         timeout_ms: 5000,

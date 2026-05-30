@@ -1,6 +1,8 @@
-use std::collections::BTreeMap;
 use std::time::Instant;
 
+use opsgate_core::llm_output::{
+    JsonOutput, JsonOutputOptions, More, build_json_output, validate_json_paths,
+};
 use opsgate_core::validation::{trim_required, validate_purpose};
 use opsgate_core::{Error, Result};
 use opsgate_db::{AuditRepo, CredentialRepo, SqlQueryHistoryParams, SqlQueryHistoryRepo};
@@ -8,7 +10,6 @@ use opsgate_domain::credential::{Credential, CredentialCategory, CredentialPolic
 use opsgate_domain::{Caller, Channel};
 use schemars::JsonSchema;
 use secrecy::ExposeSecret;
-use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -23,10 +24,6 @@ use sqlx::{Connection, Executor, PgConnection};
 use crate::credential::snapshot::CredentialSnapshot;
 use crate::sql_common::SqlSecret;
 
-const SHAPE_ROWS: &str = "rows";
-const SHAPE_COLUMNS: &str = "columns";
-const SHAPE_VALUES: &str = "values";
-const DEFAULT_SHAPE: &str = SHAPE_ROWS;
 const DEFAULT_MAX_ROWS: i32 = 100;
 const MAX_MAX_ROWS: i32 = 1000;
 const DEFAULT_MAX_BYTES: usize = 64 * 1024;
@@ -149,7 +146,6 @@ impl SqlQueryService {
             }
         };
         output.latency_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
-        finalize_output(&mut output, &input, &credential.policy)?;
         recorder.ok(&output).await;
         Ok(output)
     }
@@ -195,110 +191,29 @@ pub struct SqlQueryInput {
     #[schemars(schema_with = "opsgate_core::schema::json_value_array_schema")]
     pub params: Vec<Value>,
     #[serde(default)]
-    pub shape: String,
+    pub jsonpath: Vec<String>,
     pub max_rows: Option<i32>,
     pub max_bytes: Option<usize>,
     pub timeout_ms: Option<u32>,
 }
 
-#[derive(Debug, Clone, JsonSchema)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct SqlQueryOutput {
-    pub columns: Vec<Column>,
-    #[schemars(schema_with = "opsgate_core::schema::json_object_array_schema")]
-    pub rows: Vec<BTreeMap<String, Value>>,
-    pub shape: String,
-    #[schemars(schema_with = "opsgate_core::schema::json_value_columns_schema")]
-    pub data: BTreeMap<String, Vec<Value>>,
-    pub column: Option<Column>,
-    #[schemars(schema_with = "opsgate_core::schema::json_value_array_schema")]
-    pub values: Vec<Value>,
+    #[schemars(schema_with = "opsgate_core::schema::json_value_schema")]
+    pub body: Value,
     pub row_count: usize,
     pub truncated: bool,
-    pub returned_bytes: usize,
-    pub truncated_columns: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub more: Option<More>,
+    #[allow(dead_code)]
+    #[serde(skip)]
+    pub original_bytes: usize,
+    #[serde(skip)]
+    pub returned_bytes: usize,
+    #[serde(skip)]
     pub latency_ms: i64,
-}
-
-impl Serialize for SqlQueryOutput {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut fields = 6;
-        if self.shape != SHAPE_ROWS {
-            fields += 1;
-        }
-        if self.shape == SHAPE_COLUMNS {
-            fields += 1;
-        } else if self.shape == SHAPE_VALUES {
-            fields += 2;
-        } else {
-            fields += 1;
-        }
-        if !self.truncated_columns.is_empty() {
-            fields += 1;
-        }
-        if self.more.is_some() {
-            fields += 1;
-        }
-        let mut map = serializer.serialize_map(Some(fields))?;
-        map.serialize_entry("columns", &self.columns)?;
-        if self.shape == SHAPE_COLUMNS {
-            map.serialize_entry("shape", SHAPE_COLUMNS)?;
-            map.serialize_entry("data", &self.data)?;
-        } else if self.shape == SHAPE_VALUES {
-            map.serialize_entry("shape", SHAPE_VALUES)?;
-            if let Some(column) = &self.column {
-                map.serialize_entry("column", column)?;
-            }
-            map.serialize_entry("values", &self.values)?;
-        } else {
-            map.serialize_entry("rows", &self.rows)?;
-        }
-        map.serialize_entry("row_count", &self.row_count)?;
-        map.serialize_entry("truncated", &self.truncated)?;
-        map.serialize_entry("returned_bytes", &self.returned_bytes)?;
-        if !self.truncated_columns.is_empty() {
-            map.serialize_entry("truncated_columns", &self.truncated_columns)?;
-        }
-        if let Some(more) = &self.more {
-            map.serialize_entry("more", more)?;
-        }
-        map.serialize_entry("latency_ms", &self.latency_ms)?;
-        map.end()
-    }
-}
-
-#[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct Column {
-    pub name: String,
-    #[serde(rename = "type")]
-    pub data_type: String,
-}
-
-#[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct More {
-    pub options: MoreOption,
-    pub hints: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct MoreOption {
-    #[serde(skip_serializing_if = "is_zero_i32", default)]
-    pub suggested_max_rows: i32,
-    #[serde(skip_serializing_if = "is_zero_usize", default)]
-    pub suggested_max_bytes: usize,
-    #[serde(skip_serializing_if = "String::is_empty", default)]
-    pub suggested_shape: String,
-    #[serde(skip_serializing_if = "is_false", default)]
-    pub use_where: bool,
-    #[serde(skip_serializing_if = "is_false", default)]
-    pub use_aggregate: bool,
-    #[serde(skip_serializing_if = "is_false", default)]
-    pub use_keyset_pagination: bool,
-    #[serde(skip_serializing_if = "is_false", default)]
-    pub select_fewer_columns: bool,
+    #[serde(skip)]
+    pub column_names: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -307,7 +222,7 @@ struct NormalizedInput {
     purpose: String,
     query: String,
     params: Vec<Value>,
-    shape: String,
+    jsonpath: Vec<String>,
     max_rows: i32,
     max_bytes: usize,
     timeout_ms: u32,
@@ -329,16 +244,7 @@ fn normalize_input(input: SqlQueryInput) -> Result<NormalizedInput> {
             input.params.len()
         )));
     }
-    let shape = if input.shape.trim().is_empty() {
-        DEFAULT_SHAPE.to_owned()
-    } else {
-        input.shape.trim().to_ascii_lowercase()
-    };
-    if !matches!(shape.as_str(), SHAPE_ROWS | SHAPE_COLUMNS | SHAPE_VALUES) {
-        return Err(Error::validation(
-            "shape must be one of rows, columns, values",
-        ));
-    }
+    validate_json_paths(&input.jsonpath)?;
     let max_rows = input.max_rows.unwrap_or(DEFAULT_MAX_ROWS);
     if !(1..=MAX_MAX_ROWS).contains(&max_rows) {
         return Err(Error::validation("max_rows out of range"));
@@ -357,7 +263,7 @@ fn normalize_input(input: SqlQueryInput) -> Result<NormalizedInput> {
         purpose,
         query,
         params: input.params,
-        shape,
+        jsonpath: input.jsonpath,
         max_rows,
         max_bytes,
         timeout_ms,
@@ -674,7 +580,7 @@ async fn load_explain_rows(
         .into_iter()
         .map(|line| serde_json::json!({"QUERY PLAN": line}))
         .collect();
-    build_output(rows, &input.shape, truncated)
+    build_column_output(rows, input, truncated)
 }
 
 async fn load_rows(conn: &mut PgConnection, input: &NormalizedInput) -> Result<SqlQueryOutput> {
@@ -697,7 +603,7 @@ async fn load_rows(conn: &mut PgConnection, input: &NormalizedInput) -> Result<S
         rows.truncate(usize::try_from(input.max_rows).unwrap_or(usize::MAX));
         truncated = true;
     }
-    build_output(rows, &input.shape, truncated)
+    build_column_output(rows, input, truncated)
 }
 
 fn bind_string_param<'q>(
@@ -752,266 +658,71 @@ fn bind_json_param<'q>(
     Ok(query)
 }
 
-fn build_output(rows: Vec<Value>, shape: &str, truncated: bool) -> Result<SqlQueryOutput> {
-    let mut object_rows = Vec::with_capacity(rows.len());
-    for row in rows {
+fn build_column_output(
+    rows: Vec<Value>,
+    input: &NormalizedInput,
+    truncated: bool,
+) -> Result<SqlQueryOutput> {
+    let row_count = rows.len();
+    let (body, column_names) = transpose_rows(rows)?;
+    let bytes = serde_json::to_vec(&body)
+        .map_err(|error| Error::internal(format!("serialize sql query body: {error}")))?;
+    let shaped = build_shaped_body(&bytes, input)?;
+    let column_names = if input.jsonpath.is_empty() {
+        column_names
+    } else {
+        Vec::new()
+    };
+
+    Ok(SqlQueryOutput {
+        body: shaped.body,
+        row_count,
+        truncated: truncated || shaped.truncated,
+        more: shaped.more,
+        original_bytes: shaped.original_bytes,
+        returned_bytes: shaped.returned_bytes,
+        latency_ms: 0,
+        column_names,
+    })
+}
+
+fn build_shaped_body(bytes: &[u8], input: &NormalizedInput) -> Result<JsonOutput> {
+    build_json_output(
+        bytes,
+        JsonOutputOptions {
+            max_bytes: input.max_bytes,
+            max_allowed_bytes: MAX_MAX_BYTES,
+            json_paths: input.jsonpath.clone(),
+            transport_truncated: false,
+            original_bytes: None,
+        },
+    )
+}
+
+fn transpose_rows(rows: Vec<Value>) -> Result<(Value, Vec<String>)> {
+    let mut column_names = Vec::<String>::new();
+    let mut column_values = Vec::<Vec<Value>>::new();
+
+    for (row_index, row) in rows.into_iter().enumerate() {
         let object = row
             .as_object()
             .ok_or_else(|| Error::internal("sql result row is not an object"))?;
-        object_rows.push(
-            object
-                .iter()
-                .map(|(key, value)| (key.clone(), compact_json_value(value.clone())))
-                .collect::<BTreeMap<_, _>>(),
-        );
-    }
-    let columns = infer_columns(&object_rows);
-    let mut output = SqlQueryOutput {
-        columns,
-        rows: Vec::new(),
-        shape: shape.to_owned(),
-        data: BTreeMap::new(),
-        column: None,
-        values: Vec::new(),
-        row_count: object_rows.len(),
-        truncated,
-        returned_bytes: 0,
-        truncated_columns: Vec::new(),
-        more: None,
-        latency_ms: 0,
-    };
-    match shape {
-        SHAPE_COLUMNS => {
-            output.data = columns_shape(&output.columns, &object_rows);
-        }
-        SHAPE_VALUES => {
-            if output.columns.len() != 1 {
-                return Err(Error::validation(
-                    "shape=values requires exactly one result column",
-                ));
-            }
-            let column = output
-                .columns
-                .first()
-                .cloned()
-                .ok_or_else(|| Error::validation("shape=values requires one result column"))?;
-            output.values = object_rows
-                .iter()
-                .map(|row| row.get(&column.name).cloned().unwrap_or(Value::Null))
-                .collect();
-            output.column = Some(column);
-        }
-        _ => {
-            output.rows = object_rows;
-        }
-    }
-    Ok(output)
-}
-
-fn infer_columns(rows: &[BTreeMap<String, Value>]) -> Vec<Column> {
-    let Some(first) = rows.first() else {
-        return Vec::new();
-    };
-    first
-        .iter()
-        .map(|(name, value)| Column {
-            name: name.clone(),
-            data_type: json_type(value).to_owned(),
-        })
-        .collect()
-}
-
-fn columns_shape(
-    columns: &[Column],
-    rows: &[BTreeMap<String, Value>],
-) -> BTreeMap<String, Vec<Value>> {
-    let mut data = columns
-        .iter()
-        .map(|column| (column.name.clone(), Vec::with_capacity(rows.len())))
-        .collect::<BTreeMap<_, _>>();
-    for row in rows {
-        for column in columns {
-            if let Some(values) = data.get_mut(&column.name) {
-                values.push(row.get(&column.name).cloned().unwrap_or(Value::Null));
+        for key in object.keys() {
+            if !column_names.iter().any(|name| name == key) {
+                column_names.push(key.clone());
+                column_values.push(vec![Value::Null; row_index]);
             }
         }
-    }
-    data
-}
-
-fn compact_json_value(value: Value) -> Value {
-    match value {
-        Value::String(text) if text.len() > 4096 => {
-            let prefix = text.chars().take(4096).collect::<String>();
-            Value::String(format!("{prefix}…[truncated]"))
-        }
-        other => other,
-    }
-}
-
-fn json_type(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "null",
-        Value::Bool(_) => "boolean",
-        Value::Number(_) => "number",
-        Value::String(_) => "text",
-        Value::Array(_) => "array",
-        Value::Object(_) => "object",
-    }
-}
-
-fn finalize_output(
-    output: &mut SqlQueryOutput,
-    input: &NormalizedInput,
-    policy: &CredentialPolicy,
-) -> Result<()> {
-    output.returned_bytes = encoded_len(output)?;
-    while output.returned_bytes > input.max_bytes && remove_last_value(output) {
-        output.truncated = true;
-        output.returned_bytes = encoded_len(output)?;
-    }
-    if output.returned_bytes > input.max_bytes {
-        output.more = None;
-        output.truncated = true;
-        clear_values(output);
-        output.returned_bytes = encoded_len(output)?;
-    }
-    if output.truncated {
-        attach_more(output, input, policy);
-        output.returned_bytes = encoded_len(output)?;
-        if output.returned_bytes > input.max_bytes {
-            output.more = None;
-            output.returned_bytes = encoded_len(output)?;
+        for (name, values) in column_names.iter().zip(column_values.iter_mut()) {
+            values.push(object.get(name).cloned().unwrap_or(Value::Null));
         }
     }
-    Ok(())
-}
 
-fn remove_last_value(output: &mut SqlQueryOutput) -> bool {
-    if output.shape == SHAPE_COLUMNS {
-        let Some(column) = output.columns.last() else {
-            return false;
-        };
-        let name = column.name.clone();
-        if let Some(values) = output.data.get_mut(&name)
-            && values.pop().is_some()
-        {
-            output.row_count = min_column_len(&output.data);
-            return true;
-        }
-        output.data.remove(&name);
-        output.truncated_columns.push(name);
-        output.columns.pop();
-        return true;
+    let mut object = serde_json::Map::new();
+    for (name, values) in column_names.iter().cloned().zip(column_values) {
+        object.insert(name, Value::Array(values));
     }
-    if output.shape == SHAPE_VALUES {
-        if output.values.pop().is_some() {
-            output.row_count = output.values.len();
-            return true;
-        }
-        return false;
-    }
-    if output.rows.pop().is_some() {
-        output.row_count = output.rows.len();
-        return true;
-    }
-    false
-}
-
-fn min_column_len(data: &BTreeMap<String, Vec<Value>>) -> usize {
-    data.values().map(Vec::len).min().unwrap_or(0)
-}
-
-fn clear_values(output: &mut SqlQueryOutput) {
-    output.rows.clear();
-    output.data.clear();
-    output.values.clear();
-    output.row_count = 0;
-}
-
-fn attach_more(output: &mut SqlQueryOutput, input: &NormalizedInput, policy: &CredentialPolicy) {
-    let row_limit = if policy.max_rows > 0 {
-        i32::try_from(policy.max_rows)
-            .unwrap_or(MAX_MAX_ROWS)
-            .min(MAX_MAX_ROWS)
-    } else {
-        MAX_MAX_ROWS
-    };
-    let byte_limit = if policy.max_bytes > 0 {
-        usize::try_from(policy.max_bytes)
-            .unwrap_or(MAX_MAX_BYTES)
-            .min(MAX_MAX_BYTES)
-    } else {
-        MAX_MAX_BYTES
-    };
-    let row_limited = output.row_count >= usize::try_from(input.max_rows).unwrap_or(usize::MAX);
-    let mut options = MoreOption {
-        suggested_max_rows: 0,
-        suggested_max_bytes: 0,
-        suggested_shape: String::new(),
-        use_where: true,
-        use_aggregate: true,
-        use_keyset_pagination: false,
-        select_fewer_columns: false,
-    };
-    if row_limited {
-        options.use_keyset_pagination = true;
-        if input.max_rows < row_limit {
-            options.suggested_max_rows = (input.max_rows.saturating_mul(2)).min(row_limit);
-        }
-    }
-    if output.returned_bytes >= input.max_bytes || !output.truncated_columns.is_empty() {
-        options.select_fewer_columns = true;
-        options.suggested_shape = suggested_shape(&input.shape, &output.columns).to_owned();
-        if input.max_bytes < byte_limit {
-            options.suggested_max_bytes = input.max_bytes.saturating_mul(2).min(byte_limit);
-        }
-    }
-    let mut hints = vec![
-        "use GROUP BY/count/sum/min/max when you need a summary instead of raw rows".to_owned(),
-    ];
-    if row_limited {
-        hints.insert(
-            0,
-            "result reached max_rows; narrow with a WHERE predicate when you need specific rows"
-                .to_owned(),
-        );
-    }
-    if options.select_fewer_columns {
-        hints.push(
-            "result reached max_bytes; retry with fewer SELECT columns or a narrower WHERE clause"
-                .to_owned(),
-        );
-    }
-    if !options.suggested_shape.is_empty() {
-        hints.push(format!(
-            "retry with shape={} to reduce repeated row keys when comparing many rows",
-            options.suggested_shape
-        ));
-    }
-    if options.use_keyset_pagination {
-        hints.push("for raw row browsing, use ORDER BY on a stable key and continue with WHERE key > last_seen_key".to_owned());
-    }
-    output.more = Some(More { options, hints });
-}
-
-fn suggested_shape(current: &str, columns: &[Column]) -> &'static str {
-    if current != SHAPE_ROWS {
-        return "";
-    }
-    if columns.len() == 1 {
-        SHAPE_VALUES
-    } else if columns.len() > 1 {
-        SHAPE_COLUMNS
-    } else {
-        ""
-    }
-}
-
-fn encoded_len(output: &SqlQueryOutput) -> Result<usize> {
-    serde_json::to_vec(output)
-        .map(|bytes| bytes.len())
-        .map_err(|error| Error::internal(format!("serialize sql query output: {error}")))
+    Ok((Value::Object(object), column_names))
 }
 
 struct QueryRecorder<'a> {
@@ -1085,7 +796,6 @@ impl<'a> QueryRecorder<'a> {
                 .unwrap_or_default(),
             query_sha256: self.input.query_sha256.clone(),
             params_count: i32::try_from(self.input.params.len()).unwrap_or(i32::MAX),
-            shape: self.input.shape.clone(),
             max_rows: self.input.max_rows,
             max_bytes: i32::try_from(self.input.max_bytes).unwrap_or(i32::MAX),
             timeout_ms: i32::try_from(self.input.timeout_ms).unwrap_or(i32::MAX),
@@ -1146,7 +856,6 @@ fn audit_detail(
         "params_count".to_owned(),
         serde_json::json!(input.params.len()),
     );
-    detail.insert("shape".to_owned(), serde_json::json!(input.shape));
     detail.insert("max_rows".to_owned(), serde_json::json!(input.max_rows));
     detail.insert("max_bytes".to_owned(), serde_json::json!(input.max_bytes));
     detail.insert("timeout_ms".to_owned(), serde_json::json!(input.timeout_ms));
@@ -1190,13 +899,7 @@ fn audit_detail(
 }
 
 fn result_column_names(output: &SqlQueryOutput) -> Value {
-    serde_json::json!(
-        output
-            .columns
-            .iter()
-            .map(|column| column.name.clone())
-            .collect::<Vec<_>>()
-    )
+    serde_json::json!(&output.column_names)
 }
 
 /// Audit row for a pre-normalization denial. Records only the channel, the
@@ -1229,7 +932,6 @@ fn pre_input_denial_history_params(
         credential_env: String::new(),
         query_sha256: String::new(),
         params_count: 0,
-        shape: String::new(),
         max_rows: 0,
         max_bytes: 0,
         timeout_ms: 0,
@@ -1257,18 +959,6 @@ fn sha256_hex(value: &str) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn is_false(value: &bool) -> bool {
-    !*value
-}
-
-fn is_zero_i32(value: &i32) -> bool {
-    *value == 0
-}
-
-fn is_zero_usize(value: &usize) -> bool {
-    *value == 0
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1282,7 +972,7 @@ mod tests {
             purpose: "Count recent rows".to_owned(),
             query: "select status, count(*) from payments group by status".to_owned(),
             params: Vec::new(),
-            shape: String::new(),
+            jsonpath: Vec::new(),
             max_rows: None,
             max_bytes: None,
             timeout_ms: None,
@@ -1312,7 +1002,7 @@ mod tests {
     #[test]
     fn input_defaults_match_docs() -> Result<()> {
         let input = normalize_input(base_input())?;
-        assert_eq!(input.shape, SHAPE_ROWS);
+        assert!(input.jsonpath.is_empty());
         assert_eq!(input.max_rows, DEFAULT_MAX_ROWS);
         assert_eq!(input.max_bytes, DEFAULT_MAX_BYTES);
         assert_eq!(input.timeout_ms, DEFAULT_TIMEOUT_MS);
@@ -1329,7 +1019,7 @@ mod tests {
         input.params = vec![Value::Null; MAX_PARAMS + 1];
         assert!(normalize_input(input.clone()).is_err());
         input = base_input();
-        input.shape = "wide".to_owned();
+        input.jsonpath = vec!["status".to_owned()];
         assert!(normalize_input(input.clone()).is_err());
         input = base_input();
         input.max_rows = Some(MAX_MAX_ROWS + 1);
@@ -1534,21 +1224,53 @@ mod tests {
     }
 
     #[test]
-    fn shapes_and_budget_are_secret_free() -> Result<()> {
+    fn flat_rows_become_column_oriented_body() -> Result<()> {
         let rows = vec![
-            serde_json::json!({"status":"failed", "count": 42}),
-            serde_json::json!({"status":"paid", "count": 900}),
+            serde_json::json!({"status":"failed", "total": 42}),
+            serde_json::json!({"status":"paid", "region": "us"}),
         ];
-        let mut output = build_output(rows, SHAPE_COLUMNS, false)?;
+        let input = normalize_input(base_input())?;
+        let output = build_column_output(rows, &input, false)?;
+
+        assert_eq!(output.row_count, 2);
+        assert_eq!(
+            output.column_names,
+            vec![
+                "status".to_owned(),
+                "total".to_owned(),
+                "region".to_owned()
+            ]
+        );
+        assert_eq!(
+            output.body,
+            serde_json::json!({
+                "status": ["failed", "paid"],
+                "total": [42, null],
+                "region": [null, "us"]
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn jsonpath_projects_one_column() -> Result<()> {
+        let rows = vec![
+            serde_json::json!({"status":"failed", "total": 42}),
+            serde_json::json!({"status":"paid", "total": 900}),
+        ];
         let input = normalize_input(SqlQueryInput {
-            shape: SHAPE_COLUMNS.to_owned(),
-            max_bytes: Some(1024),
+            jsonpath: vec!["$.status".to_owned()],
             ..base_input()
         })?;
-        finalize_output(&mut output, &input, &CredentialPolicy::default())?;
+        let output = build_column_output(rows, &input, false)?;
+
+        let projected = output
+            .body
+            .get("$.status")
+            .ok_or_else(|| Error::internal("missing projected column"))?;
+        assert_eq!(projected, &serde_json::json!([["failed", "paid"]]));
         assert_eq!(output.row_count, 2);
-        assert!(output.rows.is_empty());
-        assert!(output.data.contains_key("status"));
+        assert!(output.column_names.is_empty());
         Ok(())
     }
 
@@ -1560,12 +1282,13 @@ mod tests {
             ..base_input()
         })?;
         let rows = vec![serde_json::json!({"secret_col":"secret-value"})];
-        let output = build_output(rows, SHAPE_ROWS, false)?;
+        let output = build_column_output(rows, &input, false)?;
         let credential = CredentialSnapshot::from(&sql_credential(CredentialPolicy::default()));
         let detail = audit_detail(&input, Some(&credential), "ok", None, Some(&output));
         let serialized = detail.to_string();
         assert!(serialized.contains("query_sha256"));
         assert!(serialized.contains("result_columns"));
+        assert!(detail.get("shape").is_none());
         assert!(!serialized.contains("select secret_col"));
         assert!(!serialized.contains("secret-param"));
         assert!(!serialized.contains("secret-value"));

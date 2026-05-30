@@ -54,7 +54,7 @@ GRANT INSERT (
 GRANT INSERT (
     owner_user_id, actor_user_id, channel, request_id,
     credential_id, credential_alias, credential_category, credential_provider,
-    credential_env, query_sha256, params_count, shape, max_rows, max_bytes,
+    credential_env, query_sha256, params_count, max_rows, max_bytes,
     timeout_ms, purpose, outcome, latency_ms, row_count, returned_bytes,
     truncated, result_columns, error_kind, error_message_safe
 ) ON sql_query_history TO opsgate_app;

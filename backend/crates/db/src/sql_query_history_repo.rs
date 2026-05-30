@@ -28,7 +28,6 @@ impl SqlQueryHistoryRepo {
                 credential_env,
                 query_sha256,
                 params_count,
-                shape,
                 max_rows,
                 max_bytes,
                 timeout_ms,
@@ -42,7 +41,7 @@ impl SqlQueryHistoryRepo {
                 error_kind,
                 error_message_safe
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
             "#,
         )
         .bind(params.owner_user_id)
@@ -56,7 +55,6 @@ impl SqlQueryHistoryRepo {
         .bind(params.credential_env)
         .bind(params.query_sha256)
         .bind(params.params_count)
-        .bind(params.shape)
         .bind(params.max_rows)
         .bind(params.max_bytes)
         .bind(params.timeout_ms)
@@ -89,7 +87,6 @@ pub struct SqlQueryHistoryParams {
     pub credential_env: String,
     pub query_sha256: String,
     pub params_count: i32,
-    pub shape: String,
     pub max_rows: i32,
     pub max_bytes: i32,
     pub timeout_ms: i32,

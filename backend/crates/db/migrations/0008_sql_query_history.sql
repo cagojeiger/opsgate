@@ -14,7 +14,6 @@ CREATE TABLE sql_query_history (
     credential_env      TEXT NOT NULL DEFAULT '',
     query_sha256        TEXT NOT NULL DEFAULT '',
     params_count        INTEGER NOT NULL DEFAULT 0,
-    shape               TEXT NOT NULL DEFAULT 'rows',
     max_rows            INTEGER NOT NULL DEFAULT 0,
     max_bytes           INTEGER NOT NULL DEFAULT 0,
     timeout_ms          INTEGER NOT NULL DEFAULT 0,
@@ -31,7 +30,6 @@ CREATE TABLE sql_query_history (
     CONSTRAINT sql_query_history_channel_chk CHECK (channel IN ('api', 'mcp')),
     CONSTRAINT sql_query_history_query_sha256_chk CHECK (query_sha256 = '' OR query_sha256 ~ '^[0-9a-f]{64}$'),
     CONSTRAINT sql_query_history_params_count_chk CHECK (params_count >= 0),
-    CONSTRAINT sql_query_history_shape_chk CHECK (shape IN ('rows', 'columns', 'values')),
     CONSTRAINT sql_query_history_budget_chk CHECK (max_rows >= 0 AND max_bytes >= 0 AND timeout_ms >= 0),
     CONSTRAINT sql_query_history_purpose_chk CHECK (
         purpose IS NULL
