@@ -84,7 +84,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "api.call",
-        description = "Invoke a registered category=http credential by alias without exposing endpoint or secrets. Returns JSON only."
+        description = "Call category=http alias. JSON-only; use 1-3 jsonpath paths for large lists before max_bytes. Secrets/endpoints hidden."
     )]
     pub async fn api_call(
         &self,
@@ -102,7 +102,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "sql.query",
-        description = "Execute a read-only Postgres SELECT through a registered category=sql credential. Returns budgeted JSON rows only."
+        description = "Run read-only SELECT/WITH via category=sql alias. Prefer columns/WHERE/count/group; avoid SELECT *. Column JSON; jsonpath for large output."
     )]
     pub async fn sql_query(
         &self,
@@ -120,7 +120,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "sql.schema",
-        description = "Inspect Postgres schema metadata for a registered category=sql credential without returning row values."
+        description = "Schema only, no row values. mode=tables lists tables; mode=table + namespace/table shows columns/indexes before sql.query."
     )]
     pub async fn sql_schema(
         &self,
@@ -145,7 +145,7 @@ impl ServerHandler for RuntimeMcpServer {
             .with_server_info(
                 Implementation::new("opsgate", env!("CARGO_PKG_VERSION")).with_title("opsgate"),
             )
-            .with_instructions("Runtime MCP tools for opsgate.")
+            .with_instructions("Use credential.list first. For large JSON use 1-3 jsonpath paths before max_bytes. Use sql.schema before unknown SQL; avoid SELECT *.")
     }
 }
 
@@ -291,7 +291,7 @@ impl ServerHandler for AdminMcpServer {
             .with_server_info(
                 Implementation::new("opsgate", env!("CARGO_PKG_VERSION")).with_title("opsgate"),
             )
-            .with_instructions("Admin MCP tools for opsgate credential lifecycle management.")
+            .with_instructions("Admin: register/update/delete credentials. Secrets/endpoints are not returned; rotate by delete + re-register.")
     }
 }
 
