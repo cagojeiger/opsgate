@@ -4,7 +4,7 @@ use std::str::FromStr;
 use opsgate_core::{Error, Result};
 
 use super::ssrf::{ensure_target_ip_allowed, target_ip_is_blocked};
-use sqlx::postgres::PgConnectOptions;
+use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
 #[derive(Debug, Clone)]
 pub(crate) struct GuardedPostgresTarget {
@@ -19,7 +19,13 @@ impl GuardedPostgresTarget {
         password: &str,
     ) -> Result<PgConnectOptions> {
         let options = PgConnectOptions::from_str(&self.endpoint)
-            .map_err(|error| Error::validation(format!("postgres endpoint: {error}")))?
+            .map_err(|error| Error::validation(format!("postgres endpoint: {error}")))?;
+        if matches!(options.get_ssl_mode(), PgSslMode::VerifyFull) {
+            return Err(Error::validation(
+                "postgres endpoint sslmode=verify-full is unsupported by guarded SQL targets",
+            ));
+        }
+        let options = options
             .host(&self.connect_addr.ip().to_string())
             .port(self.connect_addr.port())
             .username(username)
@@ -117,6 +123,20 @@ mod tests {
         .map(|error| error.to_string())
         .unwrap_or_default();
         assert!(err.contains("private/link-local/loopback"));
+    }
+
+    #[test]
+    fn connect_options_reject_verify_full_before_ip_overwrite() {
+        let target = GuardedPostgresTarget {
+            endpoint: "postgres://db.example.test:6543/app?sslmode=verify-full".to_owned(),
+            connect_addr: SocketAddr::from(([93, 184, 216, 34], 6543)),
+        };
+        let err = target
+            .connect_options("user", "password")
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("verify-full is unsupported"));
     }
 
     #[test]

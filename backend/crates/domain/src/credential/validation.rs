@@ -177,11 +177,16 @@ pub fn validate_postgres_endpoint(raw: &str) -> Result<Url> {
             "postgres endpoint must not include fragment",
         ));
     }
-    for key in url.query_pairs().map(|(key, _value)| key) {
+    for (key, value) in url.query_pairs() {
         if key != "sslmode" {
             return Err(Error::validation(format!(
                 "unsupported postgres endpoint query parameter {key:?}"
             )));
+        }
+        if value.eq_ignore_ascii_case("verify-full") {
+            return Err(Error::validation(
+                "postgres endpoint sslmode=verify-full is unsupported by guarded SQL targets",
+            ));
         }
     }
     Ok(url)
@@ -469,6 +474,15 @@ mod tests {
             tls_server_ca: None,
         });
         assert!(validate_register_input(&input).is_err());
+    }
+
+    #[test]
+    fn rejects_postgres_verify_full_until_guarded_tls_identity_is_supported() {
+        let err = validate_postgres_endpoint("postgres://db.example.test/app?sslmode=verify-full")
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("verify-full is unsupported"));
     }
 
     #[test]
