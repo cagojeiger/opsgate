@@ -566,6 +566,63 @@ mod tests {
     }
 
     #[test]
+    fn register_validation_gates_insecure_transports() {
+        let http = RegisterCredentialInput {
+            category: CredentialCategory::Http,
+            provider: "k8s".to_owned(),
+            alias: "internal-api".to_owned(),
+            endpoint: "http://service.local".to_owned(),
+            secret: CredentialSecret::Http {
+                headers: vec![SecretHeader {
+                    name: "Authorization".to_owned(),
+                    value: secret("Bearer token"),
+                }],
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: true,
+            allow_insecure_transport: true,
+            tls_server_ca: None,
+        };
+        assert!(validate_register_input(&normalize_register_input(http.clone())).is_ok());
+        let mut missing_transport = http.clone();
+        missing_transport.allow_insecure_transport = false;
+        assert!(validate_register_input(&normalize_register_input(missing_transport)).is_err());
+        let mut missing_private = http;
+        missing_private.allow_private_network = false;
+        assert!(validate_register_input(&normalize_register_input(missing_private)).is_err());
+
+        let sql = RegisterCredentialInput {
+            category: CredentialCategory::Sql,
+            provider: "postgres".to_owned(),
+            alias: "internal-db".to_owned(),
+            endpoint: "postgres://db.local/app?sslmode=disable".to_owned(),
+            secret: CredentialSecret::Sql {
+                username: secret("user"),
+                password: secret("pass"),
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: true,
+            allow_insecure_transport: true,
+            tls_server_ca: None,
+        };
+        assert!(validate_register_input(&normalize_register_input(sql.clone())).is_ok());
+        let mut missing_transport = sql.clone();
+        missing_transport.allow_insecure_transport = false;
+        assert!(validate_register_input(&normalize_register_input(missing_transport)).is_err());
+        let mut require_tls = sql;
+        require_tls.endpoint = "postgres://db.local/app?sslmode=require".to_owned();
+        require_tls.allow_private_network = false;
+        require_tls.allow_insecure_transport = false;
+        assert!(validate_register_input(&normalize_register_input(require_tls)).is_ok());
+    }
+
+    #[test]
     fn rejects_invalid_provider_alias_env_and_tags() {
         for provider in [
             "K8s",

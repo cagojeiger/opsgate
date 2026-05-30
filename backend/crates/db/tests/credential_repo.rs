@@ -243,6 +243,43 @@ async fn credential_history_versions_are_per_owner_alias() -> Result<(), Box<dyn
 }
 
 #[tokio::test]
+async fn credential_persists_insecure_transport_opt_in() -> Result<(), Box<dyn std::error::Error>> {
+    let Some(db) = TestDb::setup().await? else {
+        return Ok(());
+    };
+
+    let owner = insert_user(&db.pool, "owner@example.test").await?;
+    let repo = CredentialRepo::new(db.pool.clone());
+    let mut params = insert_params(owner, "internal-api");
+    params.allow_private_network = true;
+    params.allow_insecure_transport = true;
+
+    let inserted = repo
+        .insert_credential(params, audit(owner, CredentialAuditAction::Register))
+        .await?;
+    assert!(inserted.allow_private_network);
+    assert!(inserted.allow_insecure_transport);
+
+    let found = repo
+        .find_credential_by_alias(owner, "internal-api")
+        .await?
+        .ok_or("credential not found")?;
+    assert!(found.allow_private_network);
+    assert!(found.allow_insecure_transport);
+
+    let material = repo
+        .find_credential_secret_by_alias(owner, "internal-api")
+        .await?
+        .ok_or("credential secret not found")?
+        .into_credential()?;
+    assert!(material.credential.allow_private_network);
+    assert!(material.credential.allow_insecure_transport);
+
+    db.cleanup().await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn duplicate_alias_maps_to_validation_error() -> Result<(), Box<dyn std::error::Error>> {
     let Some(db) = TestDb::setup().await? else {
         return Ok(());
