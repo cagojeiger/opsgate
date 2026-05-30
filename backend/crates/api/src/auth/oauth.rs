@@ -159,7 +159,15 @@ pub async fn callback(
                 metadata.remote_ip.clone(),
                 metadata.user_agent.clone(),
             );
-            audit_signup(&state, Some(&caller), "ok", None, &attrs, &metadata).await;
+            crate::audit::auth::record_signup(
+                &state.audit,
+                Some(&caller),
+                crate::audit::AuditOutcome::Ok,
+                None,
+                &attrs,
+                &metadata,
+            )
+            .await;
             let body = format!(
                 "You're registered, sub={}. Reconnect your MCP client to {}.",
                 attrs.sub, state.config.resource_url
@@ -167,7 +175,15 @@ pub async fn callback(
             (jar, html_page(StatusCode::OK, "Login complete", &body)).into_response()
         }
         Err(IdentityError::NotAdmin) => {
-            audit_signup(&state, None, "denied", Some("not_admin"), &attrs, &metadata).await;
+            crate::audit::auth::record_signup(
+                &state.audit,
+                None,
+                crate::audit::AuditOutcome::Denied,
+                Some("not_admin"),
+                &attrs,
+                &metadata,
+            )
+            .await;
             (
                 jar,
                 html_page(StatusCode::FORBIDDEN, "Login forbidden", "not allowed"),
@@ -175,10 +191,10 @@ pub async fn callback(
                 .into_response()
         }
         Err(IdentityError::Inactive) => {
-            audit_signup(
-                &state,
+            crate::audit::auth::record_signup(
+                &state.audit,
                 None,
-                "denied",
+                crate::audit::AuditOutcome::Denied,
                 Some("inactive_user"),
                 &attrs,
                 &metadata,
@@ -202,58 +218,6 @@ pub async fn callback(
             )
                 .into_response()
         }
-    }
-}
-
-async fn audit_signup(
-    state: &AppState,
-    caller: Option<&opsgate_domain::Caller>,
-    outcome: &str,
-    denial_reason: Option<&str>,
-    attrs: &ResolveAttrs,
-    metadata: &RequestMetadata,
-) {
-    let params = signup_audit_params(caller, outcome, denial_reason, attrs, metadata);
-    if let Err(error) = state.audit.append(params).await {
-        tracing::error!(event = "browser.signup.audit_failed", detail = %error);
-    }
-}
-
-fn signup_audit_params(
-    caller: Option<&opsgate_domain::Caller>,
-    outcome: &str,
-    denial_reason: Option<&str>,
-    attrs: &ResolveAttrs,
-    metadata: &RequestMetadata,
-) -> opsgate_db::AuditLogParams {
-    let mut detail = serde_json::Map::new();
-    detail.insert("schema_version".to_owned(), serde_json::json!(1));
-    detail.insert("sub".to_owned(), serde_json::json!(attrs.sub.clone()));
-    detail.insert("email".to_owned(), serde_json::json!(attrs.email.clone()));
-    if let Some(reason) = denial_reason {
-        detail.insert("denial_reason".to_owned(), serde_json::json!(reason));
-    }
-    opsgate_db::AuditLogParams {
-        action: "browser.signup".to_owned(),
-        channel: "browser".to_owned(),
-        outcome: outcome.to_owned(),
-        severity: if outcome == "ok" { "info" } else { "warning" }.to_owned(),
-        actor_user_id: caller.map(|caller| caller.user.id),
-        actor_role: caller.map(|caller| caller.role.as_str().to_owned()),
-        actor_ip: caller
-            .and_then(|caller| caller.remote_ip.clone())
-            .or_else(|| metadata.remote_ip.clone()),
-        actor_user_agent: caller
-            .and_then(|caller| caller.user_agent.clone())
-            .or_else(|| metadata.user_agent.clone()),
-        target_type: Some("identity".to_owned()),
-        target_id: caller.map(|caller| caller.user.id.to_string()),
-        target_key: Some(attrs.sub.clone()),
-        request_id: caller
-            .and_then(|caller| caller.request_id.clone())
-            .or_else(|| metadata.request_id.clone()),
-        purpose: None,
-        detail: serde_json::Value::Object(detail),
     }
 }
 
@@ -283,7 +247,14 @@ mod tests {
 
     #[test]
     fn signup_denial_audit_row_records_identity_and_request_metadata() {
-        let params = signup_audit_params(None, "denied", Some("not_admin"), &attrs(), &metadata());
+        let params = crate::audit::auth::signup_event(
+            None,
+            crate::audit::AuditOutcome::Denied,
+            Some("not_admin"),
+            &attrs(),
+            &metadata(),
+        )
+        .into_params();
 
         assert_eq!(params.action, "browser.signup");
         assert_eq!(params.outcome, "denied");
@@ -321,7 +292,14 @@ mod tests {
             user_agent: Some("caller-agent".to_owned()),
         };
 
-        let params = signup_audit_params(Some(&caller), "ok", None, &attrs(), &metadata());
+        let params = crate::audit::auth::signup_event(
+            Some(&caller),
+            crate::audit::AuditOutcome::Ok,
+            None,
+            &attrs(),
+            &metadata(),
+        )
+        .into_params();
 
         assert_eq!(params.outcome, "ok");
         assert_eq!(params.actor_user_id, Some(Uuid::nil()));

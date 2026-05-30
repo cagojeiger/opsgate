@@ -14,7 +14,6 @@ use axum::http::header::WWW_AUTHENTICATE;
 use axum::http::request::Parts;
 use axum::http::{Request, StatusCode};
 use axum::response::{IntoResponse, Response};
-use opsgate_db::AuditLogParams;
 use opsgate_domain::Caller;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::Parameters;
@@ -57,11 +56,13 @@ impl RuntimeMcpServer {
         &self,
         Extension(parts): Extension<Parts>,
     ) -> Result<Json<McpMeOutput>, ErrorData> {
-        let started = std::time::Instant::now();
-        let result = crate::mcp::tools::me::call(&self.state, &parts, McpToolset::Runtime).await;
-        crate::mcp::tools::audit::record_tool_result(&self.state, &parts, "me", started, &result)
-            .await;
-        result
+        crate::audit::mcp::record_tool(
+            self.state.audit.as_ref(),
+            &parts,
+            "me",
+            crate::mcp::tools::me::call(&self.state, &parts, McpToolset::Runtime),
+        )
+        .await
     }
 
     #[tool(
@@ -73,17 +74,13 @@ impl RuntimeMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<ListCredentialsInput>,
     ) -> Result<Json<CredentialListOutput>, ErrorData> {
-        let started = std::time::Instant::now();
-        let result = crate::mcp::tools::credentials::list(&self.state, &parts, input).await;
-        crate::mcp::tools::audit::record_tool_result(
-            &self.state,
+        crate::audit::mcp::record_tool(
+            self.state.audit.as_ref(),
             &parts,
             "credential.list",
-            started,
-            &result,
+            crate::mcp::tools::credentials::list(&self.state, &parts, input),
         )
-        .await;
-        result
+        .await
     }
 
     #[tool(
@@ -95,17 +92,13 @@ impl RuntimeMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<ApiCallInput>,
     ) -> Result<Json<ApiCallOutput>, ErrorData> {
-        let started = std::time::Instant::now();
-        let result = crate::mcp::tools::api_call::call(&self.state, &parts, input).await;
-        crate::mcp::tools::audit::record_tool_result(
-            &self.state,
+        crate::audit::mcp::record_tool(
+            self.state.audit.as_ref(),
             &parts,
             "api.call",
-            started,
-            &result,
+            crate::mcp::tools::api_call::call(&self.state, &parts, input),
         )
-        .await;
-        result
+        .await
     }
 
     #[tool(
@@ -117,17 +110,13 @@ impl RuntimeMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<SqlQueryInput>,
     ) -> Result<Json<SqlQueryOutput>, ErrorData> {
-        let started = std::time::Instant::now();
-        let result = crate::mcp::tools::sql_query::call(&self.state, &parts, input).await;
-        crate::mcp::tools::audit::record_tool_result(
-            &self.state,
+        crate::audit::mcp::record_tool(
+            self.state.audit.as_ref(),
             &parts,
             "sql.query",
-            started,
-            &result,
+            crate::mcp::tools::sql_query::call(&self.state, &parts, input),
         )
-        .await;
-        result
+        .await
     }
 
     #[tool(
@@ -139,17 +128,13 @@ impl RuntimeMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<SqlSchemaInput>,
     ) -> Result<Json<SqlSchemaOutput>, ErrorData> {
-        let started = std::time::Instant::now();
-        let result = crate::mcp::tools::sql_schema::call(&self.state, &parts, input).await;
-        crate::mcp::tools::audit::record_tool_result(
-            &self.state,
+        crate::audit::mcp::record_tool(
+            self.state.audit.as_ref(),
             &parts,
             "sql.schema",
-            started,
-            &result,
+            crate::mcp::tools::sql_schema::call(&self.state, &parts, input),
         )
-        .await;
-        result
+        .await
     }
 }
 
@@ -181,11 +166,13 @@ impl AdminMcpServer {
         &self,
         Extension(parts): Extension<Parts>,
     ) -> Result<Json<McpMeOutput>, ErrorData> {
-        let started = std::time::Instant::now();
-        let result = crate::mcp::tools::me::call(&self.state, &parts, McpToolset::Admin).await;
-        crate::mcp::tools::audit::record_tool_result(&self.state, &parts, "me", started, &result)
-            .await;
-        result
+        crate::audit::mcp::record_tool(
+            self.state.audit.as_ref(),
+            &parts,
+            "me",
+            crate::mcp::tools::me::call(&self.state, &parts, McpToolset::Admin),
+        )
+        .await
     }
 
     #[tool(
@@ -197,17 +184,13 @@ impl AdminMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<ListCredentialsInput>,
     ) -> Result<Json<CredentialListOutput>, ErrorData> {
-        let started = std::time::Instant::now();
-        let result = crate::mcp::tools::credentials::list(&self.state, &parts, input).await;
-        crate::mcp::tools::audit::record_tool_result(
-            &self.state,
+        crate::audit::mcp::record_tool(
+            self.state.audit.as_ref(),
             &parts,
             "credential.list",
-            started,
-            &result,
+            crate::mcp::tools::credentials::list(&self.state, &parts, input),
         )
-        .await;
-        result
+        .await
     }
 
     #[tool(
@@ -219,18 +202,13 @@ impl AdminMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<RegisterHttpCredentialInput>,
     ) -> Result<Json<RegisterCredentialOutput>, ErrorData> {
-        let started = std::time::Instant::now();
-        let result =
-            crate::mcp::tools::credentials::register_http(&self.state, &parts, input).await;
-        crate::mcp::tools::audit::record_tool_result(
-            &self.state,
+        crate::audit::mcp::record_tool(
+            self.state.audit.as_ref(),
             &parts,
             "credential.register_http",
-            started,
-            &result,
+            crate::mcp::tools::credentials::register_http(&self.state, &parts, input),
         )
-        .await;
-        result
+        .await
     }
 
     #[tool(
@@ -242,17 +220,13 @@ impl AdminMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<RegisterSqlCredentialInput>,
     ) -> Result<Json<RegisterCredentialOutput>, ErrorData> {
-        let started = std::time::Instant::now();
-        let result = crate::mcp::tools::credentials::register_sql(&self.state, &parts, input).await;
-        crate::mcp::tools::audit::record_tool_result(
-            &self.state,
+        crate::audit::mcp::record_tool(
+            self.state.audit.as_ref(),
             &parts,
             "credential.register_sql",
-            started,
-            &result,
+            crate::mcp::tools::credentials::register_sql(&self.state, &parts, input),
         )
-        .await;
-        result
+        .await
     }
 
     #[tool(
@@ -264,17 +238,13 @@ impl AdminMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<UpdateCredentialInput>,
     ) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
-        let started = std::time::Instant::now();
-        let result = crate::mcp::tools::credentials::update_http(&self.state, &parts, input).await;
-        crate::mcp::tools::audit::record_tool_result(
-            &self.state,
+        crate::audit::mcp::record_tool(
+            self.state.audit.as_ref(),
             &parts,
             "credential.update_http",
-            started,
-            &result,
+            crate::mcp::tools::credentials::update_http(&self.state, &parts, input),
         )
-        .await;
-        result
+        .await
     }
 
     #[tool(
@@ -286,17 +256,13 @@ impl AdminMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<UpdateCredentialInput>,
     ) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
-        let started = std::time::Instant::now();
-        let result = crate::mcp::tools::credentials::update_sql(&self.state, &parts, input).await;
-        crate::mcp::tools::audit::record_tool_result(
-            &self.state,
+        crate::audit::mcp::record_tool(
+            self.state.audit.as_ref(),
             &parts,
             "credential.update_sql",
-            started,
-            &result,
+            crate::mcp::tools::credentials::update_sql(&self.state, &parts, input),
         )
-        .await;
-        result
+        .await
     }
 
     #[tool(
@@ -308,17 +274,13 @@ impl AdminMcpServer {
         Extension(parts): Extension<Parts>,
         input: Parameters<DeleteCredentialInput>,
     ) -> Result<Json<DeleteCredentialOutput>, ErrorData> {
-        let started = std::time::Instant::now();
-        let result = crate::mcp::tools::credentials::delete(&self.state, &parts, input).await;
-        crate::mcp::tools::audit::record_tool_result(
-            &self.state,
+        crate::audit::mcp::record_tool(
+            self.state.audit.as_ref(),
             &parts,
             "credential.delete",
-            started,
-            &result,
+            crate::mcp::tools::credentials::delete(&self.state, &parts, input),
         )
-        .await;
-        result
+        .await
     }
 }
 
@@ -360,7 +322,7 @@ pub async fn mcp_admin_handler(State(state): State<AppState>, request: Request<B
         return mcp_auth_response(&state, AuthError::Internal);
     };
     if !caller.role.is_admin() {
-        record_mcp_admin_denied(&state, caller).await;
+        crate::audit::mcp::record_admin_denied(&state.audit, caller).await;
         return mcp_auth_response_with_status(
             &state,
             AuthError::InsufficientRole,
@@ -395,45 +357,18 @@ async fn verify_mcp_request(
             metadata.user_agent.clone(),
         ),
         Err(error) => {
-            crate::auth::audit::record_auth_denied(&state.audit, "mcp", &metadata, &error).await;
+            crate::audit::auth::record_auth_denied(
+                &state.audit,
+                opsgate_domain::Channel::Mcp,
+                &metadata,
+                &error,
+            )
+            .await;
             return Err(error);
         }
     };
     parts.extensions.insert(caller);
     Ok(Request::from_parts(parts, body))
-}
-
-async fn record_mcp_admin_denied(state: &AppState, caller: &Caller) {
-    let params = mcp_admin_denied_audit_params(caller);
-    if let Err(error) = state.audit.append(params).await {
-        tracing::error!(event = "mcp.auth.audit_failed", detail = %error);
-    }
-}
-
-fn mcp_admin_denied_audit_params(caller: &Caller) -> AuditLogParams {
-    let detail = serde_json::json!({
-        "schema_version": 1,
-        "denial_reason": "required_role",
-        "required_role": "admin",
-        "actor_role": caller.role.as_str(),
-        "sub": caller.user.sub.clone(),
-    });
-    AuditLogParams {
-        action: "mcp.auth.denied".to_owned(),
-        channel: "mcp".to_owned(),
-        outcome: "denied".to_owned(),
-        severity: "warning".to_owned(),
-        actor_user_id: Some(caller.user.id),
-        actor_role: Some(caller.role.as_str().to_owned()),
-        actor_ip: caller.remote_ip.clone(),
-        actor_user_agent: caller.user_agent.clone(),
-        target_type: Some("identity".to_owned()),
-        target_id: Some(caller.user.id.to_string()),
-        target_key: Some(caller.user.sub.clone()),
-        request_id: caller.request_id.clone(),
-        purpose: None,
-        detail,
-    }
 }
 
 fn streamable_config() -> StreamableHttpServerConfig {
@@ -471,7 +406,7 @@ mod tests {
     use serde_json::Value;
     use uuid::Uuid;
 
-    use super::{AdminMcpServer, RuntimeMcpServer, mcp_admin_denied_audit_params};
+    use super::{AdminMcpServer, RuntimeMcpServer};
 
     #[test]
     fn runtime_and_admin_tool_surfaces_match_go_smoke_contract() {
@@ -551,7 +486,7 @@ mod tests {
             user_agent: Some("opsgate-test".to_owned()),
         };
 
-        let params = mcp_admin_denied_audit_params(&caller);
+        let params = crate::audit::mcp::admin_denied_event(&caller).into_params();
 
         assert_eq!(params.action, "mcp.auth.denied");
         assert_eq!(params.outcome, "denied");

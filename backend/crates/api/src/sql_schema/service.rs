@@ -5,9 +5,9 @@ use std::time::Instant;
 use opsgate_core::net::ssrf::is_blocked_target_ip;
 use opsgate_core::validation::{trim_required, validate_purpose};
 use opsgate_core::{Error, Result};
-use opsgate_db::{AuditLogParams, AuditRepo, CredentialRepo};
+use opsgate_db::{AuditRepo, CredentialRepo};
+use opsgate_domain::Caller;
 use opsgate_domain::credential::{Credential, CredentialCategory};
-use opsgate_domain::{Caller, Channel};
 use schemars::JsonSchema;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
@@ -139,13 +139,12 @@ impl SqlSchemaService {
         reason: &str,
         error: &Error,
     ) {
-        if let Err(error) = self
-            .audit
-            .append(pre_input_denial_audit_params(caller, alias, reason, error))
-            .await
-        {
-            tracing::error!(event = "sql.schema.audit_failed", detail = %error);
-        }
+        crate::audit::append_event(
+            &self.audit,
+            pre_input_denial_audit_event(caller, alias, reason, error),
+            "sql.schema.audit_failed",
+        )
+        .await;
     }
 }
 
@@ -796,27 +795,17 @@ impl<'a> SchemaRecorder<'a> {
         error_message: Option<&str>,
         output: Option<&SqlSchemaOutput>,
     ) {
-        let channel = channel_str(self.caller.channel).to_owned();
         let credential = self.credential.as_ref();
-        let params = AuditLogParams {
-            action: format!("{channel}.sql.schema"),
-            channel,
-            outcome: outcome.to_owned(),
-            severity: if outcome == "ok" { "info" } else { "warning" }.to_owned(),
-            actor_user_id: Some(self.caller.user.id),
-            actor_role: Some(self.caller.role.as_str().to_owned()),
-            actor_ip: self.caller.remote_ip.clone(),
-            actor_user_agent: self.caller.user_agent.clone(),
-            target_type: Some("credential".to_owned()),
-            target_id: credential.map(|credential| credential.id.to_string()),
-            target_key: Some(
-                credential
-                    .map(|credential| credential.alias.clone())
-                    .unwrap_or_else(|| self.input.alias.clone()),
-            ),
-            request_id: self.caller.request_id.clone(),
-            purpose: Some(self.input.purpose.clone()),
-            detail: audit_detail(
+        let event = crate::audit::runtime::tool_event(
+            self.caller,
+            "sql.schema",
+            outcome,
+            credential.map(|credential| credential.id.to_string()),
+            credential
+                .map(|credential| credential.alias.clone())
+                .unwrap_or_else(|| self.input.alias.clone()),
+            Some(self.input.purpose.clone()),
+            audit_detail(
                 self.input,
                 credential,
                 outcome,
@@ -824,10 +813,8 @@ impl<'a> SchemaRecorder<'a> {
                 error_message,
                 output,
             ),
-        };
-        if let Err(error) = self.audit.append(params).await {
-            tracing::error!(event = "sql.schema.audit_failed", detail = %error);
-        }
+        );
+        crate::audit::append_event(self.audit, event, "sql.schema.audit_failed").await;
     }
 }
 
@@ -933,43 +920,22 @@ fn safe_audit_message(value: &str) -> String {
     value.replace(['\r', '\n'], " ").chars().take(512).collect()
 }
 
-fn pre_input_denial_audit_params(
+fn pre_input_denial_audit_event(
     caller: &Caller,
     alias: &str,
     reason: &str,
     error: &Error,
-) -> AuditLogParams {
-    let channel = channel_str(caller.channel).to_owned();
-    let mut detail = serde_json::Map::new();
-    detail.insert("schema_version".to_owned(), serde_json::json!(1));
-    detail.insert("denial_reason".to_owned(), serde_json::json!(reason));
-    detail.insert(
-        "error_message_safe".to_owned(),
-        serde_json::json!(safe_audit_message(&error.to_string())),
-    );
-    AuditLogParams {
-        action: format!("{channel}.sql.schema"),
-        channel,
-        outcome: "denied".to_owned(),
-        severity: "warning".to_owned(),
-        actor_user_id: Some(caller.user.id),
-        actor_role: Some(caller.role.as_str().to_owned()),
-        actor_ip: caller.remote_ip.clone(),
-        actor_user_agent: caller.user_agent.clone(),
-        target_type: Some("credential".to_owned()),
-        target_id: None,
-        target_key: Some(alias.to_owned()),
-        request_id: caller.request_id.clone(),
-        purpose: None,
-        detail: Value::Object(detail),
-    }
-}
-
-fn channel_str(channel: Channel) -> &'static str {
-    match channel {
-        Channel::Api => "api",
-        Channel::Mcp | Channel::Browser => "mcp",
-    }
+) -> crate::audit::AuditEvent {
+    crate::audit::runtime::pre_input_denial_event(
+        caller,
+        "sql.schema",
+        alias,
+        reason,
+        Some((
+            "error_message_safe",
+            serde_json::json!(safe_audit_message(&error.to_string())),
+        )),
+    )
 }
 
 fn require_executor(caller: &Caller) -> Result<()> {
@@ -1083,7 +1049,8 @@ mod tests {
         let caller = caller(Role::Viewer);
         let error = Error::forbidden("operator or admin role required");
 
-        let audit = pre_input_denial_audit_params(&caller, "analytics", "required_role", &error);
+        let audit = pre_input_denial_audit_event(&caller, "analytics", "required_role", &error)
+            .into_params();
         assert_eq!(audit.action, "mcp.sql.schema");
         assert_eq!(audit.outcome, "denied");
         assert_eq!(audit.target_key.as_deref(), Some("analytics"));

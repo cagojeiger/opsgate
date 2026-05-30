@@ -10,6 +10,7 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod api_call;
+mod audit;
 mod auth;
 mod credential;
 mod error;

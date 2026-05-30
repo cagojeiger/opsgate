@@ -9,9 +9,7 @@ use opsgate_core::validation::{
     validate_max_bytes, validate_purpose,
 };
 use opsgate_core::{Error, Result};
-use opsgate_db::{
-    ApiCallHistoryParams, ApiCallHistoryRepo, AuditLogParams, AuditRepo, CredentialRepo,
-};
+use opsgate_db::{ApiCallHistoryParams, ApiCallHistoryRepo, AuditRepo, CredentialRepo};
 use opsgate_domain::credential::{Credential, CredentialCategory, SecretHeader};
 use opsgate_domain::credential::{contains_fold, header_blocked};
 use opsgate_domain::{Caller, Channel};
@@ -200,13 +198,12 @@ impl ApiCallService {
         reason: &str,
         error: &Error,
     ) {
-        if let Err(error) = self
-            .audit
-            .append(pre_input_denial_audit_params(caller, alias, reason))
-            .await
-        {
-            tracing::error!(event = "api.call.audit_failed", detail = %error);
-        }
+        crate::audit::append_event(
+            &self.audit,
+            pre_input_denial_audit_event(caller, alias, reason),
+            "api.call.audit_failed",
+        )
+        .await;
         if let Err(error) = self
             .history
             .insert(pre_input_denial_history_params(
@@ -693,30 +690,18 @@ impl<'a> CallRecorder<'a> {
         output: Option<&ApiCallOutput>,
     ) {
         let credential = self.credential.as_ref();
-        let channel = channel_str(self.caller.channel).to_owned();
-        let params = AuditLogParams {
-            action: format!("{channel}.api.call"),
-            channel,
-            outcome: outcome.to_owned(),
-            severity: severity_for_outcome(outcome).to_owned(),
-            actor_user_id: Some(self.caller.user.id),
-            actor_role: Some(self.caller.role.as_str().to_owned()),
-            actor_ip: self.caller.remote_ip.clone(),
-            actor_user_agent: self.caller.user_agent.clone(),
-            target_type: Some("credential".to_owned()),
-            target_id: credential.map(|credential| credential.id.to_string()),
-            target_key: Some(
-                credential
-                    .map(|credential| credential.alias.clone())
-                    .unwrap_or_else(|| self.input.alias.clone()),
-            ),
-            request_id: self.caller.request_id.clone(),
-            purpose: Some(self.input.purpose.clone()),
-            detail: audit_detail(self.input, credential, outcome, error_kind, output),
-        };
-        if let Err(error) = self.audit.append(params).await {
-            tracing::error!(event = "api.call.audit_failed", detail = %error);
-        }
+        let event = crate::audit::runtime::tool_event(
+            self.caller,
+            "api.call",
+            outcome,
+            credential.map(|credential| credential.id.to_string()),
+            credential
+                .map(|credential| credential.alias.clone())
+                .unwrap_or_else(|| self.input.alias.clone()),
+            Some(self.input.purpose.clone()),
+            audit_detail(self.input, credential, outcome, error_kind, output),
+        );
+        crate::audit::append_event(self.audit, event, "api.call.audit_failed").await;
     }
 }
 
@@ -756,10 +741,6 @@ fn require_executor(caller: &Caller) -> Result<()> {
     } else {
         Err(Error::forbidden("operator or admin role required"))
     }
-}
-
-fn severity_for_outcome(outcome: &str) -> &'static str {
-    if outcome == "ok" { "info" } else { "warning" }
 }
 
 fn audit_detail(
@@ -838,27 +819,12 @@ fn safe_history_message(value: &str) -> String {
 
 /// Audit row for a pre-normalization denial. Records only the channel, the
 /// (pre-sanitized) alias, and denial reason — never the raw input.
-fn pre_input_denial_audit_params(caller: &Caller, alias: &str, reason: &str) -> AuditLogParams {
-    let channel = channel_str(caller.channel).to_owned();
-    let mut detail = serde_json::Map::new();
-    detail.insert("schema_version".to_owned(), serde_json::json!(1));
-    detail.insert("denial_reason".to_owned(), serde_json::json!(reason));
-    AuditLogParams {
-        action: format!("{channel}.api.call"),
-        channel,
-        outcome: "denied".to_owned(),
-        severity: "warning".to_owned(),
-        actor_user_id: Some(caller.user.id),
-        actor_role: Some(caller.role.as_str().to_owned()),
-        actor_ip: caller.remote_ip.clone(),
-        actor_user_agent: caller.user_agent.clone(),
-        target_type: Some("credential".to_owned()),
-        target_id: None,
-        target_key: Some(alias.to_owned()),
-        request_id: caller.request_id.clone(),
-        purpose: None,
-        detail: Value::Object(detail),
-    }
+fn pre_input_denial_audit_event(
+    caller: &Caller,
+    alias: &str,
+    reason: &str,
+) -> crate::audit::AuditEvent {
+    crate::audit::runtime::pre_input_denial_event(caller, "api.call", alias, reason, None)
 }
 
 /// History row for a pre-normalization denial. `error_message_safe` carries the
@@ -1145,7 +1111,7 @@ mod tests {
         assert!(history.method.is_empty());
         assert_eq!(history.status_code, None);
 
-        let audit = pre_input_denial_audit_params(&caller, "prod", "bad_input");
+        let audit = pre_input_denial_audit_event(&caller, "prod", "bad_input").into_params();
         assert_eq!(audit.outcome, "denied");
         assert_eq!(audit.action, "mcp.api.call");
         assert!(audit.purpose.is_none());
@@ -1167,7 +1133,7 @@ mod tests {
         assert_eq!(history.credential_alias, "prod");
         assert!(history.method.is_empty());
 
-        let audit = pre_input_denial_audit_params(&caller, "prod", "required_role");
+        let audit = pre_input_denial_audit_event(&caller, "prod", "required_role").into_params();
         assert_eq!(audit.outcome, "denied");
         assert_eq!(
             audit.detail.get("denial_reason"),
