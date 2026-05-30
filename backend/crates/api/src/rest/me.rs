@@ -15,7 +15,7 @@ struct MeOutput {
     name: String,
 }
 
-pub fn routes() -> Router<AppState> {
+pub(crate) fn routes() -> Router<AppState> {
     Router::new().route("/v1/me", get(get_me))
 }
 

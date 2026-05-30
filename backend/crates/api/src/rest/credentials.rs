@@ -14,7 +14,7 @@ use crate::credential::{
 use crate::error::ApiError;
 use crate::state::AppState;
 
-pub fn routes() -> Router<AppState> {
+pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/v1/credentials", get(list).post(register))
         .route("/v1/credentials/{alias}", delete(remove))
