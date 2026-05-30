@@ -4,7 +4,7 @@
 HTTP/JSON 응답을 다루지만, `sql.query`는 Postgres 데이터베이스에 대해
 읽기 전용 SQL을 실행하고 결과 행렬을 작은 JSON envelope으로 변환합니다.
 
-`sql.query`의 목표는 LLM이 DB password와 endpoint를 보지 않은 채 등록된
+`sql.query`의 목표는 LLM이 DB password와 `database_url`을 보지 않은 채 등록된
 Postgres credential을 안전하게 사용하고, 필요한 만큼만 결과를 가져오게
 하는 것입니다.
 
@@ -26,7 +26,7 @@ column-oriented JSON으로 전치한 뒤 `api.call`과 같은 JSON 출력 공통
 
 ```text
 secret leak
-endpoint leak
+database_url leak
 query text stored in history
 SQL params values stored in history
 result values stored in history
@@ -161,7 +161,7 @@ policy의 `max_rows`/`max_bytes`/`timeout_ms`가 0이면 cap이 없는 것으로
 통과 후 보장:
 
 ```text
-LLM still has no DB endpoint
+LLM still has no database_url
 LLM still has no password
 request budget is inside SQL policy
 ```
@@ -170,7 +170,7 @@ request budget is inside SQL policy
 
 ```text
 opsgate has no general schema whitelist policy.
-The database endpoint selects the database boundary.
+The registered database_url selects the database boundary.
 The DB role grants decide which tables are reachable.
 ```
 
@@ -218,7 +218,7 @@ Postgres read-only transaction입니다.
 불변조건:
 
 ```text
-endpoint only from credential row
+database_url only from credential row
 password only from sealed secret
 execution uses Postgres read-only transaction
 timeout enforced
@@ -299,8 +299,8 @@ query text
 params values
 result values
 secret values
-endpoint URL
-raw driver error with endpoint/secret risk
+database_url
+raw driver error with database_url/secret risk
 ```
 
 ## Current closure assessment

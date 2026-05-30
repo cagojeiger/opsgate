@@ -6,7 +6,7 @@
 /mcp
 ```
 
-목적: `category=http` credential을 통해 등록된 HTTPS API를 호출합니다.
+목적: `category=http` credential을 통해 등록된 HTTP API를 호출합니다. 호출자는 전체 target URL을 보지 않고 `request_path`만 제공합니다.
 
 응답 truncation, JSONPath projection, 토큰 예산 규칙은
 [JSON 출력과 토큰 예산 스펙](../json-output.md)에 정의합니다.
@@ -18,7 +18,7 @@
   "alias": "prod-k8s",
   "purpose": "Check pod phases before summarizing cluster health",
   "method": "GET",
-  "path": "/api/v1/pods",
+  "request_path": "/api/v1/pods",
   "query": {"limit": "100"},
   "headers": {"Accept": "application/json"},
   "body": null,
@@ -32,7 +32,7 @@
 
 - `alias`
 - `purpose`
-- `path`
+- `request_path`
 
 제약:
 
@@ -72,7 +72,7 @@
   거부됩니다. audit/history에는 credential metadata 스냅샷이 남지만
   secret/body/value 데이터는 절대 남지 않습니다.
 - method는 `policy.allowed_methods`에 포함되어야 합니다.
-- path는 `policy.allowed_path_prefixes`와 일치해야 합니다.
+- `request_path`는 `policy.allowed_request_path_prefixes`와 일치해야 합니다. 실제 호출 경로는 credential에 저장된 숨겨진 `base_path`와 `request_path`를 조합해 만듭니다.
 - `policy.denied_query_keys`에 나열된 query key는 거부됩니다.
 - 호출자 header는 `policy.allowed_request_headers`에 등록되지 않으면 거부됩니다.
 - Auth, cookie, host, hop-by-hop, `X-Forwarded-*`, `Content-Type` request
@@ -135,6 +135,7 @@ LLM 가이드:
 - `suggested_max_bytes`는 대상 서버의 공백 포함 원본 응답 크기가 아니라
   opsgate가 반환할 compact JSON body 기준입니다.
 - 일부 Kubernetes의 읽기성 API는 POST이며, 그래도 POST policy가 필요합니다.
+- `origin=https://k8s.example.com`, `base_path=/cluster-a`, `request_path=/api/v1/pods`이면 실제 호출 URL은 `https://k8s.example.com/cluster-a/api/v1/pods`입니다. LLM은 `origin`과 `base_path`를 직접 보지 않습니다.
 
 JSONPath 예시:
 
@@ -143,7 +144,7 @@ JSONPath 예시:
   "alias": "prod-k8s",
   "purpose": "List running pod names",
   "method": "GET",
-  "path": "/api/v1/pods",
+  "request_path": "/api/v1/pods",
   "jsonpath": [
     "$.items[?(@.status.phase == 'Running')].metadata.name"
   ]

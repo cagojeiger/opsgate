@@ -51,7 +51,7 @@ identity:
 
 credential/policy:
   alias/category/provider mismatch를 거절한다.
-  policy 밖 method/path/header/query/SQL 실행을 거절한다.
+  policy 밖 method/request_path/header/query/SQL 실행을 거절한다.
 
 target execution:
   timeout, SSRF, read-only transaction, redirect, DNS rebinding을 방어한다.
@@ -61,7 +61,7 @@ response envelope:
   SQL 결과는 column-oriented body와 byte budget으로 작게 반환한다.
 
 audit/history:
-  body, secret, endpoint, query value, SQL params value를 저장하지 않는다.
+  body, secret, target URL, query value, SQL params value를 저장하지 않는다.
 
 future cache:
   원본 body를 저장하지 않는다.
@@ -400,7 +400,7 @@ default limit 50
 max limit 100
 cursor pagination
 fields projection
-secret/endpoint 미반환
+secret/target URL 미반환
 ```
 
 현재 상태:
@@ -426,12 +426,12 @@ call-time dial에서도 재검증
 구현/TC 존재.
 ```
 
-### WC-CRED-02: update로 secret/endpoint 변경 시도
+### WC-CRED-02: update로 secret/target URL 변경 시도
 
 기대:
 
 ```text
-update input 자체에 secret/endpoint 필드 없음
+update input 자체에 secret/target URL 필드 없음
 secret rotation/target change는 delete + register
 ```
 
@@ -538,7 +538,7 @@ sql.query(alias=<http credential>)
 denied
 error_kind/denial reason identifies wrong credential category/provider
 history keeps credential id/alias/category/provider/env snapshot
-history still stores no body/query/params/result/secret/endpoint values
+history still stores no body/query/params/result/secret/target URL values
 ```
 
 현재 상태:

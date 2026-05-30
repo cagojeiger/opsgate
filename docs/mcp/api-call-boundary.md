@@ -3,7 +3,7 @@
 이 문서는 `api.call` 고유의 닫힌 boundary 모델을 정의합니다. `sql.query`는
 다른 실행 모델을 가지므로 여기서 다루지 않습니다.
 
-`api.call`의 목표는 LLM이 secret과 endpoint를 보지 않은 채 등록된 HTTP
+`api.call`의 목표는 LLM이 secret과 target URL 구성값(`origin`, `base_path`)을 보지 않은 채 등록된 HTTP
 credential을 안전하게 사용하는 것입니다.
 
 닫힌 종료 상태는 네 가지뿐이어야 합니다.
@@ -21,7 +21,7 @@ credential을 안전하게 사용하는 것입니다.
 partial JSON
 huge body
 secret leak
-endpoint leak
+target URL leak
 request/response body stored in history
 query/header values stored in history
 unbounded preview
@@ -62,7 +62,7 @@ LLM이 준 입력이 api.call 표면에 들어와도 되는 모양인지 확인
 alias
 purpose
 method
-path
+request_path
 query
 headers
 body
@@ -80,8 +80,8 @@ purpose length 8-512
 purpose CR/LF denied
 method in GET/POST/PUT/PATCH/DELETE
 GET body denied
-path starts with /
-path cannot contain .., //, ?, #
+request_path starts with /
+request_path cannot contain .., //, ?, #
 max_bytes range 256..1MiB
 jsonpath max 16
 jsonpath max length 512
@@ -165,7 +165,7 @@ credential lookup by owner_user_id + alias
 category=http 확인
 policy parse
 method allow-list
-path prefix allow-list
+request_path prefix allow-list
 denied query key
 caller header allow-list
 secret header override check
@@ -177,7 +177,7 @@ secret header override check
 credential not found -> denied
 category != http -> denied
 method not allowed -> denied
-path not allowed -> denied
+request_path not allowed -> denied
 denied query key present -> denied
 caller header not allow-listed -> denied
 blocked header -> denied
@@ -187,7 +187,7 @@ caller header cannot override sealed secret header
 통과 후 보장:
 
 ```text
-LLM still has no endpoint
+LLM still has no target URL 구성값
 LLM still has no secret
 request is inside credential HTTP policy
 ```
@@ -200,7 +200,7 @@ api.call wrong-category denial keeps credential metadata snapshot
 api.call rejects denied query key
 api.call rejects disallowed caller header
 api.call rejects secret header override
-api.call rejects method/path outside policy
+api.call rejects method/request_path outside policy
 ```
 
 ## 4. target execution boundary
@@ -215,10 +215,10 @@ api.call rejects method/path outside policy
 
 ```text
 sealed secret decrypt
-target URL build from stored endpoint + validated path/query
+target URL build from stored origin/base_path + validated request_path/query
 default Accept: application/json
 caller headers attach
-Content-Type set only through content_type/body path
+Content-Type set only when content_type/body requires it
 secret headers attach after caller headers
 HTTP client selection
 SSRF guarded dial
@@ -230,7 +230,7 @@ response body hard cap read
 불변조건:
 
 ```text
-endpoint only from credential row
+origin/base_path only from credential row
 redirect blocked
 allow_private_network=false blocks private/link-local/loopback/cloud metadata
 call-time DNS/dial guard closes DNS rebinding window
@@ -317,7 +317,7 @@ channel
 request_id
 credential id/alias/category/provider/env snapshot
 method
-path
+request_path
 query key names
 caller request header names
 jsonpath projection keys (`api_call_history.projection_keys`)
@@ -341,7 +341,7 @@ response body
 query values
 header values
 secret values
-endpoint URL
+target URL
 raw transport error with URL/secret risk
 ```
 
@@ -350,7 +350,7 @@ P0 TC:
 ```text
 api.call history stores projection keys but not body
 api.call history stores query/header keys but not values
-api.call audit stores purpose/method/path/outcome but not body
+api.call audit stores purpose/method/request_path/outcome but not body
 api.call truncation history has truncated=true and no response body
 api.call wrong-category denial stores credential snapshot but no secret/body/value
 ```

@@ -59,7 +59,7 @@
 - `alias`
 - `category`
 - `provider`
-- `endpoint`
+- `database_url`
 - username
 - password
 

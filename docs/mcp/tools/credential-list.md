@@ -41,7 +41,7 @@ Output:
       "tags": ["cluster", "prod"],
       "policy": {
         "allowed_methods": ["GET"],
-        "allowed_path_prefixes": ["/api/v1"],
+        "allowed_request_path_prefixes": ["/api/v1"],
         "denied_query_keys": ["watch"],
         "allowed_request_headers": []
       }
@@ -60,7 +60,7 @@ Rules:
 
 - `alias`는 항상 반환됩니다.
 - secret은 절대 반환하지 않습니다.
-- endpoint는 절대 반환하지 않습니다.
+- target URL 구성값(`origin`, `base_path`, `database_url`)은 절대 반환하지 않습니다.
 - 삭제된 credential은 반환하지 않습니다.
 - 호출자 본인의 credential만 보이며, 다른 사용자의 credential은 볼 수 없습니다.
 - `limit`의 기본값은 50이며 최대 100으로 제한됩니다.

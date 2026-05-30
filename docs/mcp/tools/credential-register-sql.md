@@ -14,7 +14,7 @@ Input:
 {
   "provider": "postgres",
   "alias": "analytics-db",
-  "endpoint": "postgres://db.example.invalid:5432/analytics?sslmode=require",
+  "database_url": "postgres://db.example.invalid:5432/analytics?sslmode=require",
   "username": "readonly_user",
   "password": "...",
   "description": "Analytics read model",
@@ -29,14 +29,15 @@ Input:
     "allow_explain_analyze": false,
     "denied_functions": []
   },
-  "allow_private_network": false
+  "allow_private_network": false,
+  "allow_insecure_transport": false
 }
 ```
 
 Required:
 
 - `alias`
-- `endpoint`
+- `database_url`
 - `username`
 - `password`
 - `policy`
@@ -59,14 +60,15 @@ Rules:
 
 - `provider`의 기본값은 `postgres`입니다.
 - `policy={}`는 유효합니다.
-- endpoint가 데이터베이스 경계를 선택합니다.
-- endpoint에는 username이나 password를 포함하면 안 됩니다.
+- `database_url`이 데이터베이스 경계를 선택합니다.
+- `database_url`에는 username이나 password를 포함하면 안 됩니다.
 - username/password는 봉인(sealed)되며 절대 반환하지 않습니다.
 - opsgate는 일반적인 데이터 경계로 LLM에게 데이터베이스 schema를 고르게 하지
   않습니다.
-- 데이터 도달 범위는 endpoint의 데이터베이스와 DB role grant로 제어합니다.
+- 데이터 도달 범위는 `database_url`의 데이터베이스와 DB role grant로 제어합니다.
 - SQL policy는 row/byte/timeout, metadata, EXPLAIN, denied function 동작을
   제어합니다.
-- 봉인된 secret/endpoint는 등록 후 변경할 수 없습니다. secret rotation이나
+- 기본적으로 `sslmode=require`가 필요합니다. `sslmode=verify-full`은 현재 guarded SQL target에서 지원하지 않으므로 거부됩니다. 내부/비TLS 연결은 `allow_private_network=true`와 `allow_insecure_transport=true`를 둘 다 켠 경우에만 허용됩니다.
+- 봉인된 secret과 target `database_url`은 등록 후 변경할 수 없습니다. secret rotation이나
   데이터베이스 대상 변경은 delete 후 재등록으로 처리하며,
   `credential.update_sql`은 metadata와 policy만 수정합니다.

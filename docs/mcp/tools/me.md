@@ -49,7 +49,7 @@ Notes:
 - `/mcp`는 runtime 도구만 노출하고, `/mcp/admin`은 credential 관리 도구를
   노출합니다.
 - alias는 반환하지 않습니다.
-- endpoint는 반환하지 않습니다.
+- target URL 구성값(`origin`, `base_path`, `database_url`)은 반환하지 않습니다.
 - secret은 반환하지 않습니다.
 - `credential_summary`는 catalog의 대략적인 규모를 가늠하는 용도로만 사용하세요.
 - 구체적인 alias와 policy는 `credential.list`로 확인하세요.

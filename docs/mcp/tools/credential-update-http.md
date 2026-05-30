@@ -19,7 +19,7 @@
   "tags": ["cluster", "prod"],
   "policy": {
     "allowed_methods": ["GET", "POST"],
-    "allowed_path_prefixes": ["/api/v1", "/apis"],
+    "allowed_request_path_prefixes": ["/api/v1", "/apis"],
     "denied_query_keys": ["watch"],
     "allowed_request_headers": ["Accept", "X-Request-Id"]
   }
@@ -59,10 +59,12 @@
 - `alias`
 - `category`
 - `provider`
-- `endpoint`
+- `origin`
+- `base_path`
 - 봉인된 시크릿 헤더
 - `tls_server_ca`
 - `allow_private_network`
+- `allow_insecure_transport`
 
 참고:
 

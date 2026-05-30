@@ -4,7 +4,7 @@ opsgate `0.1.0` MCP surface의 인덱스 문서입니다.
 
 opsgate는 LLM 클라이언트를 위한 policy-gated credential broker입니다. LLM은
 credential의 alias, metadata, policy만 봅니다. opsgate는 secret과 target
-endpoint를 숨긴 채, category별 전용 도구를 통해 HTTP 또는 SQL 호출을 대신
+URL 구성값을 숨긴 채, category별 전용 도구를 통해 HTTP 또는 SQL 호출을 대신
 수행합니다.
 
 ## Surfaces
@@ -51,8 +51,8 @@ LLM에 보이는 것:
 
 숨겨지는 것:
 
-- HTTP endpoint URL
-- Postgres endpoint URL
+- HTTP target 구성값(`origin`, `base_path`)
+- Postgres `database_url`
 - bearer token, API key, password, secret header 값
 - request/response body history
 - history에 남는 SQL parameter 값
