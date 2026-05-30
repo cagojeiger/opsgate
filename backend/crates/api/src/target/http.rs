@@ -15,7 +15,7 @@ const CLIENT_CACHE_IDLE_TTL: Duration = Duration::from_secs(10 * 60);
 type DnsError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Clone)]
-pub struct TargetHttpClients {
+pub(crate) struct TargetHttpClients {
     private_allowed: reqwest::Client,
     guarded_no_ca: reqwest::Client,
     timeout: Duration,
@@ -23,7 +23,7 @@ pub struct TargetHttpClients {
 }
 
 impl TargetHttpClients {
-    pub fn new(timeout: Duration) -> Result<Self> {
+    pub(crate) fn new(timeout: Duration) -> Result<Self> {
         Ok(Self {
             private_allowed: build_client(timeout, None, false)?,
             guarded_no_ca: build_client(timeout, None, true)?,
@@ -32,7 +32,7 @@ impl TargetHttpClients {
         })
     }
 
-    pub fn request_for(
+    pub(crate) fn request_for(
         &self,
         credential: &Credential,
         tls_ca: Option<&[u8]>,
