@@ -3,10 +3,10 @@ pub(crate) mod extractor;
 pub(crate) mod middleware;
 mod verify;
 
-pub use error::{
+pub(crate) use error::{
     AuthError, auth_error_body, auth_error_response, shared_scoped_challenge_header,
     status_for_error,
 };
-pub use extractor::extract_bearer;
-pub use middleware::require_bearer;
-pub use verify::{verify_bearer, verify_bearer_mcp};
+pub(crate) use extractor::extract_bearer;
+pub(crate) use middleware::require_bearer;
+pub(crate) use verify::{verify_bearer, verify_bearer_mcp};
