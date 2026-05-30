@@ -50,8 +50,7 @@ impl SqlSchemaService {
         let input = match normalize_input(input) {
             Ok(input) => input,
             Err(error) => {
-                self.record_pre_input_denial(caller, &raw_alias, "bad_input", &error)
-                    .await;
+                self.record_bad_input(caller, &raw_alias, &error).await;
                 return Err(error);
             }
         };
@@ -123,16 +122,15 @@ impl SqlSchemaService {
         Ok(output)
     }
 
-    async fn record_pre_input_denial(
-        &self,
-        caller: &Caller,
-        alias: &str,
-        reason: &str,
-        error: &Error,
-    ) {
+    async fn record_bad_input(&self, caller: &Caller, alias: &str, _error: &Error) {
+        self.record_pre_input_denial(caller, alias, "bad_input")
+            .await;
+    }
+
+    async fn record_pre_input_denial(&self, caller: &Caller, alias: &str, reason: &str) {
         crate::audit::append_event(
             &self.audit,
-            pre_input_denial_audit_event(caller, alias, reason, error),
+            pre_input_denial_audit_event(caller, alias, reason),
             "sql.schema.audit_failed",
         )
         .await;
@@ -719,7 +717,7 @@ impl<'a> SchemaRecorder<'a> {
         &self,
         outcome: &str,
         error_kind: Option<&str>,
-        error_message: Option<&str>,
+        _error_message: Option<&str>,
         output: Option<&SqlSchemaOutput>,
     ) {
         let credential = self.credential.as_ref();
@@ -732,14 +730,7 @@ impl<'a> SchemaRecorder<'a> {
                 .map(|credential| credential.alias.clone())
                 .unwrap_or_else(|| self.input.alias.clone()),
             Some(self.input.purpose.clone()),
-            audit_detail(
-                self.input,
-                credential,
-                outcome,
-                error_kind,
-                error_message,
-                output,
-            ),
+            audit_detail(self.input, credential, outcome, error_kind, output),
         );
         crate::audit::append_event(self.audit, event, "sql.schema.audit_failed").await;
     }
@@ -750,7 +741,6 @@ fn audit_detail(
     credential: Option<&CredentialSnapshot>,
     outcome: &str,
     error_kind: Option<&str>,
-    error_message: Option<&str>,
     output: Option<&SqlSchemaOutput>,
 ) -> Value {
     let mut detail = serde_json::Map::new();
@@ -773,12 +763,6 @@ fn audit_detail(
             "error_kind"
         };
         detail.insert(key.to_owned(), serde_json::json!(error_kind));
-    }
-    if let Some(message) = error_message {
-        detail.insert(
-            "error_message_safe".to_owned(),
-            serde_json::json!(crate::audit::safe::message(message)),
-        );
     }
     if let Some(credential) = credential {
         detail.insert(
@@ -826,18 +810,8 @@ fn pre_input_denial_audit_event(
     caller: &Caller,
     alias: &str,
     reason: &str,
-    error: &Error,
 ) -> crate::audit::AuditEvent {
-    crate::audit::runtime::pre_input_denial_event(
-        caller,
-        "sql.schema",
-        alias,
-        reason,
-        Some((
-            "error_message_safe",
-            serde_json::json!(crate::audit::safe::message(&error.to_string())),
-        )),
-    )
+    crate::audit::runtime::pre_input_denial_event(caller, "sql.schema", alias, reason, None)
 }
 
 #[cfg(test)]
@@ -896,18 +870,12 @@ mod tests {
             table: "audit_logs".to_owned(),
             ..base_input()
         })?;
-        let detail = audit_detail(
-            &input,
-            None,
-            "denied",
-            Some("policy_denied"),
-            Some("bad\nmessage secret"),
-            None,
-        );
+        let detail = audit_detail(&input, None, "denied", Some("policy_denied"), None);
         let serialized = detail.to_string();
         assert!(serialized.contains("denial_reason"));
-        assert!(serialized.contains("error_message_safe"));
-        assert!(!serialized.contains("\n"));
+        assert!(!serialized.contains("error_message_safe"));
+        assert!(!serialized.contains("bad"));
+        assert!(!serialized.contains("secret"));
         assert!(!serialized.contains("endpoint"));
         assert!(!serialized.contains("password"));
         assert!(!serialized.contains("\"reason\""));

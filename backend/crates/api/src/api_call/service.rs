@@ -741,14 +741,17 @@ fn audit_detail(
     }
     if let Some(credential) = credential {
         detail.insert(
-            "category".to_owned(),
+            "credential_category".to_owned(),
             serde_json::json!(credential.category.as_str()),
         );
         detail.insert(
-            "provider".to_owned(),
+            "credential_provider".to_owned(),
             serde_json::json!(credential.provider),
         );
-        detail.insert("env".to_owned(), serde_json::json!(credential.env));
+        detail.insert(
+            "credential_env".to_owned(),
+            serde_json::json!(credential.env),
+        );
     }
     if let Some(error_kind) = error_kind {
         let key = if outcome == "denied" {
