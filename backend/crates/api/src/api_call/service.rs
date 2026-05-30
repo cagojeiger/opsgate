@@ -115,7 +115,15 @@ impl ApiCallService {
             }
         };
         let secret =
-            secret::open_http_headers(&self.sealer, &credential.alias, &secret_ciphertext)?;
+            match secret::open_http_headers(&self.sealer, &credential.alias, &secret_ciphertext) {
+                Ok(secret) => secret,
+                Err(error) => {
+                    recorder
+                        .err("secret_open_failed", "credential secret open failed")
+                        .await;
+                    return Err(error);
+                }
+            };
         if let Err(error) = validate_no_secret_header_override(&secret, &input) {
             recorder.denied("policy_denied", &error.to_string()).await;
             return Err(error);

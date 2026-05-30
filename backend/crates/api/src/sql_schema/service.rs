@@ -95,11 +95,19 @@ impl SqlSchemaService {
                 return Err(Error::validation("credential secret is destroyed"));
             }
         };
-        let secret = crate::sql_common::open_sql_secret(
+        let secret = match crate::sql_common::open_sql_secret(
             &self.sealer,
             &credential.alias,
             &secret_ciphertext,
-        )?;
+        ) {
+            Ok(secret) => secret,
+            Err(error) => {
+                recorder
+                    .err("secret_open_failed", "credential secret open failed")
+                    .await;
+                return Err(error);
+            }
+        };
         let target = crate::target::postgres::prepare_postgres_target(
             &credential.endpoint,
             credential.allow_private_network,
