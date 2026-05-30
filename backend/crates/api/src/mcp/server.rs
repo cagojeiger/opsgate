@@ -27,11 +27,9 @@ use crate::auth::bearer::{
     verify_bearer_mcp,
 };
 use crate::credential::{
-    DeleteCredentialInput, ListCredentialsInput, RegisterHttpCredentialInput,
-    RegisterSqlCredentialInput, UpdateCredentialInput,
-};
-use crate::mcp::tools::credentials::{
-    CredentialListOutput, DeleteCredentialOutput, RegisterCredentialOutput, UpdateCredentialOutput,
+    CredentialListOutput, DeleteCredentialInput, DeleteCredentialOutput, ListCredentialsInput,
+    RegisterCredentialOutput, RegisterHttpCredentialInput, RegisterSqlCredentialInput,
+    UpdateCredentialInput, UpdateCredentialOutput,
 };
 use crate::mcp::tools::me::{McpMeOutput, McpToolset};
 use crate::request_context::RequestMetadata;

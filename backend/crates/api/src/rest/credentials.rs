@@ -1,17 +1,15 @@
-use std::collections::BTreeSet;
-
 use axum::body::Bytes;
 use axum::extract::{Extension, Path, RawQuery, State};
 use axum::routing::{delete, get};
 use axum::{Json, Router};
 use opsgate_domain::Caller;
-use opsgate_domain::credential::{Credential, CredentialCategory, CredentialPolicy};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use opsgate_domain::credential::{CredentialCategory, CredentialPolicy};
+use serde::Deserialize;
 
 use crate::credential::{
-    DeleteCredentialInput, ListCredentialsInput, RegisterHttpCredentialInput,
-    RegisterSqlCredentialInput, SecretHeaderInput,
+    CredentialListOutput, CredentialOutput, DeleteCredentialInput, DeleteCredentialOutput,
+    ListCredentialsInput, PageOutput, RegisterCredentialOutput, RegisterHttpCredentialInput,
+    RegisterSqlCredentialInput, SecretHeaderInput, normalize_fields,
 };
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -138,10 +136,7 @@ async fn remove(
         .credentials
         .delete(&caller, DeleteCredentialInput { alias, reason })
         .await?;
-    Ok(Json(DeleteCredentialOutput {
-        alias: credential.alias,
-        deleted: true,
-    }))
+    Ok(Json(DeleteCredentialOutput::deleted(credential.alias)))
 }
 
 #[derive(Debug, Deserialize)]
@@ -232,101 +227,8 @@ struct DeleteCredentialBody {
     reason: String,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct CredentialListOutput {
-    pub credentials: Vec<CredentialOutput>,
-    pub page: PageOutput,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct PageOutput {
-    pub limit: i64,
-    pub returned: usize,
-    pub has_more: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<String>,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct CredentialOutput {
-    pub alias: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub category: Option<CredentialCategory>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub env: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tags: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub policy: Option<CredentialPolicy>,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct RegisterCredentialOutput {
-    pub alias: String,
-    pub category: CredentialCategory,
-    pub provider: String,
-    pub env: String,
-    pub tags: Vec<String>,
-    pub description: String,
-    pub created: bool,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct DeleteCredentialOutput {
-    pub alias: String,
-    pub deleted: bool,
-}
-
-impl CredentialOutput {
-    fn from_with_fields(credential: Credential, fields: Option<&BTreeSet<String>>) -> Self {
-        Self {
-            alias: credential.alias,
-            category: include_field(fields, "category").then_some(credential.category),
-            provider: include_field(fields, "provider").then_some(credential.provider),
-            description: include_field(fields, "description").then_some(credential.description),
-            env: include_field(fields, "env").then_some(credential.env),
-            tags: include_field(fields, "tags").then_some(credential.tags),
-            policy: include_field(fields, "policy").then_some(credential.policy),
-        }
-    }
-}
-
-impl RegisterCredentialOutput {
-    fn created(credential: Credential) -> Self {
-        Self {
-            alias: credential.alias,
-            category: credential.category,
-            provider: credential.provider,
-            env: credential.env,
-            tags: credential.tags,
-            description: credential.description,
-            created: true,
-        }
-    }
-}
-
-fn normalize_fields(fields: Vec<String>) -> Option<BTreeSet<String>> {
-    let fields = fields
-        .into_iter()
-        .map(|field| field.trim().to_owned())
-        .filter(|field| !field.is_empty())
-        .collect::<BTreeSet<_>>();
-    (!fields.is_empty()).then_some(fields)
-}
-
-fn include_field(fields: Option<&BTreeSet<String>>, field: &str) -> bool {
-    fields.is_none_or(|fields| fields.contains(field))
-}
-
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
-    use uuid::Uuid;
-
     use super::*;
 
     #[test]
@@ -452,18 +354,6 @@ mod tests {
     }
 
     #[test]
-    fn credential_output_never_serializes_endpoint_or_secret_material()
-    -> Result<(), serde_json::Error> {
-        let output = CredentialOutput::from_with_fields(credential(), None);
-        let json = serde_json::to_string(&output)?;
-
-        assert!(json.contains("prod-api"));
-        assert!(!json.contains("internal.example.test"));
-        assert!(!json.contains("secret"));
-        Ok(())
-    }
-
-    #[test]
     fn list_query_preserves_repeated_fields() -> Result<(), ApiError> {
         let input = parse_list_query(Some(
             "category=http&provider=k8s&fields=provider&fields=env&limit=25",
@@ -477,30 +367,5 @@ mod tests {
         );
         assert_eq!(input.limit, Some(25));
         Ok(())
-    }
-
-    #[test]
-    fn empty_projection_fields_mean_default_metadata() {
-        assert!(normalize_fields(Vec::new()).is_none());
-        assert!(normalize_fields(vec![" ".to_owned()]).is_none());
-    }
-
-    fn credential() -> Credential {
-        Credential {
-            id: Uuid::nil(),
-            owner_user_id: Uuid::nil(),
-            category: CredentialCategory::Http,
-            provider: "k8s".to_owned(),
-            alias: "prod-api".to_owned(),
-            endpoint: "https://internal.example.test/secret-path".to_owned(),
-            description: "cluster api".to_owned(),
-            env: "prod".to_owned(),
-            tags: vec!["prod".to_owned()],
-            policy: CredentialPolicy::default(),
-            allow_private_network: false,
-            has_tls_ca: true,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        }
     }
 }
