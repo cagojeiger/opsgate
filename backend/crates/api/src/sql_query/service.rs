@@ -9,7 +9,6 @@ use opsgate_db::{AuditRepo, CredentialRepo, SqlQueryHistoryParams, SqlQueryHisto
 use opsgate_domain::credential::{Credential, CredentialCategory, CredentialPolicy};
 use opsgate_domain::{Caller, Channel};
 use schemars::JsonSchema;
-use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -18,8 +17,8 @@ use std::ops::ControlFlow;
 use sqlparser::ast::{Expr, ObjectName, Query, SetExpr, Statement, Visit, Visitor};
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
+use sqlx::PgConnection;
 use sqlx::types::Json;
-use sqlx::{Connection, Executor, PgConnection};
 
 use crate::credential::snapshot::CredentialSnapshot;
 use crate::sql_common::SqlSecret;
@@ -513,20 +512,8 @@ async fn execute_postgres(
     secret: &SqlSecret,
     input: &NormalizedInput,
 ) -> Result<SqlQueryOutput> {
-    let options = target.connect_options(
-        secret.username.expose_secret(),
-        secret.password.expose_secret(),
-    )?;
-    let mut conn = PgConnection::connect_with(&options)
-        .await
-        .map_err(|_error| Error::internal("postgres connection failed"))?;
-    conn.execute("BEGIN READ ONLY")
-        .await
-        .map_err(|_error| Error::internal("postgres transaction failed"))?;
-    if let Err(error) = set_statement_timeout(&mut conn, input.timeout_ms).await {
-        let _ = conn.execute("ROLLBACK").await;
-        return Err(error);
-    }
+    let mut conn =
+        crate::sql_common::begin_read_only_connection(target, secret, input.timeout_ms).await?;
     let result = if input
         .query
         .trim_start()
@@ -537,23 +524,7 @@ async fn execute_postgres(
     } else {
         load_rows(&mut conn, input).await
     };
-    if result.is_ok() {
-        conn.execute("COMMIT")
-            .await
-            .map_err(|_error| Error::internal("postgres transaction commit failed"))?;
-    } else {
-        let _ = conn.execute("ROLLBACK").await;
-    }
-    result
-}
-
-async fn set_statement_timeout(conn: &mut PgConnection, timeout_ms: u32) -> Result<()> {
-    sqlx::query("SELECT set_config('statement_timeout', $1, true)")
-        .bind(format!("{timeout_ms}ms"))
-        .execute(conn)
-        .await
-        .map_err(|_error| Error::internal("postgres statement timeout setup failed"))?;
-    Ok(())
+    crate::sql_common::finish_read_only_result(&mut conn, result).await
 }
 
 async fn load_explain_rows(
