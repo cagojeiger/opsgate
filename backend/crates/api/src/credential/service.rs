@@ -28,7 +28,7 @@ const MAX_LIST_Q: usize = 128;
 const MAX_LIST_FIELDS: usize = 8;
 
 #[derive(Clone)]
-pub struct CredentialService {
+pub(crate) struct CredentialService {
     repo: CredentialRepo,
     sealer: Sealer,
     resolver: EndpointResolver,
@@ -306,7 +306,7 @@ impl CredentialService {
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
-pub struct ListCredentialsInput {
+pub(crate) struct ListCredentialsInput {
     pub category: Option<CredentialCategory>,
     pub provider: Option<String>,
     pub env: Option<String>,
@@ -318,7 +318,7 @@ pub struct ListCredentialsInput {
 }
 
 #[derive(Debug, Clone)]
-pub struct CredentialListPage {
+pub(crate) struct CredentialListPage {
     pub credentials: Vec<Credential>,
     pub limit: i64,
     pub has_more: bool,
@@ -326,7 +326,7 @@ pub struct CredentialListPage {
 }
 
 #[derive(Debug, Clone, serde::Serialize, schemars::JsonSchema, PartialEq, Eq)]
-pub struct CredentialSummary {
+pub(crate) struct CredentialSummary {
     pub total: i64,
     pub by_category: BTreeMap<String, i64>,
     pub by_provider: BTreeMap<String, i64>,
@@ -349,7 +349,7 @@ fn count_map(rows: Vec<opsgate_db::credential_repo::CountRow>) -> BTreeMap<Strin
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
-pub struct RegisterHttpCredentialInput {
+pub(crate) struct RegisterHttpCredentialInput {
     pub provider: String,
     pub alias: String,
     pub endpoint: String,
@@ -369,7 +369,7 @@ pub struct RegisterHttpCredentialInput {
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
-pub struct RegisterSqlCredentialInput {
+pub(crate) struct RegisterSqlCredentialInput {
     #[serde(default)]
     pub provider: String,
     pub alias: String,
@@ -389,7 +389,7 @@ pub struct RegisterSqlCredentialInput {
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
-pub struct UpdateCredentialInput {
+pub(crate) struct UpdateCredentialInput {
     pub alias: String,
     pub reason: String,
     pub description: Option<String>,
@@ -399,19 +399,19 @@ pub struct UpdateCredentialInput {
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
-pub struct DeleteCredentialInput {
+pub(crate) struct DeleteCredentialInput {
     pub alias: String,
     pub reason: String,
 }
 
 #[derive(Debug, Clone)]
-pub struct CredentialUpdate {
+pub(crate) struct CredentialUpdate {
     pub credential: Credential,
     pub changed_fields: Vec<&'static str>,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
-pub struct SecretHeaderInput {
+pub(crate) struct SecretHeaderInput {
     pub name: String,
     pub value: String,
 }

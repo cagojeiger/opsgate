@@ -8,13 +8,13 @@ use serde::Serialize;
 use super::CredentialUpdate;
 
 #[derive(Debug, Serialize, JsonSchema)]
-pub struct CredentialListOutput {
+pub(crate) struct CredentialListOutput {
     pub credentials: Vec<CredentialOutput>,
     pub page: PageOutput,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
-pub struct PageOutput {
+pub(crate) struct PageOutput {
     pub limit: i64,
     pub returned: usize,
     pub has_more: bool,
@@ -23,7 +23,7 @@ pub struct PageOutput {
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
-pub struct CredentialOutput {
+pub(crate) struct CredentialOutput {
     pub alias: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<CredentialCategory>,
@@ -40,7 +40,7 @@ pub struct CredentialOutput {
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
-pub struct RegisterCredentialOutput {
+pub(crate) struct RegisterCredentialOutput {
     pub alias: String,
     pub category: CredentialCategory,
     pub provider: String,
@@ -51,7 +51,7 @@ pub struct RegisterCredentialOutput {
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
-pub struct UpdateCredentialOutput {
+pub(crate) struct UpdateCredentialOutput {
     pub alias: String,
     pub category: CredentialCategory,
     pub provider: String,
@@ -63,7 +63,7 @@ pub struct UpdateCredentialOutput {
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
-pub struct DeleteCredentialOutput {
+pub(crate) struct DeleteCredentialOutput {
     pub alias: String,
     pub deleted: bool,
 }
