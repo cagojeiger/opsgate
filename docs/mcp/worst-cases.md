@@ -31,7 +31,7 @@ target 재호출은 최소화하게
 
 ```text
 1. input boundary
-2. identity/role boundary
+2. identity boundary
 3. credential/policy boundary
 4. target execution boundary
 5. response envelope / output shape boundary
@@ -45,8 +45,9 @@ target 재호출은 최소화하게
 input:
   길이, 개수, 형식, 상호배타 조건을 검증한다.
 
-identity/role:
-  미인증/비활성/viewer/admin-only를 명확히 거절한다.
+identity:
+  미인증/비활성 사용자를 명확히 거절한다.
+  권한 경계는 role이 아니라 /mcp와 /mcp/admin의 도구 노출로 표현한다.
 
 credential/policy:
   alias/category/provider mismatch를 거절한다.
@@ -57,7 +58,7 @@ target execution:
 
 response envelope:
   invalid JSON, oversized JSON, nested/token 폭탄을 작게 반환한다.
-  SQL 결과 행렬은 rows/columns/values shape와 byte budget으로 작게 반환한다.
+  SQL 결과는 column-oriented body와 byte budget으로 작게 반환한다.
 
 audit/history:
   body, secret, endpoint, query value, SQL params value를 저장하지 않는다.
@@ -280,10 +281,9 @@ select * from huge_table
 
 ```text
 max_rows로 row 제한
-max_bytes로 envelope 제한
+max_bytes 초과 시 body=null + more hint 반환
 truncated=true
-more.options.use_where=true
-more.options.use_keyset_pagination=true
+명시적 컬럼/WHERE/count/group 또는 jsonpath로 재시도 유도
 ```
 
 현재 상태:
@@ -317,7 +317,7 @@ read-only transaction이 최종 안전망
 구현됨. 추가 통합 TC 유지 필요.
 ```
 
-### WC-SQL-03: 큰 단일 cell
+### WC-SQL-03: 큰 단일 cell 또는 큰 JSON 컬럼
 
 상황:
 
@@ -328,30 +328,33 @@ select huge_jsonb_or_text from table
 기대:
 
 ```text
-cell preview marker로 축약
-truncated_columns 기록
-raw huge cell 전체 반환 없음
+column-oriented body 생성 후 공통 JSON output budget 적용
+max_bytes 초과 시 partial JSON 없이 body=null
+more.options.preferred_next=jsonpath 또는 narrow_jsonpath
+raw huge cell 전체를 audit/history에 저장하지 않음
 ```
 
 현재 상태:
 
 ```text
-구현/TC 존재.
+구현됨. 공통 JSON output envelope TC로 보호한다.
 ```
 
-### WC-SQL-04: result shape 오용
+### WC-SQL-04: JSONPath projection 오용
 
 상황:
 
 ```text
-shape=values인데 SELECT 컬럼이 2개
+jsonpath가 safe subset 밖이거나 너무 많음
+jsonpath가 유효하지만 projection 결과가 여전히 큼
 ```
 
 기대:
 
 ```text
-bad_shape
-safe error
+invalid jsonpath는 실행 전 bad_input으로 거절
+큰 projection은 body=null + narrow_jsonpath hint
+결과 값은 history/audit에 저장하지 않음
 ```
 
 현재 상태:
@@ -466,7 +469,7 @@ LLM이 일부 policy만 보내 기존 policy가 사라짐
 기대:
 
 ```text
-admin surface only
+/mcp/admin 관리 서피스에만 노출
 reason required
 tool description requires explicit user confirmation
 soft-delete + secret cryptoshred
@@ -599,7 +602,7 @@ P0:
 
 P1:
   sql.query denied SQL value functions remain denied
-  sql.query large cell compaction does not exceed max_bytes
+  sql.query large cell/output truncation returns body=null within max_bytes
   credential.update policy full replacement behavior is explicit
   audit detail has no generic reason key for new events
 

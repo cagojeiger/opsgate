@@ -1,15 +1,13 @@
 # opsgate docs
 
-이 디렉터리는 `0.1.0` release candidate에 맞춰 다시 정리하는 중입니다.
+이 디렉터리는 현재 Rust 구현과 맞는 문서만 유지합니다.
 
 현재 문서:
 
 - [MCP tool surface specification index](mcp-tools.md)
 - [api.call boundary model](mcp/api-call-boundary.md)
 - [sql.query boundary model](mcp/sql-query-boundary.md)
-- [MCP smoke report](mcp/smoke-report.md)
 - [0.1.0 release readiness checklist](release-checklist.md)
-- [Rust port parity review](rust-port-parity-review.md)
 - [MCP 도구 worst-case 설계와 TC 매트릭스](mcp/worst-cases.md)
 - MCP surfaces:
   - [`/mcp` runtime](mcp/surfaces/runtime.md)
@@ -25,8 +23,3 @@
   - [api.call](mcp/tools/api-call.md)
   - [sql.schema](mcp/tools/sql-schema.md)
   - [sql.query](mcp/tools/sql-query.md)
-
-앞으로 추가할 문서:
-
-- 데이터베이스 스키마와 audit/history 모델
-- 보안 모델과 데이터 lifecycle

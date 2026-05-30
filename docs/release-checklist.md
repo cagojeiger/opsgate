@@ -103,9 +103,10 @@ unauthenticated /mcp and /mcp/admin return 401 with WWW-Authenticate:
   Bearer resource_metadata="...", scope="openid offline_access"
 ```
 
-For a live authenticated smoke, open `http://localhost:9091/login` once with the
-configured admin account, then connect an MCP client to
-`http://localhost:9091/mcp`. Runtime and admin tool surfaces are listed below.
+인증된 live smoke는 유효한 AuthGate 계정으로 `http://localhost:9091/login`에
+한 번 접속한 뒤 MCP 클라이언트를 `http://localhost:9091/mcp`에 연결한다.
+Opsgate는 개인용 서비스다. `/mcp`와 `/mcp/admin`은 role/admin 게이트가 아니라
+노출되는 도구 목록으로 분리된다. Runtime/Admin 도구 목록은 아래와 같다.
 
 ## Verified Surfaces
 
