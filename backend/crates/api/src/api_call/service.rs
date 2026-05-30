@@ -134,7 +134,15 @@ impl ApiCallService {
             return Err(error);
         }
 
-        let url = build_target_url(&credential.endpoint, &input)?;
+        let url = match build_target_url(&credential.endpoint, &input) {
+            Ok(url) => url,
+            Err(error) => {
+                recorder
+                    .err(reason::TARGET_URL_FAILED, "target URL build failed")
+                    .await;
+                return Err(error);
+            }
+        };
         let guard_private_network = !credential.allow_private_network;
 
         let started = Instant::now();
@@ -170,14 +178,14 @@ impl ApiCallService {
                 Ok(parts) => parts,
                 Err(error) => {
                     recorder
-                        .err("target_read_failed", "read target response failed")
+                        .err(reason::TARGET_READ_FAILED, "read target response failed")
                         .await;
                     return Err(error);
                 }
             };
         let latency_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
 
-        let shaped = build_json_output(
+        let shaped = match build_json_output(
             &body,
             opsgate_core::llm_output::JsonOutputOptions {
                 max_bytes: input.max_bytes,
@@ -186,7 +194,15 @@ impl ApiCallService {
                 transport_truncated,
                 original_bytes: Some(original_bytes),
             },
-        )?;
+        ) {
+            Ok(shaped) => shaped,
+            Err(error) => {
+                recorder
+                    .err(reason::OUTPUT_BUILD_FAILED, "output build failed")
+                    .await;
+                return Err(error);
+            }
+        };
         let output = ApiCallOutput {
             status_code,
             headers,

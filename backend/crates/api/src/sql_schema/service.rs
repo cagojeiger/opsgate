@@ -111,11 +111,20 @@ impl SqlSchemaService {
                 return Err(error);
             }
         };
-        let target = crate::target::postgres::prepare_postgres_target(
+        let target = match crate::target::postgres::prepare_postgres_target(
             &credential.endpoint,
             credential.allow_private_network,
         )
-        .await?;
+        .await
+        {
+            Ok(target) => target,
+            Err(error) => {
+                recorder
+                    .err(reason::TARGET_PREPARE_FAILED, "target prepare failed")
+                    .await;
+                return Err(error);
+            }
+        };
 
         let started = Instant::now();
         let mut output = match execute_schema_query(&target, &secret, &input).await {
@@ -128,7 +137,12 @@ impl SqlSchemaService {
             }
         };
         output.latency_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
-        finalize_output(&mut output, &input)?;
+        if let Err(error) = finalize_output(&mut output, &input) {
+            recorder
+                .err(reason::OUTPUT_FINALIZE_FAILED, "output finalize failed")
+                .await;
+            return Err(error);
+        }
         recorder.ok(&output).await;
         Ok(output)
     }

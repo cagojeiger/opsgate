@@ -143,11 +143,20 @@ impl SqlQueryService {
                 return Err(error);
             }
         };
-        let target = crate::target::postgres::prepare_postgres_target(
+        let target = match crate::target::postgres::prepare_postgres_target(
             &credential.endpoint,
             credential.allow_private_network,
         )
-        .await?;
+        .await
+        {
+            Ok(target) => target,
+            Err(error) => {
+                recorder
+                    .err(reason::TARGET_PREPARE_FAILED, "target prepare failed")
+                    .await;
+                return Err(error);
+            }
+        };
 
         let started = Instant::now();
         let mut output = match execute_postgres(&target, &secret, &input).await {

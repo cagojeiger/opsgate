@@ -9,12 +9,17 @@ pub(crate) mod reason {
     pub(crate) const BAD_INPUT: &str = "bad_input";
     pub(crate) const CREDENTIAL_NOT_FOUND: &str = "credential_not_found";
     pub(crate) const POLICY_DENIED: &str = "policy_denied";
+    pub(crate) const OUTPUT_BUILD_FAILED: &str = "output_build_failed";
+    pub(crate) const OUTPUT_FINALIZE_FAILED: &str = "output_finalize_failed";
     pub(crate) const QUERY_FAILED: &str = "query_failed";
     pub(crate) const SCHEMA_LOOKUP_FAILED: &str = "schema_lookup_failed";
     pub(crate) const SECRET_DESTROYED: &str = "secret_destroyed";
     pub(crate) const SECRET_OPEN_FAILED: &str = "secret_open_failed";
     pub(crate) const TARGET_NOT_JSON: &str = "target_not_json";
+    pub(crate) const TARGET_PREPARE_FAILED: &str = "target_prepare_failed";
+    pub(crate) const TARGET_READ_FAILED: &str = "target_read_failed";
     pub(crate) const TARGET_REQUEST_FAILED: &str = "target_request_failed";
+    pub(crate) const TARGET_URL_FAILED: &str = "target_url_failed";
     pub(crate) const WRONG_CREDENTIAL_CATEGORY: &str = "wrong_credential_category";
     pub(crate) const WRONG_CREDENTIAL_PROVIDER: &str = "wrong_credential_provider";
 }
