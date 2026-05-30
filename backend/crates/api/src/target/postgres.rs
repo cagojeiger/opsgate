@@ -46,18 +46,24 @@ pub(crate) async fn prepare_postgres_target(
     let url = url::Url::parse(endpoint)
         .map_err(|error| Error::validation(format!("postgres endpoint: {error}")))?;
     let host = url
-        .host_str()
+        .host()
         .ok_or_else(|| Error::validation("postgres endpoint requires host"))?;
     let port = url.port_or_known_default().unwrap_or(5432);
-    let connect_addr = if let Ok(ip) = host.parse::<IpAddr>() {
-        select_postgres_addr(host, port, vec![ip], allow_private_network)?
-    } else {
-        let ips = tokio::net::lookup_host((host, port))
-            .await
-            .map_err(|error| Error::validation(format!("resolve target host: {error}")))?
-            .map(|addr| addr.ip())
-            .collect::<Vec<_>>();
-        select_postgres_addr(host, port, ips, allow_private_network)?
+    let connect_addr = match host {
+        url::Host::Ipv4(ip) => {
+            select_postgres_addr(port, vec![IpAddr::V4(ip)], allow_private_network)?
+        }
+        url::Host::Ipv6(ip) => {
+            select_postgres_addr(port, vec![IpAddr::V6(ip)], allow_private_network)?
+        }
+        url::Host::Domain(host) => {
+            let ips = tokio::net::lookup_host((host, port))
+                .await
+                .map_err(|error| Error::validation(format!("resolve target host: {error}")))?
+                .map(|addr| addr.ip())
+                .collect::<Vec<_>>();
+            select_postgres_addr(port, ips, allow_private_network)?
+        }
     };
     Ok(GuardedPostgresTarget {
         endpoint: endpoint.to_owned(),
@@ -66,7 +72,6 @@ pub(crate) async fn prepare_postgres_target(
 }
 
 fn select_postgres_addr(
-    _host: &str,
     port: u16,
     ips: Vec<IpAddr>,
     allow_private_network: bool,
@@ -99,6 +104,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn guarded_postgres_target_blocks_ipv4_mapped_private_literal() -> Result<()> {
+        let err = prepare_postgres_target("postgres://[::ffff:127.0.0.1]:5432/app", false)
+            .await
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("private/link-local/loopback"));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn guarded_postgres_target_allows_private_when_enabled() -> Result<()> {
         let target = prepare_postgres_target("postgres://127.0.0.1:15432/app", true).await?;
         assert_eq!(
@@ -111,7 +127,6 @@ mod tests {
     #[test]
     fn dns_result_guard_blocks_private_ip() {
         let err = select_postgres_addr(
-            "db.example.test",
             5432,
             vec![
                 IpAddr::from([93, 184, 216, 34]),

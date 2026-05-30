@@ -206,6 +206,20 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn guarded_resolver_blocks_ipv4_mapped_private_literals() {
+        let err = reject_blocked_ip(
+            "::ffff:127.0.0.1",
+            IpAddr::V6(std::net::Ipv6Addr::new(
+                0, 0, 0, 0, 0, 0xffff, 0x7f00, 0x0001,
+            )),
+        )
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+        assert!(err.contains("private/link-local/loopback"));
+    }
+
     #[tokio::test]
     async fn guarded_resolver_blocks_private_literals() -> Result<()> {
         let resolver = GuardedResolver;

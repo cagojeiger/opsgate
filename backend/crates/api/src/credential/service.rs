@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::net::IpAddr;
 
 use opsgate_core::crypto::Sealer;
-use opsgate_core::net::ssrf::is_blocked_target_ip;
 use opsgate_core::validation::validate_reason;
 use opsgate_core::{Error, Result};
 use opsgate_db::{CredentialAuditAction, CredentialRepo, CredentialSummaryRows};
@@ -19,6 +18,8 @@ use opsgate_domain::credential::{
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use uuid::Uuid;
+
+use crate::target::ssrf::{BLOCKED_TARGET_IP_MESSAGE, target_ip_is_blocked};
 
 const SECRET_DOMAIN: &str = "credentials";
 const DEFAULT_LIST_LIMIT: i64 = 50;
@@ -502,10 +503,8 @@ impl CredentialService {
         if ips.is_empty() {
             return Err(Error::validation("resolve endpoint host: no IPs"));
         }
-        if let Some(ip) = ips.into_iter().find(|ip| is_blocked_target_ip(*ip)) {
-            return Err(Error::validation(format!(
-                "resolved IP {ip} is private/link-local/loopback"
-            )));
+        if ips.into_iter().any(target_ip_is_blocked) {
+            return Err(Error::validation(BLOCKED_TARGET_IP_MESSAGE));
         }
         Ok(())
     }
@@ -732,7 +731,7 @@ fn trim_filter_optional(value: Option<String>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     use base64::Engine;
     use chrono::Utc;
@@ -830,6 +829,22 @@ mod tests {
             .unwrap_or_default();
         assert!(err.contains("private/link-local/loopback"));
         assert!(!err.contains("secret-token"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn service_rejects_ipv4_mapped_private_register_target_ip() -> Result<()> {
+        let service = service_with_ips(vec![IpAddr::V6(Ipv6Addr::new(
+            0, 0, 0, 0, 0, 0xffff, 0x7f00, 0x0001,
+        ))])?;
+        let err = service
+            .validate_register_endpoint_ips(&http_input(false))
+            .await
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("private/link-local/loopback"));
+        assert!(!err.contains("::ffff"));
         Ok(())
     }
 
