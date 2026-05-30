@@ -29,6 +29,7 @@ target 응답이 유효한 JSON이고 compact JSON 크기가 `max_bytes` 안에 
     "kind": "PodList",
     "items": []
   },
+  "truncated": false,
   "original_bytes": 1840,
   "returned_bytes": 31,
   "latency_ms": 18
@@ -112,6 +113,7 @@ target JSON 또는 SQL 결과 JSON이 호출자의 `max_bytes`보다 크면 전�
 {
   "status_code": 200,
   "body": null,
+  "truncated": true,
   "original_bytes": 287000,
   "returned_bytes": 0,
   "latency_ms": 34,
@@ -145,7 +147,9 @@ response body audit/history 저장 금지
 ```
 
 target 응답이 hard read cap을 넘는 경우에도, 불완전한 JSON prefix를
-파싱하려고 하지 않습니다. 대신 truncated envelope을 반환합니다.
+파싱하려고 하지 않습니다. 대신 truncated envelope을 반환합니다. 이때
+`original_bytes`는 Content-Length가 있으면 전체 크기이고, 없으면 cap을 넘었다는
+사실을 확인한 최소 크기일 수 있습니다.
 
 ## 점진적 호출 프로토콜
 

@@ -3,8 +3,9 @@ use std::time::{Duration, Instant};
 
 use opsgate_core::llm_output::{More, build_json_output, validate_json_paths};
 use opsgate_core::validation::{
-    validate_count, validate_http_header_name, validate_http_header_value, validate_http_path,
-    validate_max_bytes, validate_purpose,
+    reject_crlf, trim_required, validate_count, validate_http_header_name,
+    validate_http_header_value, validate_http_path, validate_max_bytes, validate_purpose,
+    validate_text_len,
 };
 use opsgate_core::{Error, Result};
 use opsgate_db::{ApiCallHistoryParams, ApiCallHistoryRepo, AuditRepo, CredentialRepo};
@@ -24,6 +25,9 @@ const DEFAULT_METHOD: &str = "GET";
 const DEFAULT_MAX_BYTES: usize = 4096;
 const MIN_MAX_BYTES: usize = 256;
 const MAX_MAX_BYTES: usize = 1024 * 1024;
+const MAX_QUERY_KEYS: usize = 32;
+const MAX_QUERY_KEY_LEN: usize = 128;
+const MAX_QUERY_VALUE_LEN: usize = 4096;
 const MAX_HEADERS: usize = 16;
 const MAX_HEADER_NAME_LEN: usize = 128;
 const MAX_HEADER_VALUE_LEN: usize = 1024;
@@ -120,8 +124,8 @@ impl ApiCallService {
         let guard_private_network = !credential.allow_private_network;
 
         let started = Instant::now();
-        let response = match self
-            .execute_target(
+        let mut response = match self
+            .send_target(
                 &credential,
                 tls_ca.as_deref(),
                 &url,
@@ -139,7 +143,6 @@ impl ApiCallService {
                 return Err(error);
             }
         };
-        let latency_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
         let status_code = i32::from(response.status.as_u16());
         let headers = filtered_response_headers(&response.headers);
         if !response_content_type_is_json(&response.headers) {
@@ -148,21 +151,33 @@ impl ApiCallService {
                 .await;
             return Err(Error::validation("target response is not JSON"));
         }
+        let (body, original_bytes, transport_truncated) =
+            match read_capped(&mut response.response, MAX_MAX_BYTES).await {
+                Ok(parts) => parts,
+                Err(error) => {
+                    recorder
+                        .err("target_read_failed", "read target response failed")
+                        .await;
+                    return Err(error);
+                }
+            };
+        let latency_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
 
         let shaped = build_json_output(
-            &response.body,
+            &body,
             opsgate_core::llm_output::JsonOutputOptions {
                 max_bytes: input.max_bytes,
                 max_allowed_bytes: MAX_MAX_BYTES,
                 json_paths: input.jsonpath.clone(),
-                transport_truncated: response.truncated,
-                original_bytes: Some(response.original_bytes),
+                transport_truncated,
+                original_bytes: Some(original_bytes),
             },
         )?;
         let output = ApiCallOutput {
             status_code,
             headers,
             body: shaped.body,
+            truncated: shaped.truncated,
             original_bytes: shaped.original_bytes,
             returned_bytes: shaped.returned_bytes,
             latency_ms,
@@ -217,7 +232,7 @@ impl ApiCallService {
             .collect())
     }
 
-    async fn execute_target(
+    async fn send_target(
         &self,
         credential: &Credential,
         tls_ca: Option<&[u8]>,
@@ -225,7 +240,7 @@ impl ApiCallService {
         input: &NormalizedApiCallInput,
         secret: &[SecretHeader],
         guard_private_network: bool,
-    ) -> Result<TargetResponse> {
+    ) -> Result<TargetResponseHead> {
         let method = reqwest::Method::from_bytes(input.method.as_bytes())
             .map_err(|error| Error::validation(format!("invalid method: {error}")))?;
         let mut request = self.target_clients.request_for(
@@ -267,19 +282,14 @@ impl ApiCallService {
             );
             request = request.body(body);
         }
-        let mut response = request
+        let response = request
             .send()
             .await
             .map_err(crate::target::http::map_send_error)?;
-        let status = response.status();
-        let headers = response.headers().clone();
-        let (body, original_bytes, truncated) = read_capped(&mut response, MAX_MAX_BYTES).await?;
-        Ok(TargetResponse {
-            status,
-            headers,
-            body,
-            original_bytes,
-            truncated,
+        Ok(TargetResponseHead {
+            status: response.status(),
+            headers: response.headers().clone(),
+            response,
         })
     }
 }
@@ -312,6 +322,7 @@ pub struct ApiCallOutput {
     pub headers: BTreeMap<String, String>,
     #[schemars(schema_with = "opsgate_core::schema::json_value_schema")]
     pub body: Value,
+    pub truncated: bool,
     pub original_bytes: usize,
     pub returned_bytes: usize,
     pub latency_ms: i64,
@@ -344,13 +355,10 @@ struct StoredSecretHeader {
     value: String,
 }
 
-#[derive(Debug)]
-struct TargetResponse {
+struct TargetResponseHead {
     status: reqwest::StatusCode,
     headers: HeaderMap,
-    body: Vec<u8>,
-    original_bytes: usize,
-    truncated: bool,
+    response: reqwest::Response,
 }
 
 fn normalize_input(input: ApiCallInput) -> Result<NormalizedApiCallInput> {
@@ -375,6 +383,7 @@ fn normalize_input(input: ApiCallInput) -> Result<NormalizedApiCallInput> {
         MAX_MAX_BYTES,
     )?;
     validate_json_paths(&input.jsonpath)?;
+    let query = normalize_query(input.query)?;
     validate_count("headers", input.headers.len(), MAX_HEADERS)?;
     let mut headers = BTreeMap::new();
     for (name, value) in input.headers {
@@ -410,13 +419,33 @@ fn normalize_input(input: ApiCallInput) -> Result<NormalizedApiCallInput> {
         purpose,
         method,
         path,
-        query: input.query,
+        query,
         headers,
         body: input.body,
         content_type,
         jsonpath,
         max_bytes,
     })
+}
+
+fn normalize_query(query: BTreeMap<String, String>) -> Result<BTreeMap<String, String>> {
+    validate_count("query", query.len(), MAX_QUERY_KEYS)?;
+    let mut normalized = BTreeMap::new();
+    for (key, value) in query {
+        let key = trim_required("query key", &key)?;
+        reject_crlf("query key", &key)?;
+        validate_text_len("query key", &key, 1, MAX_QUERY_KEY_LEN)?;
+        if key.contains('\0') {
+            return Err(Error::validation("query key must not contain NUL"));
+        }
+        reject_crlf("query value", &value)?;
+        validate_text_len("query value", &value, 0, MAX_QUERY_VALUE_LEN)?;
+        if value.contains('\0') {
+            return Err(Error::validation("query value must not contain NUL"));
+        }
+        normalized.insert(key, value);
+    }
+    Ok(normalized)
 }
 
 fn validate_policy_boundary(credential: &Credential, input: &NormalizedApiCallInput) -> Result<()> {
@@ -504,15 +533,24 @@ async fn read_capped(
     response: &mut reqwest::Response,
     limit: usize,
 ) -> Result<(Vec<u8>, usize, bool)> {
+    if let Some(content_length) = response.content_length()
+        && content_length > u64::try_from(limit).unwrap_or(u64::MAX)
+    {
+        return Ok((
+            Vec::new(),
+            usize::try_from(content_length).unwrap_or(usize::MAX),
+            true,
+        ));
+    }
+
     let mut out = Vec::new();
     let mut original = 0_usize;
-    let mut truncated = false;
     while let Some(chunk) = response
         .chunk()
         .await
         .map_err(|_error| Error::internal("read target response failed"))?
     {
-        original = original.saturating_add(chunk.len());
+        let next_original = original.saturating_add(chunk.len());
         if out.len() < limit {
             let remaining = limit - out.len();
             let take = remaining.min(chunk.len());
@@ -521,11 +559,12 @@ async fn read_capped(
                 .ok_or_else(|| Error::internal("response chunk slice out of range"))?;
             out.extend_from_slice(part);
         }
-        if original > limit {
-            truncated = true;
+        if next_original > limit {
+            return Ok((out, limit.saturating_add(1), true));
         }
+        original = next_original;
     }
-    Ok((out, original, truncated))
+    Ok((out, original, false))
 }
 
 fn response_content_type_is_json(headers: &HeaderMap) -> bool {
@@ -636,7 +675,7 @@ impl<'a> CallRecorder<'a> {
                 .map(|output| i32::try_from(output.original_bytes).unwrap_or(i32::MAX)),
             returned_bytes: output
                 .map(|output| i32::try_from(output.returned_bytes).unwrap_or(i32::MAX)),
-            truncated: output.and_then(|output| output.more.as_ref()).is_some(),
+            truncated: output.is_some_and(|output| output.truncated),
             error_kind: error_kind.map(str::to_owned),
             error_message_safe: error_message.map(crate::audit::safe::message),
         };
@@ -736,7 +775,7 @@ fn audit_detail(
             "returned_bytes".to_owned(),
             serde_json::json!(output.returned_bytes),
         );
-        if output.more.as_ref().is_some_and(|more| more.truncated) {
+        if output.truncated {
             detail.insert("truncated".to_owned(), serde_json::json!(true));
         }
     }
@@ -859,6 +898,49 @@ mod tests {
             .headers
             .insert("Accept".to_owned(), "text/plain".to_owned());
         assert!(normalize_input(input).is_err());
+    }
+
+    #[test]
+    fn input_validation_rejects_query_boundary_violations() {
+        let too_many = (0..=MAX_QUERY_KEYS)
+            .map(|index| (format!("k{index}"), "v".to_owned()))
+            .collect::<BTreeMap<_, _>>();
+        assert!(
+            normalize_input(ApiCallInput {
+                query: too_many,
+                ..base_input()
+            })
+            .is_err()
+        );
+
+        assert!(
+            normalize_input(ApiCallInput {
+                query: BTreeMap::from([("".to_owned(), "value".to_owned())]),
+                ..base_input()
+            })
+            .is_err()
+        );
+        assert!(
+            normalize_input(ApiCallInput {
+                query: BTreeMap::from([("token".to_owned(), "secret\nleak".to_owned())]),
+                ..base_input()
+            })
+            .is_err()
+        );
+        assert!(
+            normalize_input(ApiCallInput {
+                query: BTreeMap::from([("k".repeat(MAX_QUERY_KEY_LEN + 1), "v".to_owned())]),
+                ..base_input()
+            })
+            .is_err()
+        );
+        assert!(
+            normalize_input(ApiCallInput {
+                query: BTreeMap::from([("k".to_owned(), "v".repeat(MAX_QUERY_VALUE_LEN + 1))]),
+                ..base_input()
+            })
+            .is_err()
+        );
     }
 
     #[test]
@@ -1004,6 +1086,25 @@ mod tests {
         assert!(!serialized.contains("endpoint"));
         assert!(!serialized.contains("secret"));
         assert!(!serialized.contains("\"reason\""));
+        Ok(())
+    }
+
+    #[test]
+    fn audit_detail_uses_top_level_truncated_flag() -> Result<()> {
+        let input = normalize_input(base_input())?;
+        let output = ApiCallOutput {
+            status_code: 200,
+            headers: BTreeMap::new(),
+            body: Value::Null,
+            truncated: true,
+            original_bytes: MAX_MAX_BYTES + 1,
+            returned_bytes: 0,
+            latency_ms: 12,
+            more: None,
+        };
+
+        let detail = audit_detail(&input, None, "ok", None, Some(&output));
+        assert_eq!(detail.get("truncated"), Some(&serde_json::json!(true)));
         Ok(())
     }
 

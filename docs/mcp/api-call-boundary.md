@@ -33,7 +33,7 @@ target repeated pagination without preview cache
 ```text
 input
   ↓
-identity / role
+identity
   ↓
 credential / policy
   ↓
@@ -91,6 +91,10 @@ header name must be a valid HTTP token
 header value max length 1024
 header value CR/LF denied
 Accept override must request JSON
+query key count max 32
+query key max length 128
+query value max length 4096
+query key/value CR/LF and NUL denied
 ```
 
 입력이 비어 있으면 `method` 기본값은 `GET`, `max_bytes` 기본값은 4096입니다.
@@ -114,22 +118,21 @@ TestValidateInputRejectsUnsupportedJSONPathFragment
 TestValidateInputRejectsNonJSONAccept
 ```
 
-## 2. identity / role boundary
+## 2. identity boundary
 
 역할:
 
 ```text
-누가 api.call을 실행할 수 있는지 확인
+유효한 인증 사용자인지 확인
 ```
 
 불변조건:
 
 ```text
-nil caller -> not_authenticated
-nil user -> not_authenticated
+missing bearer token -> not_authenticated
+invalid token -> not_authenticated
 inactive user -> not_authenticated
-viewer -> viewer_cannot_call
-operator/admin -> pass
+active authenticated user -> pass
 ```
 
 실패 시:
@@ -144,7 +147,7 @@ P0 TC:
 
 ```text
 api.call rejects unauthenticated caller before credential lookup
-api.call rejects viewer before credential lookup
+api.call rejects inactive user before credential lookup
 ```
 
 ## 3. credential / policy boundary
@@ -220,6 +223,7 @@ secret headers attach after caller headers
 HTTP client selection
 SSRF guarded dial
 redirect blocked
+Content-Type checked before body read
 response body hard cap read
 ```
 
@@ -231,6 +235,8 @@ redirect blocked
 allow_private_network=false blocks private/link-local/loopback/cloud metadata
 call-time DNS/dial guard closes DNS rebinding window
 response read cap is MaxMaxBytes
+known oversized Content-Length is rejected without body read
+unknown-size response stops after MaxMaxBytes+1 confirmed bytes
 ```
 
 실패 시:
@@ -267,7 +273,9 @@ top-level scalar JSON allowed
 UseNumber preserves large JSON numbers
 jsonpath projection returns flat-keyed object
 transport hard cap truncation is not parsed as JSON
+top-level truncated mirrors the output truncation state
 max_bytes truncation returns body=null
+hard cap truncation returns body=null without parsing partial JSON
 partial JSON never returned
 ```
 
@@ -318,7 +326,7 @@ purpose
 outcome
 status_code
 latency_ms
-original_bytes
+original_bytes (exact size or confirmed minimum when hard cap is hit)
 returned_bytes
 truncated
 error_kind
@@ -390,7 +398,7 @@ preview cache never stores raw response body
 
 ```text
 input boundary: mostly closed
-identity/role boundary: closed
+identity boundary: closed
 credential/policy boundary: mostly closed
 target execution boundary: mostly closed
 response envelope boundary: mostly closed

@@ -1,17 +1,17 @@
 # `api.call`
 
-Surface:
+서피스:
 
 ```text
 /mcp
 ```
 
-Purpose: `category=http` credential을 통해 등록된 HTTPS API를 호출합니다.
+목적: `category=http` credential을 통해 등록된 HTTPS API를 호출합니다.
 
 응답 truncation, JSONPath projection, 토큰 예산 규칙은
 [JSON 출력과 토큰 예산 스펙](../json-output.md)에 정의합니다.
 
-Input:
+입력:
 
 ```json
 {
@@ -28,41 +28,44 @@ Input:
 }
 ```
 
-Required:
+필수:
 
 - `alias`
 - `purpose`
 - `path`
 
-Constraints:
+제약:
 
 - `purpose`는 8~512자이며 CR/LF를 포함할 수 없습니다.
 - `max_bytes` 허용 범위는 256~1048576입니다.
+- query key는 최대 32개, key 길이는 최대 128자, value 길이는 최대 4096자입니다.
+- query key/value는 CR/LF와 NUL을 포함할 수 없습니다.
 
-Defaults:
+기본값:
 
 - `method=GET`
 - `max_bytes=4096`
 - policy가 override를 허용하지 않는 한 JSON `Accept`가 자동으로 전송됩니다.
 - non-GET JSON body는 기본적으로 `Content-Type: application/json`을 사용합니다.
 
-Output:
+출력:
 
 ```json
 {
   "status_code": 200,
-  "headers": {"Content-Type": "application/json"},
+  "headers": {"content-type": "application/json"},
   "body": {
-    "items.metadata.name": ["api", "worker"],
-    "items.status.phase": ["Running", "Running"]
+    "$.items[*].metadata.name": ["api", "worker"],
+    "$.items[*].status.phase": ["Running", "Running"]
   },
-  "original_bytes": 287000,
+  "truncated": false,
+  "original_bytes": 420,
   "returned_bytes": 420,
   "latency_ms": 34
 }
 ```
 
-Rules:
+규칙:
 
 - credential은 `category=http`여야 합니다.
 - alias는 존재하지만 다른 category에 속하면 호출은 `wrong_credential_category`로
@@ -75,10 +78,12 @@ Rules:
 - Auth, cookie, host, hop-by-hop, `X-Forwarded-*`, `Content-Type` request
   header는 항상 차단됩니다.
 - 봉인된 secret header는 덮어쓸 수 없습니다.
-- 대상 응답은 JSON이어야 합니다.
+- 대상 응답은 JSON이어야 하며, Content-Type이 JSON이 아니면 body를 읽기 전에 거부합니다.
 - request body와 response body는 history나 audit에 저장되지 않습니다.
 - history는 JSONPath 표현식을 projected value가 아니라 `projection_keys`로
   저장합니다.
+- `truncated`는 top-level 필드로도 반환됩니다.
+- `original_bytes`는 일반 응답에서는 compact 전 원본 body 크기이고, hard cap 초과 시에는 전체 크기 또는 확인된 최소 크기입니다.
 - `jsonpath`는 표준 JSONPath 형식의 표현식을 사용하며 flat-keyed object를
   반환합니다.
 - `jsonpath`는 api.call safe subset(root, child, index, slice, wildcard,
@@ -88,7 +93,7 @@ Rules:
 
 Truncation:
 
-응답이 `max_bytes`를 초과하면 `body=null`이 되고, `more`가 재시도 방법을
+응답이 `max_bytes` 또는 hard read cap을 초과하면 `body=null`이 되고, `more`가 재시도 방법을
 설명합니다. 응답에 따라 `more.options.preferred_next`는 `jsonpath` 또는
 `narrow_jsonpath`가 될 수 있고, projection을 narrowing하는 데 도움이 되도록
 `more.preview`에 path 메타데이터가 포함될 수 있습니다.
@@ -97,6 +102,7 @@ Truncation:
 {
   "status_code": 200,
   "body": null,
+  "truncated": true,
   "original_bytes": 287000,
   "returned_bytes": 0,
   "latency_ms": 34,
@@ -118,7 +124,7 @@ Truncation:
 }
 ```
 
-LLM guidance:
+LLM 가이드:
 
 - 먼저 `credential.list`를 호출해 policy를 확인하세요.
 - 구조를 아는 API라면 곧바로 `jsonpath`를 사용하세요.
@@ -130,7 +136,7 @@ LLM guidance:
   opsgate가 반환할 compact JSON body 기준입니다.
 - 일부 Kubernetes의 읽기성 API는 POST이며, 그래도 POST policy가 필요합니다.
 
-JSONPath example:
+JSONPath 예시:
 
 ```json
 {
@@ -144,7 +150,7 @@ JSONPath example:
 }
 ```
 
-Projection output:
+Projection 출력:
 
 ```json
 {
