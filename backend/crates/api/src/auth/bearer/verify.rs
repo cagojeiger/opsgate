@@ -4,7 +4,7 @@ use crate::auth::bearer::AuthError;
 use crate::auth::jwks::{Claims, JwksError};
 use crate::state::AppState;
 
-pub async fn verify_bearer(state: &AppState, token: &str) -> Result<Caller, AuthError> {
+pub(crate) async fn verify_bearer(state: &AppState, token: &str) -> Result<Caller, AuthError> {
     let attrs = authenticate(state, token).await?;
     state
         .resolver
@@ -13,7 +13,7 @@ pub async fn verify_bearer(state: &AppState, token: &str) -> Result<Caller, Auth
         .map_err(map_identity_error)
 }
 
-pub async fn verify_bearer_mcp(state: &AppState, token: &str) -> Result<Caller, AuthError> {
+pub(crate) async fn verify_bearer_mcp(state: &AppState, token: &str) -> Result<Caller, AuthError> {
     let attrs = authenticate(state, token).await?;
     state
         .resolver

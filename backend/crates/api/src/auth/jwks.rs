@@ -7,24 +7,24 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Claims {
-    pub sub: String,
+pub(crate) struct Claims {
+    pub(crate) sub: String,
     #[serde(default)]
-    pub email: Option<String>,
+    pub(crate) email: Option<String>,
     #[serde(default)]
-    pub name: Option<String>,
-    pub aud: Value,
+    pub(crate) name: Option<String>,
+    pub(crate) aud: Value,
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum JwksError {
+pub(crate) enum JwksError {
     #[error("invalid token")]
     InvalidToken,
     #[error("jwks fetch failed")]
     FetchFailed,
 }
 
-pub struct JwksCache {
+pub(crate) struct JwksCache {
     jwks_url: String,
     issuer: String,
     audience: String,
@@ -53,7 +53,7 @@ struct Jwk {
 }
 
 impl JwksCache {
-    pub fn new(
+    pub(crate) fn new(
         jwks_url: impl Into<String>,
         issuer: impl Into<String>,
         audience: impl Into<String>,
@@ -71,7 +71,7 @@ impl JwksCache {
     }
 
     #[cfg(test)]
-    pub fn with_keys(
+    pub(crate) fn with_keys(
         issuer: impl Into<String>,
         audience: impl Into<String>,
         keys: HashMap<String, DecodingKey>,
@@ -89,7 +89,7 @@ impl JwksCache {
         }
     }
 
-    pub async fn verify(&self, token: &str) -> Result<Claims, JwksError> {
+    pub(crate) async fn verify(&self, token: &str) -> Result<Claims, JwksError> {
         let header = decode_header(token).map_err(|_error| JwksError::InvalidToken)?;
         if header.alg != Algorithm::RS256 {
             return Err(JwksError::InvalidToken);
@@ -181,7 +181,7 @@ fn parse_keys(document: JwksDocument) -> Result<HashMap<String, DecodingKey>, Jw
     Ok(keys)
 }
 
-pub fn normalize_aud(value: &str) -> &str {
+fn normalize_aud(value: &str) -> &str {
     value.strip_suffix('/').unwrap_or(value)
 }
 

@@ -1,7 +1,7 @@
 use axum::http::HeaderMap;
 use axum::http::header::AUTHORIZATION;
 
-pub fn extract_bearer(headers: &HeaderMap) -> Option<&str> {
+pub(crate) fn extract_bearer(headers: &HeaderMap) -> Option<&str> {
     let value = headers.get(AUTHORIZATION)?.to_str().ok()?;
     let token = value.strip_prefix("Bearer ")?.trim();
     if token.is_empty() { None } else { Some(token) }

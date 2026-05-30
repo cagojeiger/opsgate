@@ -17,13 +17,13 @@ use crate::request_context::RequestMetadata;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
-pub struct CallbackQuery {
+pub(crate) struct CallbackQuery {
     code: Option<String>,
     state: Option<String>,
     error: Option<String>,
 }
 
-pub async fn login(State(state): State<AppState>, jar: CookieJar) -> Response {
+pub(crate) async fn login(State(state): State<AppState>, jar: CookieJar) -> Response {
     let login_flow = match new_login_flow(&state.oidc).await {
         Ok(flow) => flow,
         Err(error) => {
@@ -54,7 +54,7 @@ pub async fn login(State(state): State<AppState>, jar: CookieJar) -> Response {
     (jar, Redirect::temporary(&login_flow.redirect_url)).into_response()
 }
 
-pub async fn callback(
+pub(crate) async fn callback(
     State(state): State<AppState>,
     jar: CookieJar,
     headers: HeaderMap,

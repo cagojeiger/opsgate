@@ -8,12 +8,12 @@ use serde::{Deserialize, Serialize};
 use crate::auth::oidc::OidcProvider;
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct UserInfo {
-    pub sub: String,
+pub(super) struct UserInfo {
+    pub(super) sub: String,
     #[serde(default)]
-    pub email: Option<String>,
+    pub(super) email: Option<String>,
     #[serde(default)]
-    pub name: Option<String>,
+    pub(super) name: Option<String>,
 }
 
 pub(super) async fn exchange_code_for_userinfo(

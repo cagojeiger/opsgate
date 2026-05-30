@@ -8,7 +8,7 @@ use crate::auth::metadata::{
 use crate::state::AppState;
 
 #[derive(Debug, thiserror::Error)]
-pub enum AuthError {
+pub(crate) enum AuthError {
     #[error("missing or malformed bearer token")]
     MissingToken,
     #[error("invalid token")]
@@ -21,7 +21,7 @@ pub enum AuthError {
     Internal,
 }
 
-pub fn auth_error_body(state: &AppState, error: &AuthError) -> serde_json::Value {
+pub(crate) fn auth_error_body(state: &AppState, error: &AuthError) -> serde_json::Value {
     let code = code_for_error(error);
     match error {
         AuthError::NotRegistered => serde_json::json!({
@@ -37,7 +37,7 @@ pub fn auth_error_body(state: &AppState, error: &AuthError) -> serde_json::Value
     }
 }
 
-pub fn auth_error_response(state: &AppState, error: AuthError) -> Response {
+pub(crate) fn auth_error_response(state: &AppState, error: AuthError) -> Response {
     let status = status_for_error(&error);
     let code = code_for_error(&error);
     tracing::warn!(
@@ -56,17 +56,17 @@ pub fn auth_error_response(state: &AppState, error: AuthError) -> Response {
     response
 }
 
-pub fn shared_challenge_header(resource_url: &str) -> HeaderValue {
+pub(crate) fn shared_challenge_header(resource_url: &str) -> HeaderValue {
     let meta = protected_resource_metadata_url(resource_url);
     challenge_header(&meta.full_url)
 }
 
-pub fn shared_scoped_challenge_header(resource_url: &str) -> HeaderValue {
+pub(crate) fn shared_scoped_challenge_header(resource_url: &str) -> HeaderValue {
     let meta = protected_resource_metadata_url(resource_url);
     scoped_challenge_header(&meta.full_url)
 }
 
-pub fn status_for_error(error: &AuthError) -> StatusCode {
+pub(crate) fn status_for_error(error: &AuthError) -> StatusCode {
     match error {
         AuthError::MissingToken | AuthError::InvalidToken => StatusCode::UNAUTHORIZED,
         AuthError::NotRegistered | AuthError::Inactive => StatusCode::FORBIDDEN,
