@@ -56,7 +56,7 @@ fn outcome_for_status(status: u16) -> AuditOutcome {
 mod tests {
     use axum::http::Method;
     use chrono::Utc;
-    use opsgate_domain::{Channel, Role, User};
+    use opsgate_domain::{Channel, User};
     use uuid::Uuid;
 
     use super::*;
@@ -70,13 +70,11 @@ mod tests {
                 sub: "sub".to_owned(),
                 email: "user@example.test".to_owned(),
                 display_name: "User".to_owned(),
-                role: Role::Operator,
                 is_active: true,
                 created_at: now,
                 updated_at: now,
             },
             channel: Channel::Api,
-            role: Role::Operator,
             request_id: Some("req-api".to_owned()),
             remote_ip: Some("203.0.113.8".to_owned()),
             user_agent: Some("opsgate-test".to_owned()),
@@ -106,13 +104,11 @@ mod tests {
                 sub: "sub".to_owned(),
                 email: "user@example.test".to_owned(),
                 display_name: "User".to_owned(),
-                role: Role::Operator,
                 is_active: true,
                 created_at: now,
                 updated_at: now,
             },
             channel: Channel::Api,
-            role: Role::Operator,
             request_id: None,
             remote_ip: None,
             user_agent: None,

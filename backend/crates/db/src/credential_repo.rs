@@ -442,7 +442,6 @@ impl CredentialAuditAction {
 #[derive(Debug, Clone)]
 pub struct CredentialAuditParams {
     pub actor_user_id: Uuid,
-    pub actor_role: Option<String>,
     pub actor_ip: Option<String>,
     pub actor_user_agent: Option<String>,
     pub request_id: Option<String>,
@@ -537,7 +536,6 @@ async fn insert_audit_event(
         INSERT INTO credential_audit_events (
             owner_user_id,
             actor_user_id,
-            actor_role,
             actor_ip,
             actor_user_agent,
             request_id,
@@ -550,12 +548,11 @@ async fn insert_audit_event(
             changed_fields,
             detail
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
         "#,
     )
     .bind(credential.owner_user_id)
     .bind(audit.actor_user_id)
-    .bind(audit.actor_role)
     .bind(audit.actor_ip)
     .bind(audit.actor_user_agent)
     .bind(audit.request_id)

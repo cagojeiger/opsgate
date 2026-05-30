@@ -42,7 +42,6 @@ pub(crate) struct AuditEvent {
     channel: Channel,
     outcome: AuditOutcome,
     actor_user_id: Option<uuid::Uuid>,
-    actor_role: Option<String>,
     actor_ip: Option<String>,
     actor_user_agent: Option<String>,
     request_id: Option<String>,
@@ -58,7 +57,6 @@ impl AuditEvent {
             channel,
             outcome,
             actor_user_id: None,
-            actor_role: None,
             actor_ip: None,
             actor_user_agent: None,
             request_id: None,
@@ -70,7 +68,6 @@ impl AuditEvent {
 
     pub(crate) fn actor(mut self, actor: AuditActor) -> Self {
         self.actor_user_id = actor.user_id;
-        self.actor_role = actor.role;
         self.actor_ip = actor.ip;
         self.actor_user_agent = actor.user_agent;
         self.request_id = actor.request_id;
@@ -103,7 +100,6 @@ impl AuditEvent {
             outcome: self.outcome.as_str().to_owned(),
             severity: self.outcome.severity().to_owned(),
             actor_user_id: self.actor_user_id,
-            actor_role: self.actor_role,
             actor_ip: self.actor_ip,
             actor_user_agent: self.actor_user_agent,
             target_type,
@@ -119,7 +115,6 @@ impl AuditEvent {
 #[derive(Debug, Clone)]
 pub(crate) struct AuditActor {
     pub(crate) user_id: Option<uuid::Uuid>,
-    pub(crate) role: Option<String>,
     pub(crate) ip: Option<String>,
     pub(crate) user_agent: Option<String>,
     pub(crate) request_id: Option<String>,

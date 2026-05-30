@@ -174,22 +174,6 @@ pub async fn callback(
             );
             (jar, html_page(StatusCode::OK, "Login complete", &body)).into_response()
         }
-        Err(IdentityError::NotAdmin) => {
-            crate::audit::auth::record_signup(
-                &state.audit,
-                None,
-                crate::audit::AuditOutcome::Denied,
-                Some("not_admin"),
-                &attrs,
-                &metadata,
-            )
-            .await;
-            (
-                jar,
-                html_page(StatusCode::FORBIDDEN, "Login forbidden", "not allowed"),
-            )
-                .into_response()
-        }
         Err(IdentityError::Inactive) => {
             crate::audit::auth::record_signup(
                 &state.audit,
@@ -224,7 +208,7 @@ pub async fn callback(
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use opsgate_domain::{Caller, Channel, Role, User};
+    use opsgate_domain::{Caller, Channel, User};
     use uuid::Uuid;
 
     use super::*;
@@ -250,7 +234,7 @@ mod tests {
         let params = crate::audit::auth::signup_event(
             None,
             crate::audit::AuditOutcome::Denied,
-            Some("not_admin"),
+            Some("not_allowed"),
             &attrs(),
             &metadata(),
         )
@@ -264,7 +248,7 @@ mod tests {
         assert_eq!(params.actor_user_agent.as_deref(), Some("opsgate-test"));
         assert_eq!(
             params.detail.get("denial_reason"),
-            Some(&serde_json::json!("not_admin"))
+            Some(&serde_json::json!("not_allowed"))
         );
         let serialized = params.detail.to_string();
         assert!(!serialized.contains("token"));
@@ -280,13 +264,11 @@ mod tests {
                 sub: "sub-1".to_owned(),
                 email: "admin@example.test".to_owned(),
                 display_name: "Admin".to_owned(),
-                role: Role::Admin,
                 is_active: true,
                 created_at: now,
                 updated_at: now,
             },
             channel: Channel::Browser,
-            role: Role::Admin,
             request_id: Some("req-caller".to_owned()),
             remote_ip: Some("198.51.100.8".to_owned()),
             user_agent: Some("caller-agent".to_owned()),
@@ -303,7 +285,6 @@ mod tests {
 
         assert_eq!(params.outcome, "ok");
         assert_eq!(params.actor_user_id, Some(Uuid::nil()));
-        assert_eq!(params.actor_role.as_deref(), Some("admin"));
         assert_eq!(params.request_id.as_deref(), Some("req-caller"));
         assert_eq!(params.actor_ip.as_deref(), Some("198.51.100.8"));
         assert_eq!(params.actor_user_agent.as_deref(), Some("caller-agent"));

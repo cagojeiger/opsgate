@@ -51,11 +51,6 @@ impl SqlSchemaService {
 
     pub async fn execute(&self, caller: &Caller, input: SqlSchemaInput) -> Result<SqlSchemaOutput> {
         let raw_alias = safe_audit_message(&input.alias);
-        if let Err(error) = require_executor(caller) {
-            self.record_pre_input_denial(caller, &raw_alias, "required_role", &error)
-                .await;
-            return Err(error);
-        }
         let input = match normalize_input(input) {
             Ok(input) => input,
             Err(error) => {
@@ -938,19 +933,8 @@ fn pre_input_denial_audit_event(
     )
 }
 
-fn require_executor(caller: &Caller) -> Result<()> {
-    if caller.role.can_execute() {
-        Ok(())
-    } else {
-        Err(Error::forbidden("operator or admin role required"))
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
-    use opsgate_domain::{Channel, Role, User};
-    use uuid::Uuid;
 
     use super::*;
 
@@ -966,27 +950,6 @@ mod tests {
             max_bytes: None,
             timeout_ms: None,
             include_indexes: false,
-        }
-    }
-
-    fn caller(role: Role) -> Caller {
-        let now = Utc::now();
-        Caller {
-            user: User {
-                id: Uuid::nil(),
-                sub: "sub".to_owned(),
-                email: "user@example.test".to_owned(),
-                display_name: "User".to_owned(),
-                role,
-                is_active: true,
-                created_at: now,
-                updated_at: now,
-            },
-            channel: Channel::Mcp,
-            role,
-            request_id: None,
-            remote_ip: None,
-            user_agent: None,
         }
     }
 
@@ -1042,38 +1005,5 @@ mod tests {
         assert!(!serialized.contains("password"));
         assert!(!serialized.contains("\"reason\""));
         Ok(())
-    }
-
-    #[test]
-    fn pre_input_denial_is_recorded_safely() {
-        let caller = caller(Role::Viewer);
-        let error = Error::forbidden("operator or admin role required");
-
-        let audit = pre_input_denial_audit_event(&caller, "analytics", "required_role", &error)
-            .into_params();
-        assert_eq!(audit.action, "mcp.sql.schema");
-        assert_eq!(audit.outcome, "denied");
-        assert_eq!(audit.target_key.as_deref(), Some("analytics"));
-        assert!(audit.purpose.is_none());
-        assert_eq!(
-            audit.detail.get("denial_reason"),
-            Some(&serde_json::json!("required_role"))
-        );
-        assert_eq!(
-            audit.detail.get("error_message_safe"),
-            Some(&serde_json::json!(
-                "forbidden: operator or admin role required"
-            ))
-        );
-    }
-
-    #[test]
-    fn sql_schema_requires_operator_or_admin_role() {
-        assert!(matches!(
-            require_executor(&caller(Role::Viewer)),
-            Err(Error::Forbidden(_))
-        ));
-        assert!(require_executor(&caller(Role::Operator)).is_ok());
-        assert!(require_executor(&caller(Role::Admin)).is_ok());
     }
 }

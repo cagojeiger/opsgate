@@ -22,7 +22,6 @@ impl AuditRepo {
                 outcome,
                 severity,
                 actor_user_id,
-                actor_role,
                 actor_ip,
                 actor_user_agent,
                 target_type,
@@ -32,7 +31,7 @@ impl AuditRepo {
                 purpose,
                 detail
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
             "#,
         )
         .bind(params.action)
@@ -40,7 +39,6 @@ impl AuditRepo {
         .bind(params.outcome)
         .bind(params.severity)
         .bind(params.actor_user_id)
-        .bind(params.actor_role)
         .bind(params.actor_ip)
         .bind(params.actor_user_agent)
         .bind(params.target_type)
@@ -63,7 +61,6 @@ pub struct AuditLogParams {
     pub outcome: String,
     pub severity: String,
     pub actor_user_id: Option<Uuid>,
-    pub actor_role: Option<String>,
     pub actor_ip: Option<String>,
     pub actor_user_agent: Option<String>,
     pub target_type: Option<String>,

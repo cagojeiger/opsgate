@@ -7,8 +7,8 @@ Surface:
 /mcp/admin
 ```
 
-Purpose: 호출자의 신원, role, surface별 capability 목록, 그리고 비밀이 아닌
-credential 요약을 반환합니다.
+Purpose: 호출자의 신원, 현재 surface에서 노출되는 capability 목록, 그리고 비밀이
+아닌 credential 요약을 반환합니다.
 
 Input:
 
@@ -27,7 +27,7 @@ Output:
     "workflow": ["..."]
   },
   "capabilities": [
-    {"tool": "credential.list", "description": "...", "role": "active"}
+    {"tool": "credential.list", "description": "..."}
   ],
   "credential_summary": {
     "total": 3,
@@ -35,17 +35,19 @@ Output:
     "by_provider": {"k8s": 2, "postgres": 1},
     "tags": {"prod": 2, "db": 1}
   },
-  "id": 1,
+  "id": "00000000-0000-0000-0000-000000000000",
   "sub": "...",
   "email": "...",
-  "name": "...",
-  "role": "admin",
-  "is_admin": true
+  "name": "..."
 }
 ```
 
 Notes:
 
+- role/admin 개념은 반환하지 않습니다. Opsgate는 개인용 서비스이며 권한 경계는
+  role이 아니라 surface별 툴 노출로 표현합니다.
+- `/mcp`는 runtime 도구만 노출하고, `/mcp/admin`은 credential 관리 도구를
+  노출합니다.
 - alias는 반환하지 않습니다.
 - endpoint는 반환하지 않습니다.
 - secret은 반환하지 않습니다.

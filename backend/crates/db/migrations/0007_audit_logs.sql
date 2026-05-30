@@ -9,7 +9,6 @@ CREATE TABLE audit_logs (
     outcome          TEXT NOT NULL,
     severity         TEXT NOT NULL,
     actor_user_id    UUID REFERENCES users(id) ON DELETE SET NULL,
-    actor_role       TEXT,
     actor_ip         TEXT,
     actor_user_agent TEXT,
     target_type      TEXT,
@@ -23,7 +22,6 @@ CREATE TABLE audit_logs (
     CONSTRAINT audit_logs_channel_chk CHECK (channel IN ('system', 'browser', 'api', 'mcp')),
     CONSTRAINT audit_logs_outcome_chk CHECK (outcome IN ('ok', 'denied', 'error')),
     CONSTRAINT audit_logs_severity_chk CHECK (severity IN ('info', 'warning', 'critical')),
-    CONSTRAINT audit_logs_actor_role_chk CHECK (actor_role IS NULL OR actor_role IN ('active', 'admin')),
     CONSTRAINT audit_logs_target_type_chk CHECK (target_type IS NULL OR target_type ~ '^[a-z][a-z0-9_.-]{0,62}$'),
     CONSTRAINT audit_logs_purpose_chk CHECK (
         purpose IS NULL

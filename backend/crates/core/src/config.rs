@@ -50,9 +50,6 @@ pub struct Config {
     /// Resource/audience URL for REST and MCP, with trailing slash trimmed.
     #[validate(custom(function = "validate_http_url_value"))]
     pub resource_url: String,
-    /// Only this browser-login email can register the local admin identity.
-    #[validate(length(min = 1))]
-    pub admin_email: String,
     /// Base64-encoded 32-byte master key for sealing credential secrets.
     pub master_key: SecretString,
     /// Shared JWKS cache TTL.
@@ -197,7 +194,6 @@ mod tests {
             oauth_client_id: "opsgate-web".to_owned(),
             oauth_redirect_url: "http://localhost:9091/callback".to_owned(),
             resource_url: "http://localhost:9091/mcp".to_owned(),
-            admin_email: "admin@example.test".to_owned(),
             master_key: SecretString::from(
                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned(),
             ),
@@ -229,7 +225,6 @@ mod tests {
                     "http://localhost:9091/callback",
                 ),
                 ("OPSGATE_RESOURCE_URL", "http://localhost:9091/mcp"),
-                ("OPSGATE_ADMIN_EMAIL", "admin@example.test"),
                 (
                     "OPSGATE_MASTER_KEY",
                     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
@@ -243,7 +238,6 @@ mod tests {
         assert_eq!(config.bind_addr.to_string(), super::DEFAULT_BIND_ADDR);
         assert_eq!(config.database_url, "postgres://env");
         assert_eq!(config.database_migrate_url, "postgres://owner");
-        assert_eq!(config.admin_email, "admin@example.test");
         assert_eq!(config.db_max_connections, 7);
         assert_eq!(
             config.jwks_cache_ttl.as_secs(),

@@ -56,7 +56,7 @@ impl CredentialService {
         caller: &Caller,
         input: RegisterHttpCredentialInput,
     ) -> Result<Credential> {
-        let owner_user_id = require_admin(caller)?;
+        let owner_user_id = caller.user.id;
         let input = normalize_register_input(input.into_domain());
         validate_register_input(&input)?;
         self.validate_register_endpoint_ips(&input).await?;
@@ -96,7 +96,7 @@ impl CredentialService {
         caller: &Caller,
         input: RegisterSqlCredentialInput,
     ) -> Result<Credential> {
-        let owner_user_id = require_admin(caller)?;
+        let owner_user_id = caller.user.id;
         let input = normalize_register_input(input.into_domain());
         validate_register_input(&input)?;
         self.validate_register_endpoint_ips(&input).await?;
@@ -196,7 +196,7 @@ impl CredentialService {
         caller: &Caller,
         input: DeleteCredentialInput,
     ) -> Result<Credential> {
-        let owner_user_id = require_admin(caller)?;
+        let owner_user_id = caller.user.id;
         let alias = input.alias.trim().to_owned();
         let reason = validate_reason(&input.reason)?;
         validate_credential_alias(&alias)?;
@@ -216,7 +216,7 @@ impl CredentialService {
         input: UpdateCredentialInput,
         category: CredentialCategory,
     ) -> Result<CredentialUpdate> {
-        let owner_user_id = require_admin(caller)?;
+        let owner_user_id = caller.user.id;
         let alias = input.alias.trim().to_owned();
         let reason = validate_reason(&input.reason)?;
         validate_credential_alias(&alias)?;
@@ -301,14 +301,6 @@ impl CredentialService {
             credential,
             changed_fields,
         })
-    }
-}
-
-fn require_admin(caller: &Caller) -> Result<Uuid> {
-    if caller.role.is_admin() {
-        Ok(caller.user.id)
-    } else {
-        Err(Error::forbidden("admin role required"))
     }
 }
 
@@ -744,7 +736,7 @@ mod tests {
 
     use base64::Engine;
     use chrono::Utc;
-    use opsgate_domain::{Channel, Role, User};
+    use opsgate_domain::{Channel, User};
     use sqlx::postgres::PgPoolOptions;
 
     use super::*;
@@ -808,7 +800,7 @@ mod tests {
         }
     }
 
-    fn caller(role: Role) -> Caller {
+    fn caller() -> Caller {
         let now = Utc::now();
         Caller {
             user: User {
@@ -816,13 +808,11 @@ mod tests {
                 sub: "sub".to_owned(),
                 email: "user@example.test".to_owned(),
                 display_name: "User".to_owned(),
-                role,
                 is_active: true,
                 created_at: now,
                 updated_at: now,
             },
             channel: Channel::Mcp,
-            role,
             request_id: Some("req-credential".to_owned()),
             remote_ip: Some("203.0.113.30".to_owned()),
             user_agent: Some("opsgate-test".to_owned()),
@@ -878,11 +868,10 @@ mod tests {
     #[test]
     fn register_audit_detail_excludes_endpoint_and_secret_material() {
         let input = http_input(false);
-        let audit = register_audit(&caller(Role::Admin), &input);
+        let audit = register_audit(&caller(), &input);
         let detail = audit.detail.to_string();
 
         assert!(matches!(audit.action, CredentialAuditAction::Register));
-        assert_eq!(audit.actor_role.as_deref(), Some("admin"));
         assert_eq!(audit.channel.as_deref(), Some("mcp"));
         assert_eq!(audit.request_id.as_deref(), Some("req-credential"));
         assert_eq!(audit.actor_ip.as_deref(), Some("203.0.113.30"));
@@ -895,7 +884,7 @@ mod tests {
 
     #[test]
     fn update_and_delete_audit_store_reason_without_secret_material() {
-        let caller = caller(Role::Admin);
+        let caller = caller();
         let update = update_audit(
             &caller,
             "  Allow readonly metadata query  ".to_owned(),
@@ -987,19 +976,6 @@ mod tests {
         assert!(err.contains("secret header"));
         assert!(!err.contains("secret-token"));
         Ok(())
-    }
-
-    #[test]
-    fn credential_mutation_requires_admin_role() {
-        assert!(require_admin(&caller(Role::Admin)).is_ok());
-        assert!(matches!(
-            require_admin(&caller(Role::Operator)),
-            Err(Error::Forbidden(_))
-        ));
-        assert!(matches!(
-            require_admin(&caller(Role::Viewer)),
-            Err(Error::Forbidden(_))
-        ));
     }
 
     #[test]

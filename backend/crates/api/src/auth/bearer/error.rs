@@ -15,8 +15,6 @@ pub enum AuthError {
     InvalidToken,
     #[error("user not registered")]
     NotRegistered,
-    #[error("insufficient role")]
-    InsufficientRole,
     #[error("user is inactive")]
     Inactive,
     #[error("upstream/internal failure")]
@@ -71,9 +69,7 @@ pub fn shared_scoped_challenge_header(resource_url: &str) -> HeaderValue {
 pub fn status_for_error(error: &AuthError) -> StatusCode {
     match error {
         AuthError::MissingToken | AuthError::InvalidToken => StatusCode::UNAUTHORIZED,
-        AuthError::NotRegistered | AuthError::InsufficientRole | AuthError::Inactive => {
-            StatusCode::FORBIDDEN
-        }
+        AuthError::NotRegistered | AuthError::Inactive => StatusCode::FORBIDDEN,
         AuthError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
@@ -91,7 +87,6 @@ fn code_for_error(error: &AuthError) -> &'static str {
         AuthError::MissingToken => "missing_token",
         AuthError::InvalidToken => "invalid_token",
         AuthError::NotRegistered => "not_registered",
-        AuthError::InsufficientRole => "insufficient_role",
         AuthError::Inactive => "inactive_user",
         AuthError::Internal => "internal_error",
     }
@@ -104,7 +99,6 @@ fn message_for_error(error: &AuthError) -> &'static str {
         AuthError::NotRegistered => {
             "This authgate account is authenticated but not registered in opsgate yet. Open login_url once, then reconnect your MCP client."
         }
-        AuthError::InsufficientRole => "insufficient role",
         AuthError::Inactive => "inactive user",
         AuthError::Internal => "internal server error",
     }

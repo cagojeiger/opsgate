@@ -23,8 +23,6 @@ pub struct McpMeOutput {
     pub sub: String,
     pub email: String,
     pub name: String,
-    pub role: String,
-    pub is_admin: bool,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
@@ -39,7 +37,6 @@ pub struct ServiceInfo {
 pub struct Capability {
     pub tool: String,
     pub description: String,
-    pub role: String,
 }
 
 pub async fn call(
@@ -73,8 +70,6 @@ fn build_me(caller: &Caller, toolset: McpToolset, summary: CredentialSummary) ->
         sub: caller.user.sub.clone(),
         email: caller.user.email.clone(),
         name: caller.user.display_name.clone(),
-        role: caller.role.as_str().to_owned(),
-        is_admin: caller.role.is_admin(),
     }
 }
 
@@ -84,63 +79,49 @@ fn capabilities_for_toolset(toolset: McpToolset) -> Vec<Capability> {
             (
                 "credential.list",
                 "등록된 credential의 alias, metadata, policy를 조회합니다.",
-                "viewer",
             ),
-            (
-                "api.call",
-                "HTTP credential alias로 JSON API를 호출합니다.",
-                "operator",
-            ),
+            ("api.call", "HTTP credential alias로 JSON API를 호출합니다."),
             (
                 "sql.schema",
                 "SQL credential alias로 Postgres schema metadata를 조회합니다.",
-                "operator",
             ),
             (
                 "sql.query",
                 "SQL credential alias로 읽기 전용 Postgres 쿼리를 실행합니다.",
-                "operator",
             ),
         ],
         McpToolset::Admin => vec![
             (
                 "credential.list",
                 "등록된 credential의 alias, metadata, policy를 조회합니다.",
-                "viewer",
             ),
             (
                 "credential.register_http",
                 "HTTPS API credential을 등록하고 secret header를 봉인합니다.",
-                "admin",
             ),
             (
                 "credential.register_sql",
                 "Postgres credential을 등록하고 username/password를 봉인합니다.",
-                "admin",
             ),
             (
                 "credential.update_http",
                 "HTTP credential의 metadata와 policy를 수정합니다.",
-                "admin",
             ),
             (
                 "credential.update_sql",
                 "SQL credential의 metadata와 policy를 수정합니다.",
-                "admin",
             ),
             (
                 "credential.delete",
                 "credential을 소프트 삭제하고 봉인된 secret을 파기합니다.",
-                "admin",
             ),
         ],
     };
     specs
         .into_iter()
-        .map(|(tool, description, role)| Capability {
+        .map(|(tool, description)| Capability {
             tool: tool.to_owned(),
             description: description.to_owned(),
-            role: role.to_owned(),
         })
         .collect()
 }
@@ -153,7 +134,7 @@ fn workflow_for_toolset(toolset: McpToolset) -> Vec<String> {
             "credential category에 맞는 runtime 도구를 호출합니다.".to_owned(),
         ],
         McpToolset::Admin => vec![
-            "me로 admin capability와 credential_summary를 확인합니다.".to_owned(),
+            "me로 관리 capability와 credential_summary를 확인합니다.".to_owned(),
             "credential.register_*로 secret을 봉인해 등록합니다.".to_owned(),
             "credential.update_*로 metadata와 policy만 수정합니다.".to_owned(),
             "secret 교체나 endpoint 변경은 credential.delete 후 재등록합니다.".to_owned(),
@@ -176,7 +157,7 @@ fn map_error(error: opsgate_core::Error) -> ErrorData {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use opsgate_domain::{Caller, Channel, Role, User};
+    use opsgate_domain::{Caller, Channel, User};
     use std::collections::BTreeMap;
     use uuid::Uuid;
 
@@ -191,7 +172,6 @@ mod tests {
             sub: "sub-1".to_owned(),
             email: "user@example.test".to_owned(),
             display_name: "Test User".to_owned(),
-            role: Role::Viewer,
             is_active: true,
             created_at: now,
             updated_at: now,
@@ -200,7 +180,6 @@ mod tests {
             &Caller {
                 user,
                 channel: Channel::Mcp,
-                role: Role::Admin,
                 request_id: None,
                 remote_ip: None,
                 user_agent: None,
@@ -213,8 +192,6 @@ mod tests {
                 tags: BTreeMap::new(),
             },
         );
-        assert_eq!(out.role, "admin");
-        assert!(out.is_admin);
         assert!(
             out.capabilities
                 .iter()
@@ -231,7 +208,6 @@ mod tests {
             sub: "sub-1".to_owned(),
             email: "user@example.test".to_owned(),
             display_name: "Test User".to_owned(),
-            role: Role::Viewer,
             is_active: true,
             created_at: now,
             updated_at: now,
@@ -242,7 +218,6 @@ mod tests {
             &Caller {
                 user,
                 channel: Channel::Mcp,
-                role: Role::Operator,
                 request_id: None,
                 remote_ip: None,
                 user_agent: None,
@@ -257,8 +232,6 @@ mod tests {
         );
         let json = serde_json::to_string(&out)?;
 
-        assert_eq!(out.role, "operator");
-        assert!(!out.is_admin);
         assert!(
             out.capabilities
                 .iter()

@@ -3,19 +3,24 @@
 -- Endpoint URLs, sealed ciphertext, and secret values must never be written here.
 
 CREATE TABLE credential_audit_events (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    owner_user_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    actor_user_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    credential_id   UUID NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
-    alias           TEXT NOT NULL,
-    category        TEXT NOT NULL,
-    action          TEXT NOT NULL,
-    reason          TEXT,
-    changed_fields  TEXT[] NOT NULL DEFAULT '{}',
-    detail          JSONB NOT NULL DEFAULT '{}',
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    actor_user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    actor_ip         TEXT,
+    actor_user_agent TEXT,
+    request_id       TEXT,
+    channel          TEXT,
+    credential_id    UUID NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+    alias            TEXT NOT NULL,
+    category         TEXT NOT NULL,
+    action           TEXT NOT NULL,
+    reason           TEXT,
+    changed_fields   TEXT[] NOT NULL DEFAULT '{}',
+    detail           JSONB NOT NULL DEFAULT '{}',
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT credential_audit_category_check CHECK (category IN ('http', 'sql')),
     CONSTRAINT credential_audit_action_check CHECK (action IN ('register', 'update', 'delete')),
+    CONSTRAINT credential_audit_channel_chk CHECK (channel IS NULL OR channel IN ('api', 'mcp', 'browser')),
     CONSTRAINT credential_audit_reason_no_crlf CHECK (
         reason IS NULL
         OR (position(chr(10) in reason) = 0 AND position(chr(13) in reason) = 0)

@@ -14,7 +14,6 @@ use axum::http::header::WWW_AUTHENTICATE;
 use axum::http::request::Parts;
 use axum::http::{Request, StatusCode};
 use axum::response::{IntoResponse, Response};
-use opsgate_domain::Caller;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{Implementation, ProtocolVersion, ServerCapabilities, ServerInfo};
@@ -318,17 +317,6 @@ pub async fn mcp_admin_handler(State(state): State<AppState>, request: Request<B
         Ok(request) => request,
         Err(error) => return mcp_auth_response(&state, error),
     };
-    let Some(caller) = request.extensions().get::<Caller>() else {
-        return mcp_auth_response(&state, AuthError::Internal);
-    };
-    if !caller.role.is_admin() {
-        crate::audit::mcp::record_admin_denied(&state.audit, caller).await;
-        return mcp_auth_response_with_status(
-            &state,
-            AuthError::InsufficientRole,
-            StatusCode::UNAUTHORIZED,
-        );
-    }
     let config = streamable_config();
     let manager = Arc::new(NeverSessionManager::default());
     let service_state = state.clone();
@@ -401,10 +389,7 @@ fn mcp_auth_response_with_status(
 
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
-    use opsgate_domain::{Channel, Role, User};
     use serde_json::Value;
-    use uuid::Uuid;
 
     use super::{AdminMcpServer, RuntimeMcpServer};
 
@@ -463,40 +448,6 @@ mod tests {
             }
         }
         Ok(())
-    }
-
-    #[test]
-    fn mcp_admin_denial_audit_row_carries_request_metadata() {
-        let now = Utc::now();
-        let caller = opsgate_domain::Caller {
-            user: User {
-                id: Uuid::nil(),
-                sub: "sub-1".to_owned(),
-                email: "operator@example.test".to_owned(),
-                display_name: "Operator".to_owned(),
-                role: Role::Operator,
-                is_active: true,
-                created_at: now,
-                updated_at: now,
-            },
-            channel: Channel::Mcp,
-            role: Role::Operator,
-            request_id: Some("req-mcp".to_owned()),
-            remote_ip: Some("203.0.113.10".to_owned()),
-            user_agent: Some("opsgate-test".to_owned()),
-        };
-
-        let params = crate::audit::mcp::admin_denied_event(&caller).into_params();
-
-        assert_eq!(params.action, "mcp.auth.denied");
-        assert_eq!(params.outcome, "denied");
-        assert_eq!(params.request_id.as_deref(), Some("req-mcp"));
-        assert_eq!(params.actor_ip.as_deref(), Some("203.0.113.10"));
-        assert_eq!(params.actor_user_agent.as_deref(), Some("opsgate-test"));
-        assert_eq!(
-            params.detail.get("denial_reason"),
-            Some(&serde_json::json!("required_role"))
-        );
     }
 
     fn assert_no_boolean_schema(value: &Value, path: &str) -> Result<(), String> {

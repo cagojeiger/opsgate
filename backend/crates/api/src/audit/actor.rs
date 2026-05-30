@@ -7,7 +7,6 @@ use super::event::AuditActor;
 pub(crate) fn caller_actor(caller: &Caller) -> AuditActor {
     AuditActor {
         user_id: Some(caller.user.id),
-        role: Some(caller.role.as_str().to_owned()),
         ip: caller.remote_ip.clone(),
         user_agent: caller.user_agent.clone(),
         request_id: caller.request_id.clone(),
@@ -20,7 +19,6 @@ pub(crate) fn optional_caller_actor(
 ) -> AuditActor {
     AuditActor {
         user_id: caller.map(|caller| caller.user.id),
-        role: caller.map(|caller| caller.role.as_str().to_owned()),
         ip: caller
             .and_then(|caller| caller.remote_ip.clone())
             .or_else(|| metadata.remote_ip.clone()),
@@ -36,7 +34,6 @@ pub(crate) fn optional_caller_actor(
 pub(crate) fn metadata_actor(metadata: &RequestMetadata) -> AuditActor {
     AuditActor {
         user_id: None,
-        role: None,
         ip: metadata.remote_ip.clone(),
         user_agent: metadata.user_agent.clone(),
         request_id: metadata.request_id.clone(),
@@ -52,7 +49,6 @@ pub(crate) fn credential_actor(
 ) -> opsgate_db::CredentialAuditParams {
     opsgate_db::CredentialAuditParams {
         actor_user_id: caller.user.id,
-        actor_role: Some(caller.role.as_str().to_owned()),
         actor_ip: caller.remote_ip.clone(),
         actor_user_agent: caller.user_agent.clone(),
         request_id: caller.request_id.clone(),

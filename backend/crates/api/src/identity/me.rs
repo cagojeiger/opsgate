@@ -8,8 +8,6 @@ pub struct MeOutput {
     pub sub: String,
     pub email: String,
     pub name: String,
-    pub role: String,
-    pub is_admin: bool,
 }
 
 pub fn build_me(caller: &Caller) -> MeOutput {
@@ -18,15 +16,13 @@ pub fn build_me(caller: &Caller) -> MeOutput {
         sub: caller.user.sub.clone(),
         email: caller.user.email.clone(),
         name: caller.user.display_name.clone(),
-        role: caller.role.as_str().to_owned(),
-        is_admin: caller.role.is_admin(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use opsgate_domain::{Caller, Channel, Role, User};
+    use opsgate_domain::{Caller, Channel, User};
     use uuid::Uuid;
 
     use super::build_me;
@@ -39,7 +35,6 @@ mod tests {
             sub: "sub-1".to_owned(),
             email: "user@example.test".to_owned(),
             display_name: "Test User".to_owned(),
-            role: Role::Operator,
             is_active: true,
             created_at: now,
             updated_at: now,
@@ -47,7 +42,6 @@ mod tests {
         let caller = Caller {
             user,
             channel: Channel::Api,
-            role: Role::Operator,
             request_id: None,
             remote_ip: None,
             user_agent: None,
@@ -57,7 +51,5 @@ mod tests {
         assert_eq!(out.sub, "sub-1");
         assert_eq!(out.email, "user@example.test");
         assert_eq!(out.name, "Test User");
-        assert_eq!(out.role, "operator");
-        assert!(!out.is_admin);
     }
 }

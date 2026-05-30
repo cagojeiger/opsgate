@@ -6,6 +6,7 @@ CREATE TABLE api_call_history (
     owner_user_id       UUID REFERENCES users(id) ON DELETE CASCADE,
     actor_user_id       UUID REFERENCES users(id) ON DELETE SET NULL,
     channel             TEXT NOT NULL DEFAULT 'mcp',
+    request_id          TEXT,
     credential_id       UUID REFERENCES credentials(id) ON DELETE SET NULL,
     credential_alias    TEXT NOT NULL DEFAULT '',
     credential_category TEXT NOT NULL DEFAULT '',

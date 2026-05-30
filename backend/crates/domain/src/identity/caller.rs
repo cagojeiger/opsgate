@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Role, User};
+use crate::User;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -14,7 +14,6 @@ pub enum Channel {
 pub struct Caller {
     pub user: User,
     pub channel: Channel,
-    pub role: Role,
     pub request_id: Option<String>,
     pub remote_ip: Option<String>,
     pub user_agent: Option<String>,

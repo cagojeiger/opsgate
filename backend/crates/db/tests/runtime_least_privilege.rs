@@ -13,19 +13,15 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Connection, PgConnection, PgPool};
 use uuid::Uuid;
 
-const MIGRATIONS: [&str; 12] = [
+const MIGRATIONS: [&str; 8] = [
     include_str!("../migrations/0001_init.sql"),
-    include_str!("../migrations/0002_users_oauth.sql"),
     include_str!("../migrations/0003_credentials.sql"),
-    include_str!("../migrations/0004_credentials_delete_secret.sql"),
     include_str!("../migrations/0005_credential_audit_events.sql"),
     include_str!("../migrations/0006_api_call_history.sql"),
     include_str!("../migrations/0007_audit_logs.sql"),
     include_str!("../migrations/0008_sql_query_history.sql"),
-    include_str!("../migrations/0009_identity_roles.sql"),
     include_str!("../migrations/0010_credential_lifecycle_history.sql"),
     include_str!("../migrations/0011_runtime_least_privilege.sql"),
-    include_str!("../migrations/0012_credential_audit_request_metadata.sql"),
 ];
 
 struct TestDb {
@@ -69,7 +65,6 @@ async fn opsgate_app_can_run_normal_runtime_operations() -> Result<(), Box<dyn s
             },
             CredentialAuditParams {
                 actor_user_id: user.id,
-                actor_role: Some("admin".to_owned()),
                 actor_ip: Some("127.0.0.1".to_owned()),
                 actor_user_agent: Some("least-privilege-test".to_owned()),
                 request_id: Some("req-credential-update".to_owned()),
@@ -100,7 +95,6 @@ async fn opsgate_app_can_run_normal_runtime_operations() -> Result<(), Box<dyn s
             user.id,
             CredentialAuditParams {
                 actor_user_id: user.id,
-                actor_role: Some("admin".to_owned()),
                 actor_ip: Some("127.0.0.1".to_owned()),
                 actor_user_agent: Some("least-privilege-test".to_owned()),
                 request_id: Some("req-credential-delete".to_owned()),
@@ -126,7 +120,7 @@ async fn opsgate_app_can_run_normal_runtime_operations() -> Result<(), Box<dyn s
 }
 
 #[tokio::test]
-async fn opsgate_app_cannot_modify_schema_or_protected_user_role()
+async fn opsgate_app_cannot_modify_schema_or_protected_user_state()
 -> Result<(), Box<dyn std::error::Error>> {
     let Some(db) = TestDb::setup().await? else {
         return Ok(());
@@ -150,17 +144,17 @@ async fn opsgate_app_cannot_modify_schema_or_protected_user_role()
         .await;
     assert!(alter_table.is_err());
 
-    let update_role = sqlx::query("UPDATE users SET role = 'admin' WHERE id = $1")
+    let deactivate = sqlx::query("UPDATE users SET is_active = false WHERE id = $1")
         .bind(user_id)
         .execute(&db.runtime_pool)
         .await;
-    assert!(update_role.is_err());
+    assert!(deactivate.is_err());
 
-    let role: String = sqlx::query_scalar("SELECT role FROM users WHERE id = $1")
+    let is_active: bool = sqlx::query_scalar("SELECT is_active FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_one(&db.owner_pool)
         .await?;
-    assert_eq!(role, "viewer");
+    assert!(is_active);
 
     db.cleanup().await;
     Ok(())
@@ -268,7 +262,6 @@ fn insert_params(owner_user_id: Uuid, alias: &str) -> InsertCredentialParams {
 fn audit(actor_user_id: Uuid, action: CredentialAuditAction) -> CredentialAuditParams {
     CredentialAuditParams {
         actor_user_id,
-        actor_role: Some("admin".to_owned()),
         actor_ip: Some("127.0.0.1".to_owned()),
         actor_user_agent: Some("least-privilege-test".to_owned()),
         request_id: Some("req-credential".to_owned()),
@@ -284,7 +277,6 @@ fn api_history(user_id: Uuid, credential_id: Uuid) -> ApiCallHistoryParams {
     ApiCallHistoryParams {
         owner_user_id: Some(user_id),
         actor_user_id: Some(user_id),
-        actor_role: Some("admin".to_owned()),
         channel: "api".to_owned(),
         request_id: Some("req-api".to_owned()),
         credential_id: Some(credential_id),
@@ -314,7 +306,6 @@ fn sql_history(user_id: Uuid, credential_id: Uuid) -> SqlQueryHistoryParams {
     SqlQueryHistoryParams {
         owner_user_id: Some(user_id),
         actor_user_id: Some(user_id),
-        actor_role: Some("admin".to_owned()),
         channel: "api".to_owned(),
         request_id: Some("req-sql".to_owned()),
         credential_id: Some(credential_id),
@@ -347,7 +338,6 @@ fn audit_log(user_id: Uuid) -> AuditLogParams {
         outcome: "ok".to_owned(),
         severity: "info".to_owned(),
         actor_user_id: Some(user_id),
-        actor_role: Some("admin".to_owned()),
         actor_ip: Some("127.0.0.1".to_owned()),
         actor_user_agent: Some("least-privilege-test".to_owned()),
         target_type: Some("service".to_owned()),

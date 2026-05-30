@@ -12,7 +12,7 @@ use axum::http::{Method, Request, StatusCode};
 use axum::response::Response;
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, encode};
-use opsgate_domain::{Caller, Channel, IdentityError, ResolveAttrs, Role, User};
+use opsgate_domain::{Caller, Channel, IdentityError, ResolveAttrs, User};
 use serde::Serialize;
 use serde_json::{Value, json};
 use sqlx::postgres::PgPoolOptions;
@@ -82,7 +82,6 @@ struct TestResolver {
 #[derive(Clone)]
 enum ResolverMode {
     Registered(bool),
-    RegisteredRole { active: bool, role: Role },
     Missing,
 }
 
@@ -114,32 +113,28 @@ impl TestResolver {
         match self.mode {
             ResolverMode::Missing => Err(IdentityError::NotRegistered),
             ResolverMode::Registered(active) if !active => Err(IdentityError::Inactive),
-            ResolverMode::Registered(_active) => Ok(caller(attrs, channel, Role::Operator)),
-            ResolverMode::RegisteredRole { active, .. } if !active => Err(IdentityError::Inactive),
-            ResolverMode::RegisteredRole { role, .. } => Ok(caller(attrs, channel, role)),
+            ResolverMode::Registered(_active) => Ok(caller(attrs, channel)),
         }
     }
 }
 
-fn caller(attrs: ResolveAttrs, channel: Channel, role: Role) -> Caller {
+fn caller(attrs: ResolveAttrs, channel: Channel) -> Caller {
     Caller {
-        user: test_user(attrs, role),
+        user: test_user(attrs),
         channel,
-        role,
         request_id: None,
         remote_ip: None,
         user_agent: None,
     }
 }
 
-fn test_user(attrs: ResolveAttrs, role: Role) -> User {
+fn test_user(attrs: ResolveAttrs) -> User {
     let now = Utc::now();
     User {
         id: Uuid::nil(),
         sub: attrs.sub,
         email: attrs.email,
         display_name: attrs.name,
-        role,
         is_active: true,
         created_at: now,
         updated_at: now,
@@ -170,7 +165,6 @@ fn state_with_resource_url(
         oauth_client_id: "client".to_owned(),
         oauth_redirect_url: "http://localhost:9091/callback".to_owned(),
         resource_url: resource_url.to_owned(),
-        admin_email: "admin@example.test".to_owned(),
         master_key: SecretString::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
         jwks_cache_ttl: Duration::from_secs(300),
         secure_cookies: false,
@@ -226,8 +220,8 @@ fn state_with_resource_url(
     }))
 }
 
-fn state_with_role(role: Role) -> Result<AppState, Box<dyn std::error::Error>> {
-    state(ResolverMode::RegisteredRole { active: true, role })
+fn registered_state() -> Result<AppState, Box<dyn std::error::Error>> {
+    state(ResolverMode::Registered(true))
 }
 
 async fn request(
@@ -445,9 +439,9 @@ async fn api_routes_accept_valid_bearer() -> Result<(), Box<dyn std::error::Erro
 }
 
 #[tokio::test]
-async fn mcp_runtime_accepts_registered_operator_before_protocol_handling()
+async fn mcp_runtime_accepts_registered_user_before_protocol_handling()
 -> Result<(), Box<dyn std::error::Error>> {
-    let app = crate::routes::app(state_with_role(Role::Operator)?);
+    let app = crate::routes::app(registered_state()?);
     let valid = token(
         "sub-1",
         "https://auth.example.test",
@@ -473,8 +467,9 @@ async fn mcp_runtime_accepts_registered_operator_before_protocol_handling()
 }
 
 #[tokio::test]
-async fn mcp_admin_rejects_registered_operator() -> Result<(), Box<dyn std::error::Error>> {
-    let app = crate::routes::app(state_with_role(Role::Operator)?);
+async fn mcp_admin_accepts_registered_user_before_protocol_handling()
+-> Result<(), Box<dyn std::error::Error>> {
+    let app = crate::routes::app(registered_state()?);
     let valid = token(
         "sub-1",
         "https://auth.example.test",
@@ -494,15 +489,8 @@ async fn mcp_admin_rejects_registered_operator() -> Result<(), Box<dyn std::erro
         )
         .await?;
 
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    let challenge = response
-        .headers()
-        .get(WWW_AUTHENTICATE)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default();
-    assert!(challenge.starts_with("Bearer "));
-    assert!(challenge.contains("resource_metadata="));
-    assert!(challenge.contains(r#"scope="openid offline_access""#));
+    assert_ne!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_ne!(response.status(), StatusCode::FORBIDDEN);
     Ok(())
 }
 
@@ -715,7 +703,7 @@ async fn mcp_unauthenticated_challenge_includes_resource_metadata_and_scope()
 
 #[tokio::test]
 async fn rest_parity_routes_require_bearer() -> Result<(), Box<dyn std::error::Error>> {
-    let app = crate::routes::app(state_with_role(Role::Operator)?);
+    let app = crate::routes::app(registered_state()?);
     let cases = [
         (Method::POST, "/api/v1/api/call", "{}"),
         (Method::POST, "/api/v1/sql/query", "{}"),
@@ -748,9 +736,9 @@ async fn rest_parity_routes_require_bearer() -> Result<(), Box<dyn std::error::E
 #[tokio::test]
 async fn rest_parity_routes_return_validation_errors_instead_of_not_found()
 -> Result<(), Box<dyn std::error::Error>> {
-    let operator_app = crate::routes::app(state_with_role(Role::Operator)?);
+    let app = crate::routes::app(registered_state()?);
 
-    let api_call = operator_app
+    let api_call = app
         .clone()
         .oneshot(authed_json_request(
             Method::POST,
@@ -760,7 +748,7 @@ async fn rest_parity_routes_return_validation_errors_instead_of_not_found()
         .await?;
     assert_eq!(api_call.status(), StatusCode::BAD_REQUEST);
 
-    let sql_query = operator_app
+    let sql_query = app
         .clone()
         .oneshot(authed_json_request(
             Method::POST,
@@ -770,7 +758,7 @@ async fn rest_parity_routes_return_validation_errors_instead_of_not_found()
         .await?;
     assert_eq!(sql_query.status(), StatusCode::BAD_REQUEST);
 
-    let list = operator_app
+    let list = app
         .oneshot(authed_json_request(
             Method::GET,
             "/api/v1/credentials?limit=101",
@@ -779,8 +767,8 @@ async fn rest_parity_routes_return_validation_errors_instead_of_not_found()
         .await?;
     assert_eq!(list.status(), StatusCode::BAD_REQUEST);
 
-    let admin_app = crate::routes::app(state_with_role(Role::Admin)?);
-    let register = admin_app
+    let app = crate::routes::app(registered_state()?);
+    let register = app
         .clone()
         .oneshot(authed_json_request(
             Method::POST,
@@ -790,7 +778,7 @@ async fn rest_parity_routes_return_validation_errors_instead_of_not_found()
         .await?;
     assert_eq!(register.status(), StatusCode::BAD_REQUEST);
 
-    let delete = admin_app
+    let delete = app
         .oneshot(authed_json_request(
             Method::DELETE,
             "/api/v1/credentials/bad%20alias",
@@ -804,7 +792,7 @@ async fn rest_parity_routes_return_validation_errors_instead_of_not_found()
 #[tokio::test]
 async fn rest_parity_post_routes_do_not_require_content_type_header()
 -> Result<(), Box<dyn std::error::Error>> {
-    let app = crate::routes::app(state_with_role(Role::Operator)?);
+    let app = crate::routes::app(registered_state()?);
     let valid = valid_api_token()?;
     let response = app
         .oneshot(
@@ -819,50 +807,6 @@ async fn rest_parity_post_routes_do_not_require_content_type_header()
         .await?;
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    Ok(())
-}
-
-#[tokio::test]
-async fn rest_parity_routes_enforce_roles() -> Result<(), Box<dyn std::error::Error>> {
-    let viewer_app = crate::routes::app(state_with_role(Role::Viewer)?);
-    let api_call = viewer_app
-        .clone()
-        .oneshot(authed_json_request(
-            Method::POST,
-            "/api/v1/api/call",
-            r#"{"alias":"prod-api","purpose":"Inspect health response","path":"/health"}"#,
-        )?)
-        .await?;
-    assert_eq!(api_call.status(), StatusCode::FORBIDDEN);
-
-    let sql_query = viewer_app
-        .oneshot(authed_json_request(
-            Method::POST,
-            "/api/v1/sql/query",
-            r#"{"alias":"prod-db","purpose":"Inspect rows safely","query":"SELECT 1"}"#,
-        )?)
-        .await?;
-    assert_eq!(sql_query.status(), StatusCode::FORBIDDEN);
-
-    let operator_app = crate::routes::app(state_with_role(Role::Operator)?);
-    let register = operator_app
-        .clone()
-        .oneshot(authed_json_request(
-            Method::POST,
-            "/api/v1/credentials",
-            r#"{"category":"http","provider":"k8s","alias":"prod-api","endpoint":"https://api.example.test","secret":{"headers":[{"name":"Authorization","value":"Bearer token"}]}}"#,
-        )?)
-        .await?;
-    assert_eq!(register.status(), StatusCode::FORBIDDEN);
-
-    let delete = operator_app
-        .oneshot(authed_json_request(
-            Method::DELETE,
-            "/api/v1/credentials/prod-api",
-            r#"{"reason":"Retire stale credential"}"#,
-        )?)
-        .await?;
-    assert_eq!(delete.status(), StatusCode::FORBIDDEN);
     Ok(())
 }
 

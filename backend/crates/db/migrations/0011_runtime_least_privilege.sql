@@ -1,4 +1,4 @@
--- Create and grant the narrowed runtime role used by OPSGATE_DATABASE_URL.
+-- Create and grant the narrowed runtime database role used by OPSGATE_DATABASE_URL.
 
 DO $$
 BEGIN
@@ -39,12 +39,12 @@ GRANT INSERT (
 ) ON credential_history TO opsgate_app;
 
 GRANT INSERT (
-    owner_user_id, actor_user_id, credential_id, alias, category, action,
-    reason, changed_fields, detail
+    owner_user_id, actor_user_id, actor_ip, actor_user_agent, request_id,
+    channel, credential_id, alias, category, action, reason, changed_fields, detail
 ) ON credential_audit_events TO opsgate_app;
 
 GRANT INSERT (
-    owner_user_id, actor_user_id, actor_role, channel, request_id,
+    owner_user_id, actor_user_id, channel, request_id,
     credential_id, credential_alias, credential_category, credential_provider,
     credential_env, method, path, query_keys, request_header_keys,
     projection_keys, max_bytes, purpose, outcome, status_code, latency_ms,
@@ -52,7 +52,7 @@ GRANT INSERT (
 ) ON api_call_history TO opsgate_app;
 
 GRANT INSERT (
-    owner_user_id, actor_user_id, actor_role, channel, request_id,
+    owner_user_id, actor_user_id, channel, request_id,
     credential_id, credential_alias, credential_category, credential_provider,
     credential_env, query_sha256, params_count, shape, max_rows, max_bytes,
     timeout_ms, purpose, outcome, latency_ms, row_count, returned_bytes,
@@ -60,7 +60,7 @@ GRANT INSERT (
 ) ON sql_query_history TO opsgate_app;
 
 GRANT INSERT (
-    action, channel, outcome, severity, actor_user_id, actor_role, actor_ip,
+    action, channel, outcome, severity, actor_user_id, actor_ip,
     actor_user_agent, target_type, target_id, target_key, request_id, purpose,
     detail
 ) ON audit_logs TO opsgate_app;

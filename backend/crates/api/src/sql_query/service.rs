@@ -81,11 +81,6 @@ impl SqlQueryService {
         // Sanitize the raw alias up front: on the bad-input path it is the only
         // request field we record, and it has not been validated yet.
         let raw_alias = safe_history_message(&input.alias);
-        if let Err(error) = require_executor(caller) {
-            self.record_pre_input_denial(caller, &raw_alias, "required_role", &error)
-                .await;
-            return Err(error);
-        }
         let input = match normalize_input(input) {
             Ok(input) => input,
             Err(error) => {
@@ -1113,7 +1108,6 @@ impl<'a> QueryRecorder<'a> {
                 .map(|credential| credential.owner_user_id)
                 .or(Some(self.caller.user.id)),
             actor_user_id: Some(self.caller.user.id),
-            actor_role: Some(self.caller.role.as_str().to_owned()),
             channel: channel_str(self.caller.channel).to_owned(),
             request_id: self.caller.request_id.clone(),
             credential_id: credential.map(|credential| credential.id),
@@ -1293,7 +1287,6 @@ fn pre_input_denial_history_params(
     SqlQueryHistoryParams {
         owner_user_id: Some(caller.user.id),
         actor_user_id: Some(caller.user.id),
-        actor_role: Some(caller.role.as_str().to_owned()),
         channel: channel_str(caller.channel).to_owned(),
         request_id: caller.request_id.clone(),
         credential_id: None,
@@ -1323,14 +1316,6 @@ fn channel_str(channel: Channel) -> &'static str {
     match channel {
         Channel::Api => "api",
         Channel::Mcp | Channel::Browser => "mcp",
-    }
-}
-
-fn require_executor(caller: &Caller) -> Result<()> {
-    if caller.role.can_execute() {
-        Ok(())
-    } else {
-        Err(Error::forbidden("operator or admin role required"))
     }
 }
 
@@ -1662,13 +1647,11 @@ mod tests {
                 sub: "sub".to_owned(),
                 email: "user@example.test".to_owned(),
                 display_name: "User".to_owned(),
-                role: opsgate_domain::Role::Operator,
                 is_active: true,
                 created_at: now,
                 updated_at: now,
             },
             channel: opsgate_domain::Channel::Mcp,
-            role: opsgate_domain::Role::Operator,
             request_id: None,
             remote_ip: None,
             user_agent: None,
@@ -1695,40 +1678,5 @@ mod tests {
             audit.detail.get("denial_reason"),
             Some(&serde_json::json!("bad_input"))
         );
-    }
-
-    #[test]
-    fn required_role_denial_is_recorded_safely() {
-        let caller = test_caller();
-        let error = Error::forbidden("operator or admin role required");
-
-        let history = pre_input_denial_history_params(&caller, "prod", "required_role", &error);
-        assert_eq!(history.outcome, "denied");
-        assert_eq!(history.error_kind.as_deref(), Some("required_role"));
-        assert!(history.purpose.is_none());
-        assert_eq!(history.credential_alias, "prod");
-        assert!(history.query_sha256.is_empty());
-        assert_eq!(history.params_count, 0);
-
-        let audit = pre_input_denial_audit_event(&caller, "prod", "required_role").into_params();
-        assert_eq!(audit.outcome, "denied");
-        assert_eq!(
-            audit.detail.get("denial_reason"),
-            Some(&serde_json::json!("required_role"))
-        );
-    }
-
-    #[test]
-    fn sql_query_requires_operator_or_admin_role() {
-        let mut caller = test_caller();
-        caller.role = opsgate_domain::Role::Viewer;
-        assert!(matches!(
-            require_executor(&caller),
-            Err(Error::Forbidden(_))
-        ));
-        caller.role = opsgate_domain::Role::Operator;
-        assert!(require_executor(&caller).is_ok());
-        caller.role = opsgate_domain::Role::Admin;
-        assert!(require_executor(&caller).is_ok());
     }
 }

@@ -141,7 +141,6 @@ mod tests {
             oauth_client_id: "opsgate-web".to_owned(),
             oauth_redirect_url: "http://localhost:9091/callback".to_owned(),
             resource_url: "http://localhost:9091/mcp".to_owned(),
-            admin_email: "admin@example.test".to_owned(),
             master_key: SecretString::from(
                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned(),
             ),

@@ -84,7 +84,6 @@ fn auth_denial_reason(error: &AuthError) -> &'static str {
         AuthError::MissingToken => "missing_token",
         AuthError::InvalidToken => "invalid_token",
         AuthError::NotRegistered => "not_registered",
-        AuthError::InsufficientRole => "insufficient_role",
         AuthError::Inactive => "inactive_user",
         AuthError::Internal => "internal_error",
     }

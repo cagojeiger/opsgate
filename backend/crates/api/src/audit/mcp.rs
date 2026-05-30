@@ -37,27 +37,6 @@ async fn record_tool_result(
     append_event(audit, event, "mcp.tool.audit_failed").await;
 }
 
-pub(crate) async fn record_admin_denied(audit: &AuditRepo, caller: &Caller) {
-    append_event(audit, admin_denied_event(caller), "mcp.auth.audit_failed").await;
-}
-
-pub(crate) fn admin_denied_event(caller: &Caller) -> AuditEvent {
-    let detail = serde_json::json!({
-        "schema_version": 1,
-        "denial_reason": "required_role",
-        "required_role": "admin",
-        "actor_role": caller.role.as_str(),
-        "sub": caller.user.sub.clone(),
-    });
-    AuditEvent::new("mcp.auth.denied", Channel::Mcp, AuditOutcome::Denied)
-        .actor(caller_actor(caller))
-        .target(AuditTarget::identity(
-            Some(caller.user.id.to_string()),
-            Some(caller.user.sub.clone()),
-        ))
-        .detail(detail)
-}
-
 fn tool_event(caller: Option<&Caller>, tool: &str, started: Instant, is_error: bool) -> AuditEvent {
     let outcome = if is_error {
         AuditOutcome::Error
@@ -90,7 +69,7 @@ fn tool_detail(tool: &str, started: Instant, is_error: bool) -> Value {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use opsgate_domain::{Channel, Role, User};
+    use opsgate_domain::{Channel, User};
     use uuid::Uuid;
 
     use super::*;
@@ -116,13 +95,11 @@ mod tests {
                 sub: "sub".to_owned(),
                 email: "user@example.test".to_owned(),
                 display_name: "User".to_owned(),
-                role: Role::Operator,
                 is_active: true,
                 created_at: now,
                 updated_at: now,
             },
             channel: Channel::Mcp,
-            role: Role::Operator,
             request_id: Some("req-tool".to_owned()),
             remote_ip: Some("203.0.113.11".to_owned()),
             user_agent: Some("opsgate-test".to_owned()),
