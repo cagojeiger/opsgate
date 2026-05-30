@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::credential::snapshot::CredentialSnapshot;
-use crate::target::http::TargetHttpClients;
+use crate::target::http::{TargetHttpClients, ensure_url_allowed};
 
 const DEFAULT_METHOD: &str = "GET";
 const DEFAULT_MAX_BYTES: usize = 4096;
@@ -229,6 +229,7 @@ impl ApiCallService {
     ) -> Result<TargetResponse> {
         let method = reqwest::Method::from_bytes(input.method.as_bytes())
             .map_err(|error| Error::validation(format!("invalid method: {error}")))?;
+        ensure_url_allowed(url, guard_private_network)?;
         let http = self
             .target_clients
             .client_for(credential, tls_ca, guard_private_network)?;
@@ -926,6 +927,23 @@ mod tests {
             value: SecretString::from("sealed-value"),
         }];
         assert!(validate_no_secret_header_override(&secret, &input).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_target_preflight_blocks_private_ip_literal_urls() -> Result<()> {
+        let input = normalize_input(ApiCallInput {
+            path: "/status".to_owned(),
+            ..base_input()
+        })?;
+        for endpoint in ["http://127.0.0.1", "http://[::ffff:127.0.0.1]"] {
+            let url = build_target_url(endpoint, &input)?;
+            let err = ensure_url_allowed(&url, true)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default();
+            assert!(err.contains("private/link-local/loopback"));
+        }
         Ok(())
     }
 

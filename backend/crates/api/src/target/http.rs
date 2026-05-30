@@ -132,6 +132,18 @@ fn build_client(
 #[derive(Debug)]
 struct GuardedResolver;
 
+pub(crate) fn ensure_url_allowed(url: &url::Url, guard_private_network: bool) -> Result<()> {
+    if !guard_private_network {
+        return Ok(());
+    }
+    match url.host() {
+        Some(url::Host::Ipv4(ip)) => ensure_target_ip_allowed(IpAddr::V4(ip), false),
+        Some(url::Host::Ipv6(ip)) => ensure_target_ip_allowed(IpAddr::V6(ip), false),
+        Some(url::Host::Domain(_host)) => Ok(()),
+        None => Err(Error::validation("target URL requires host")),
+    }
+}
+
 impl Resolve for GuardedResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let host = name.as_str().to_owned();
@@ -203,6 +215,28 @@ mod tests {
 
         let _other = clients.client_for(&second, Some(ca.as_bytes()), true)?;
         assert_eq!(clients.cached_tls_len()?, 3);
+        Ok(())
+    }
+
+    #[test]
+    fn guarded_http_preflight_blocks_private_url_literals() -> Result<()> {
+        for raw in [
+            "http://127.0.0.1/status",
+            "http://[::1]/status",
+            "http://[::ffff:127.0.0.1]/status",
+        ] {
+            let url = url::Url::parse(raw)
+                .map_err(|error| Error::internal(format!("parse test URL: {error}")))?;
+            let err = ensure_url_allowed(&url, true)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default();
+            assert!(err.contains("private/link-local/loopback"), "{raw}: {err}");
+        }
+        let public = url::Url::parse("http://93.184.216.34/status")
+            .map_err(|error| Error::internal(format!("parse test URL: {error}")))?;
+        assert!(ensure_url_allowed(&public, true).is_ok());
+        assert!(ensure_url_allowed(&public, false).is_ok());
         Ok(())
     }
 
