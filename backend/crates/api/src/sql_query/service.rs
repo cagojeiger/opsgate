@@ -683,8 +683,7 @@ fn build_column_output(
 /// SQL-specific narrowing hint appended to byte-overflow guidance: unlike
 /// api.call (where jsonpath is the only lever), sql.query can also rewrite the
 /// query itself to shrink the result.
-const SQL_NARROW_HINT: &str =
-    "sql: you can also narrow the query (fewer columns / WHERE / aggregate) instead of only jsonpath";
+const SQL_NARROW_HINT: &str = "sql: you can also narrow the query (fewer columns / WHERE / aggregate) instead of only jsonpath";
 
 /// Decide the final `more` guidance for a column output.
 ///
@@ -693,7 +692,11 @@ const SQL_NARROW_HINT: &str =
 /// SQL-specific narrowing hint to the shared jsonpath guidance. When the body
 /// fit but rows were dropped by `max_rows`, synthesize a row-truncation `more`
 /// so the model knows the next lever instead of seeing a bare `truncated:true`.
-fn finalize_more(shaped_more: Option<More>, row_truncated: bool, input: &NormalizedInput) -> Option<More> {
+fn finalize_more(
+    shaped_more: Option<More>,
+    row_truncated: bool,
+    input: &NormalizedInput,
+) -> Option<More> {
     match shaped_more {
         Some(mut more) => {
             more.hints.push(SQL_NARROW_HINT.to_owned());
@@ -1330,7 +1333,11 @@ mod tests {
 
         // Byte-overflow guidance wins, and gains a SQL-specific narrowing hint.
         assert_eq!(more.options.preferred_next, "jsonpath");
-        assert!(more.hints.iter().any(|hint| hint.contains("narrow the query")));
+        assert!(
+            more.hints
+                .iter()
+                .any(|hint| hint.contains("narrow the query"))
+        );
         Ok(())
     }
 
