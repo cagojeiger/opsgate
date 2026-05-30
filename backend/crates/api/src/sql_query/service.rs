@@ -201,17 +201,14 @@ pub struct SqlQueryInput {
 pub struct SqlQueryOutput {
     #[schemars(schema_with = "opsgate_core::schema::json_value_schema")]
     pub body: Value,
+    /// Rows fetched from Postgres after max_rows enforcement, before JSONPath or byte truncation.
     pub row_count: usize,
     pub truncated: bool,
+    pub original_bytes: usize,
+    pub returned_bytes: usize,
+    pub latency_ms: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub more: Option<More>,
-    #[allow(dead_code)]
-    #[serde(skip)]
-    pub original_bytes: usize,
-    #[serde(skip)]
-    pub returned_bytes: usize,
-    #[serde(skip)]
-    pub latency_ms: i64,
     #[serde(skip)]
     pub column_names: Vec<String>,
 }
@@ -668,20 +665,15 @@ fn build_column_output(
     let bytes = serde_json::to_vec(&body)
         .map_err(|error| Error::internal(format!("serialize sql query body: {error}")))?;
     let shaped = build_shaped_body(&bytes, input)?;
-    let column_names = if input.jsonpath.is_empty() {
-        column_names
-    } else {
-        Vec::new()
-    };
 
     Ok(SqlQueryOutput {
         body: shaped.body,
         row_count,
         truncated: truncated || shaped.truncated,
-        more: shaped.more,
         original_bytes: shaped.original_bytes,
         returned_bytes: shaped.returned_bytes,
         latency_ms: 0,
+        more: shaped.more,
         column_names,
     })
 }
@@ -1235,11 +1227,7 @@ mod tests {
         assert_eq!(output.row_count, 2);
         assert_eq!(
             output.column_names,
-            vec![
-                "status".to_owned(),
-                "total".to_owned(),
-                "region".to_owned()
-            ]
+            vec!["status".to_owned(), "total".to_owned(), "region".to_owned()]
         );
         assert_eq!(
             output.body,
@@ -1270,7 +1258,10 @@ mod tests {
             .ok_or_else(|| Error::internal("missing projected column"))?;
         assert_eq!(projected, &serde_json::json!([["failed", "paid"]]));
         assert_eq!(output.row_count, 2);
-        assert!(output.column_names.is_empty());
+        assert_eq!(
+            output.column_names,
+            vec!["status".to_owned(), "total".to_owned()]
+        );
         Ok(())
     }
 

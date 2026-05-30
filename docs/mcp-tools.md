@@ -59,11 +59,11 @@ LLM에 보이는 것:
 
 SQL schema 조회는 SQL 데이터 조회와 분리되어 있습니다. `sql.schema`는
 table/column/index 구조를 고정된 JSON으로 반환하며 row 값은 포함하지
-않습니다. `sql.query`는 공유 SQL JSON output envelope를 통해 실제 쿼리
-결과를 반환합니다.
+않습니다. `sql.query`는 실제 쿼리 결과를 column-oriented JSON `body`로
+반환하고, 큰 출력은 `api.call`과 같은 JSONPath/truncation 규칙을 따릅니다.
 
-큰 HTTP JSON 응답은 full body를 받기보다 `api.call.jsonpath`로 필요한 값만
-뽑는 것을 우선합니다. JSONPath는 표준 selection grammar라서 자체 path
+큰 HTTP/SQL JSON 응답은 full body를 받기보다 `api.call.jsonpath` 또는
+`sql.query.jsonpath`로 필요한 값만 뽑는 것을 우선합니다. JSONPath는 표준 selection grammar라서 자체 path
 문법보다 LLM-facing hint를 만들기 쉽습니다.
 
 응답 truncation, preview, 토큰 예산 규칙은

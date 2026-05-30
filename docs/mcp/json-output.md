@@ -1,7 +1,7 @@
 # JSON 출력과 토큰 예산 스펙
 
-이 문서는 `api.call`이 target JSON 응답을 LLM에게 반환할 때의 규칙을
-정의합니다.
+이 문서는 `api.call`이 target JSON 응답을, `sql.query`가 SQL 결과 JSON을
+LLM에게 반환할 때의 공통 규칙을 정의합니다.
 
 목표는 target 응답 전체를 그대로 보여주는 것이 아닙니다. 목표는 LLM이
 다음 호출을 정확히 좁힐 수 있을 만큼의 구조화된 정보를, 토큰 예산 안에서
@@ -105,7 +105,7 @@ safe subset 밖의 라이브러리 고유 연산자
 
 ## 큰 응답 처리 규칙
 
-target JSON이 호출자의 `max_bytes`보다 크면 `api.call`은 전체 body를
+target JSON 또는 SQL 결과 JSON이 호출자의 `max_bytes`보다 크면 전체 body를
 반환하지 않습니다.
 
 ```json
@@ -149,8 +149,8 @@ target 응답이 hard read cap을 넘는 경우에도, 불완전한 JSON prefix�
 
 ## 점진적 호출 프로토콜
 
-`api.call`은 큰 JSON을 한 번에 많이 보여주는 도구가 아닙니다. LLM이 작은
-호출에서 시작해서 필요한 정보만 점진적으로 가져오도록 설계합니다.
+`api.call`과 `sql.query`는 큰 JSON을 한 번에 많이 보여주는 도구가 아닙니다.
+LLM이 작은 호출에서 시작해서 필요한 정보만 점진적으로 가져오도록 설계합니다.
 
 `more.options.preferred_next`는 다음 호출의 우선 행동입니다.
 

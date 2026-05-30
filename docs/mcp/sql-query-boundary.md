@@ -9,8 +9,9 @@ Postgres credential을 안전하게 사용하고, 필요한 만큼만 결과를 
 하는 것입니다.
 
 테이블/컬럼 구조를 모를 때는 먼저 `sql.schema`를 사용합니다. `sql.schema`는
-row 값을 반환하지 않고 고정 JSON 구조만 반환하며, `sql.query`와 같은 SQL JSON
-출력 공통 유틸리티를 공유합니다.
+row 값을 반환하지 않고 고정 JSON 구조만 반환합니다. `sql.query`는 SQL 행렬을
+column-oriented JSON으로 전치한 뒤 `api.call`과 같은 JSON 출력 공통 유틸리티를
+사용합니다.
 
 닫힌 종료 상태는 네 가지뿐이어야 합니다.
 
@@ -39,7 +40,7 @@ Postgres internal value rendering leak
 ```text
 input
   ↓
-identity / role
+identity
   ↓
 credential / policy
   ↓
@@ -47,7 +48,7 @@ SQL AST policy
   ↓
 target execution
   ↓
-output shape / budget
+output / budget
   ↓
 audit / history
 ```
@@ -67,7 +68,7 @@ alias
 purpose
 query
 params
-shape
+jsonpath
 max_rows
 max_bytes
 timeout_ms
@@ -84,7 +85,7 @@ query required
 query length 1-16000
 query NUL denied
 params max count 64
-shape in rows/columns/values
+jsonpath uses the shared safe subset
 max_rows range 1..1000
 max_bytes range 1024..1MiB
 timeout_ms range 1..30000
@@ -95,7 +96,7 @@ timeout_ms range 1..30000
 입력이 비어 있으면 적용되는 기본값은 다음과 같습니다.
 
 ```text
-shape default rows
+jsonpath default empty
 max_rows default 100
 max_bytes default 64KiB
 timeout_ms default 3000
@@ -109,22 +110,21 @@ secret decrypt 없음
 safe denial/error만 기록
 ```
 
-## 2. identity / role boundary
+## 2. identity boundary
 
 역할:
 
 ```text
-누가 sql.query를 실행할 수 있는지 확인
+유효한 인증 사용자인지 확인
 ```
 
 불변조건:
 
 ```text
-nil caller -> not_authenticated
-nil user -> not_authenticated
+missing bearer token -> not_authenticated
+invalid token -> not_authenticated
 inactive user -> not_authenticated
-viewer -> viewer_cannot_query
-operator/admin -> pass
+active authenticated user -> pass
 ```
 
 실패 시:
@@ -235,28 +235,28 @@ result values 저장 없음
 audit/history outcome=error or denied
 ```
 
-## 6. output shape / budget boundary
+## 6. output / budget boundary
 
 역할:
 
 ```text
-DB 결과 행렬을 LLM이 소비하기 쉬운 작은 JSON envelope으로 변환
+DB 결과 행렬을 LLM이 소비하기 쉬운 작은 column-oriented JSON으로 변환
 ```
 
-지원 shape:
+출력 모델:
 
 ```text
-rows     -> 행 의미가 중요한 기본 형태
-columns  -> 여러 행 비교에서 키 반복을 줄이는 형태
-values   -> 정확히 한 컬럼만 선택했을 때 가장 작은 형태
+SQL rows -> column-oriented body
+jsonpath -> projection over the column-oriented body
+max_bytes overrun -> body=null + more hints
 ```
 
 불변조건:
 
 ```text
-shape=values requires exactly one result column
 Postgres json/jsonb and array values return as proper JSON values
-large cell values are compacted
+row_count means fetched SQL rows after max_rows enforcement
+partial JSON is never returned
 max_bytes overrun returns truncated=true + more hints
 returned values are not written to history/audit
 ```
@@ -278,7 +278,6 @@ request_id
 credential id/alias/category/provider/env snapshot
 query_sha256
 params_count
-shape
 max_rows
 max_bytes
 timeout_ms
@@ -310,10 +309,10 @@ raw driver error with endpoint/secret risk
 
 ```text
 input boundary: mostly closed
-identity/role boundary: closed
+identity boundary: closed
 credential/policy boundary: mostly closed
 SQL AST policy boundary: mostly closed
 target execution boundary: mostly closed
-output shape/budget boundary: mostly closed
+output/budget boundary: mostly closed
 audit/history boundary: mostly closed, live MCP smoke remains valuable
 ```
