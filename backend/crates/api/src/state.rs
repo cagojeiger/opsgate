@@ -15,16 +15,16 @@ use crate::auth::jwks::JwksCache;
 use crate::auth::oidc::OidcProvider;
 
 #[derive(Clone)]
-pub struct AppState {
-    pub db: PgPool,
-    pub config: Arc<Config>,
-    pub jwks: Arc<JwksCache>,
-    pub oidc: Arc<OidcProvider>,
-    pub resolver: Arc<dyn CallerResolver>,
-    pub credentials: Arc<CredentialService>,
-    pub api_calls: Arc<ApiCallService>,
-    pub sql_schema: Arc<SqlSchemaService>,
-    pub sql_query: Arc<SqlQueryService>,
-    pub audit: Arc<opsgate_db::AuditRepo>,
-    pub http: reqwest::Client,
+pub(crate) struct AppState {
+    pub(crate) db: PgPool,
+    pub(crate) config: Arc<Config>,
+    pub(crate) jwks: Arc<JwksCache>,
+    pub(crate) oidc: Arc<OidcProvider>,
+    pub(crate) resolver: Arc<dyn CallerResolver>,
+    pub(crate) credentials: Arc<CredentialService>,
+    pub(crate) api_calls: Arc<ApiCallService>,
+    pub(crate) sql_schema: Arc<SqlSchemaService>,
+    pub(crate) sql_query: Arc<SqlQueryService>,
+    pub(crate) audit: Arc<opsgate_db::AuditRepo>,
+    pub(crate) http: reqwest::Client,
 }
