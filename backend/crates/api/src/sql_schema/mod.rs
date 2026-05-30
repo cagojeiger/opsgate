@@ -1,3 +1,3 @@
 mod service;
 
-pub use service::{SqlSchemaInput, SqlSchemaOutput, SqlSchemaService};
+pub(crate) use service::{SqlSchemaInput, SqlSchemaOutput, SqlSchemaService};

@@ -1,3 +1,3 @@
 mod service;
 
-pub use service::{ApiCallInput, ApiCallOutput, ApiCallService};
+pub(crate) use service::{ApiCallInput, ApiCallOutput, ApiCallService};

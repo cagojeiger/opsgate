@@ -35,7 +35,7 @@ const SECRET_DOMAIN: &str = "credentials";
 const TARGET_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
-pub struct ApiCallService {
+pub(crate) struct ApiCallService {
     credentials: CredentialRepo,
     history: ApiCallHistoryRepo,
     audit: AuditRepo,
@@ -295,7 +295,7 @@ impl ApiCallService {
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-pub struct ApiCallInput {
+pub(crate) struct ApiCallInput {
     pub alias: String,
     pub purpose: String,
     #[serde(default)]
@@ -316,7 +316,7 @@ pub struct ApiCallInput {
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct ApiCallOutput {
+pub(crate) struct ApiCallOutput {
     pub status_code: i32,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub headers: BTreeMap<String, String>,

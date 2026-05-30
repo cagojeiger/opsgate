@@ -27,7 +27,7 @@ const DEFAULT_TIMEOUT_MS: u32 = 3000;
 const MAX_TIMEOUT_MS: u32 = 30000;
 const MAX_IDENT_LEN: usize = 128;
 #[derive(Clone)]
-pub struct SqlSchemaService {
+pub(crate) struct SqlSchemaService {
     credentials: CredentialRepo,
     audit: AuditRepo,
     sealer: opsgate_core::crypto::Sealer,
@@ -141,7 +141,7 @@ impl SqlSchemaService {
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-pub struct SqlSchemaInput {
+pub(crate) struct SqlSchemaInput {
     pub alias: String,
     pub purpose: String,
     #[serde(default)]
@@ -160,7 +160,7 @@ pub struct SqlSchemaInput {
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct SqlSchemaOutput {
+pub(crate) struct SqlSchemaOutput {
     pub mode: String,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub tables: Vec<TableSummary>,

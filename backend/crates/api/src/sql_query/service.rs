@@ -48,7 +48,7 @@ const BUILTIN_DENIED_FUNCTIONS: &[&str] = &[
 ];
 
 #[derive(Clone)]
-pub struct SqlQueryService {
+pub(crate) struct SqlQueryService {
     credentials: CredentialRepo,
     history: SqlQueryHistoryRepo,
     audit: AuditRepo,
@@ -183,7 +183,7 @@ impl SqlQueryService {
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-pub struct SqlQueryInput {
+pub(crate) struct SqlQueryInput {
     pub alias: String,
     pub purpose: String,
     pub query: String,
@@ -198,7 +198,7 @@ pub struct SqlQueryInput {
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct SqlQueryOutput {
+pub(crate) struct SqlQueryOutput {
     #[schemars(schema_with = "opsgate_core::schema::json_value_schema")]
     pub body: Value,
     /// Rows fetched from Postgres after max_rows enforcement, before JSONPath or byte truncation.
