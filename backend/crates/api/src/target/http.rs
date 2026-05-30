@@ -32,7 +32,20 @@ impl TargetHttpClients {
         })
     }
 
-    pub fn client_for(
+    pub fn request_for(
+        &self,
+        credential: &Credential,
+        tls_ca: Option<&[u8]>,
+        method: reqwest::Method,
+        url: &url::Url,
+        guard_private_network: bool,
+    ) -> Result<reqwest::RequestBuilder> {
+        ensure_url_allowed(url, guard_private_network)?;
+        let client = self.client_for(credential, tls_ca, guard_private_network)?;
+        Ok(client.request(method, url.clone()))
+    }
+
+    fn client_for(
         &self,
         credential: &Credential,
         tls_ca: Option<&[u8]>,
@@ -145,6 +158,24 @@ pub(crate) fn ensure_url_allowed(url: &url::Url, guard_private_network: bool) ->
     }
 }
 
+pub(crate) fn map_send_error(error: reqwest::Error) -> Error {
+    if has_blocked_target_source(&error) {
+        return Error::validation(BLOCKED_TARGET_IP_MESSAGE);
+    }
+    Error::internal("target request failed")
+}
+
+fn has_blocked_target_source(error: &reqwest::Error) -> bool {
+    let mut source = std::error::Error::source(error);
+    while let Some(error) = source {
+        if error.to_string().contains(BLOCKED_TARGET_IP_MESSAGE) {
+            return true;
+        }
+        source = error.source();
+    }
+    false
+}
+
 impl Resolve for GuardedResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let host = name.as_str().to_owned();
@@ -253,6 +284,35 @@ mod tests {
         .map(|error| error.to_string())
         .unwrap_or_default();
         assert!(err.contains("private/link-local/loopback"));
+    }
+
+    #[tokio::test]
+    async fn send_error_preserves_guarded_dns_block_reason() -> Result<()> {
+        #[derive(Debug)]
+        struct AlwaysBlockedResolver;
+
+        impl Resolve for AlwaysBlockedResolver {
+            fn resolve(&self, _name: Name) -> Resolving {
+                Box::pin(async { Err(boxed_error(BLOCKED_TARGET_IP_MESSAGE)) })
+            }
+        }
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(100))
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy()
+            .dns_resolver(Arc::new(AlwaysBlockedResolver))
+            .build()
+            .map_err(|error| Error::internal(format!("build test client: {error}")))?;
+        let error = client
+            .get("http://example.test/")
+            .send()
+            .await
+            .err()
+            .ok_or_else(|| Error::internal("test request unexpectedly succeeded"))?;
+        let mapped = map_send_error(error);
+        assert!(mapped.to_string().contains("private/link-local/loopback"));
+        Ok(())
     }
 
     #[tokio::test]

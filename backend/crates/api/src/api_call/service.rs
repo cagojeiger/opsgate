@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::credential::snapshot::CredentialSnapshot;
-use crate::target::http::{TargetHttpClients, ensure_url_allowed};
+use crate::target::http::TargetHttpClients;
 
 const DEFAULT_METHOD: &str = "GET";
 const DEFAULT_MAX_BYTES: usize = 4096;
@@ -228,11 +228,13 @@ impl ApiCallService {
     ) -> Result<TargetResponse> {
         let method = reqwest::Method::from_bytes(input.method.as_bytes())
             .map_err(|error| Error::validation(format!("invalid method: {error}")))?;
-        ensure_url_allowed(url, guard_private_network)?;
-        let http = self
-            .target_clients
-            .client_for(credential, tls_ca, guard_private_network)?;
-        let mut request = http.request(method, url.clone());
+        let mut request = self.target_clients.request_for(
+            credential,
+            tls_ca,
+            method,
+            url,
+            guard_private_network,
+        )?;
         let mut headers = HeaderMap::new();
         if !input
             .headers
@@ -268,7 +270,7 @@ impl ApiCallService {
         let mut response = request
             .send()
             .await
-            .map_err(|_error| Error::internal("target request failed"))?;
+            .map_err(crate::target::http::map_send_error)?;
         let status = response.status();
         let headers = response.headers().clone();
         let (body, original_bytes, truncated) = read_capped(&mut response, MAX_MAX_BYTES).await?;
@@ -937,7 +939,7 @@ mod tests {
         })?;
         for endpoint in ["http://127.0.0.1", "http://[::ffff:127.0.0.1]"] {
             let url = build_target_url(endpoint, &input)?;
-            let err = ensure_url_allowed(&url, true)
+            let err = crate::target::http::ensure_url_allowed(&url, true)
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default();

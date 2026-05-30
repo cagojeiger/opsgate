@@ -45,6 +45,7 @@ pub(crate) async fn prepare_postgres_target(
 ) -> Result<GuardedPostgresTarget> {
     let url = url::Url::parse(endpoint)
         .map_err(|error| Error::validation(format!("postgres endpoint: {error}")))?;
+    reject_verify_full_endpoint(&url)?;
     let host = url
         .host()
         .ok_or_else(|| Error::validation("postgres endpoint requires host"))?;
@@ -69,6 +70,17 @@ pub(crate) async fn prepare_postgres_target(
         endpoint: endpoint.to_owned(),
         connect_addr,
     })
+}
+
+fn reject_verify_full_endpoint(url: &url::Url) -> Result<()> {
+    for (key, value) in url.query_pairs() {
+        if matches!(&*key, "sslmode" | "ssl-mode") && value.eq_ignore_ascii_case("verify-full") {
+            return Err(Error::validation(
+                "postgres endpoint sslmode=verify-full is unsupported by guarded SQL targets",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn select_postgres_addr(
@@ -138,6 +150,20 @@ mod tests {
         .map(|error| error.to_string())
         .unwrap_or_default();
         assert!(err.contains("private/link-local/loopback"));
+    }
+
+    #[tokio::test]
+    async fn prepare_rejects_verify_full_before_dns_resolution() {
+        let err = prepare_postgres_target(
+            "postgres://definitely-not-resolved.invalid/app?sslmode=verify-full",
+            false,
+        )
+        .await
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+        assert!(err.contains("verify-full is unsupported"));
+        assert!(!err.contains("resolve target host"));
     }
 
     #[test]
