@@ -4,12 +4,12 @@ use opsgate_core::Config;
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProtectedResourceUrl {
-    pub route_path: String,
-    pub full_url: String,
+pub(crate) struct ProtectedResourceUrl {
+    pub(crate) route_path: String,
+    pub(crate) full_url: String,
 }
 
-pub fn protected_resource_metadata_url(resource_url: &str) -> ProtectedResourceUrl {
+pub(crate) fn protected_resource_metadata_url(resource_url: &str) -> ProtectedResourceUrl {
     let trimmed = resource_url.trim_end_matches('/');
     let (origin, resource_path) = split_origin_and_path(trimmed);
     let path = resource_path.trim_matches('/');
@@ -37,12 +37,12 @@ fn split_origin_and_path(value: &str) -> (&str, &str) {
     }
 }
 
-pub fn challenge_header(meta_url: &str) -> HeaderValue {
+pub(crate) fn challenge_header(meta_url: &str) -> HeaderValue {
     HeaderValue::from_str(&format!("Bearer resource_metadata=\"{meta_url}\""))
         .unwrap_or_else(|_error| HeaderValue::from_static("Bearer"))
 }
 
-pub fn scoped_challenge_header(meta_url: &str) -> HeaderValue {
+pub(crate) fn scoped_challenge_header(meta_url: &str) -> HeaderValue {
     HeaderValue::from_str(&format!(
         "Bearer resource_metadata=\"{meta_url}\", scope=\"openid offline_access\""
     ))
@@ -50,7 +50,7 @@ pub fn scoped_challenge_header(meta_url: &str) -> HeaderValue {
 }
 
 #[derive(Debug, Serialize)]
-pub struct AuthorizationServerMetadata {
+pub(crate) struct AuthorizationServerMetadata {
     issuer: String,
     authorization_endpoint: String,
     token_endpoint: String,
@@ -65,20 +65,22 @@ pub struct AuthorizationServerMetadata {
 }
 
 #[derive(Debug, Serialize)]
-pub struct ProtectedResourceMetadata {
+pub(crate) struct ProtectedResourceMetadata {
     resource: String,
     authorization_servers: Vec<String>,
     scopes_supported: Vec<&'static str>,
     bearer_methods_supported: Vec<&'static str>,
 }
 
-pub async fn authorization_server_metadata(
+pub(crate) async fn authorization_server_metadata(
     axum::extract::State(state): axum::extract::State<crate::state::AppState>,
 ) -> Json<AuthorizationServerMetadata> {
     Json(authorization_server_metadata_for_config(&state.config))
 }
 
-pub fn authorization_server_metadata_for_config(config: &Config) -> AuthorizationServerMetadata {
+pub(crate) fn authorization_server_metadata_for_config(
+    config: &Config,
+) -> AuthorizationServerMetadata {
     let issuer = config.authgate_url.clone();
     AuthorizationServerMetadata {
         issuer: issuer.clone(),
@@ -103,13 +105,13 @@ pub fn authorization_server_metadata_for_config(config: &Config) -> Authorizatio
     }
 }
 
-pub async fn protected_resource_metadata(
+pub(crate) async fn protected_resource_metadata(
     axum::extract::State(state): axum::extract::State<crate::state::AppState>,
 ) -> Json<ProtectedResourceMetadata> {
     Json(protected_resource_metadata_for_config(&state.config))
 }
 
-pub fn protected_resource_metadata_for_config(config: &Config) -> ProtectedResourceMetadata {
+pub(crate) fn protected_resource_metadata_for_config(config: &Config) -> ProtectedResourceMetadata {
     ProtectedResourceMetadata {
         resource: config.resource_url.clone(),
         authorization_servers: vec![config.authgate_url.clone()],
