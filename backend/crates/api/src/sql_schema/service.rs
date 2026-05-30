@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::time::Instant;
 
 use opsgate_core::validation::{trim_required, validate_purpose};
@@ -10,7 +9,6 @@ use schemars::JsonSchema;
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::postgres::PgConnectOptions;
 use sqlx::{Connection, Executor, FromRow, PgConnection};
 
 use crate::credential::snapshot::CredentialSnapshot;
@@ -104,12 +102,14 @@ impl SqlSchemaService {
             &credential.alias,
             &secret_ciphertext,
         )?;
-        if !credential.allow_private_network {
-            crate::sql_common::validate_postgres_target_ips(&credential.endpoint).await?;
-        }
+        let target = crate::target::postgres::prepare_postgres_target(
+            &credential.endpoint,
+            credential.allow_private_network,
+        )
+        .await?;
 
         let started = Instant::now();
-        let mut output = match execute_schema_query(&credential.endpoint, &secret, &input).await {
+        let mut output = match execute_schema_query(&target, &secret, &input).await {
             Ok(output) => output,
             Err(error) => {
                 recorder
@@ -339,14 +339,14 @@ fn validate_policy(credential: &Credential, input: &NormalizedInput) -> Result<(
 }
 
 async fn execute_schema_query(
-    endpoint: &str,
+    target: &crate::target::postgres::GuardedPostgresTarget,
     secret: &SqlSecret,
     input: &NormalizedInput,
 ) -> Result<SqlSchemaOutput> {
-    let options = PgConnectOptions::from_str(endpoint)
-        .map_err(|error| Error::validation(format!("postgres endpoint: {error}")))?
-        .username(secret.username.expose_secret())
-        .password(secret.password.expose_secret());
+    let options = target.connect_options(
+        secret.username.expose_secret(),
+        secret.password.expose_secret(),
+    )?;
     let mut conn = PgConnection::connect_with(&options)
         .await
         .map_err(|_error| Error::internal("postgres connection failed"))?;

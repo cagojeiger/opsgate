@@ -156,11 +156,9 @@ impl Resolve for GuardedResolver {
     }
 }
 
-fn reject_blocked_ip(host: &str, ip: IpAddr) -> std::result::Result<(), DnsError> {
+fn reject_blocked_ip(_host: &str, ip: IpAddr) -> std::result::Result<(), DnsError> {
     if is_blocked_target_ip(ip) {
-        return Err(boxed_error(format!(
-            "target host {host:?} resolves to private/link-local/loopback IP"
-        )));
+        return Err(boxed_error("target IP is private/link-local/loopback"));
     }
     Ok(())
 }

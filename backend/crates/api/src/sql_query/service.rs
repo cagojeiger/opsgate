@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::str::FromStr;
 use std::time::Instant;
 
 use opsgate_core::validation::{trim_required, validate_purpose};
@@ -18,7 +17,6 @@ use std::ops::ControlFlow;
 use sqlparser::ast::{Expr, ObjectName, Query, SetExpr, Statement, Visit, Visitor};
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
-use sqlx::postgres::PgConnectOptions;
 use sqlx::types::Json;
 use sqlx::{Connection, Executor, PgConnection};
 
@@ -136,12 +134,14 @@ impl SqlQueryService {
             &credential.alias,
             &secret_ciphertext,
         )?;
-        if !credential.allow_private_network {
-            crate::sql_common::validate_postgres_target_ips(&credential.endpoint).await?;
-        }
+        let target = crate::target::postgres::prepare_postgres_target(
+            &credential.endpoint,
+            credential.allow_private_network,
+        )
+        .await?;
 
         let started = Instant::now();
-        let mut output = match execute_postgres(&credential.endpoint, &secret, &input).await {
+        let mut output = match execute_postgres(&target, &secret, &input).await {
             Ok(output) => output,
             Err(error) => {
                 recorder.err("query_failed", "sql query failed").await;
@@ -606,14 +606,14 @@ fn is_metadata_schema(schema: &str) -> bool {
 }
 
 async fn execute_postgres(
-    endpoint: &str,
+    target: &crate::target::postgres::GuardedPostgresTarget,
     secret: &SqlSecret,
     input: &NormalizedInput,
 ) -> Result<SqlQueryOutput> {
-    let options = PgConnectOptions::from_str(endpoint)
-        .map_err(|error| Error::validation(format!("postgres endpoint: {error}")))?
-        .username(secret.username.expose_secret())
-        .password(secret.password.expose_secret());
+    let options = target.connect_options(
+        secret.username.expose_secret(),
+        secret.password.expose_secret(),
+    )?;
     let mut conn = PgConnection::connect_with(&options)
         .await
         .map_err(|_error| Error::internal("postgres connection failed"))?;
