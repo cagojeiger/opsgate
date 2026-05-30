@@ -20,6 +20,7 @@ use sqlparser::parser::Parser;
 use sqlx::PgConnection;
 use sqlx::types::Json;
 
+use crate::audit::runtime::reason;
 use crate::credential::snapshot::CredentialSnapshot;
 use crate::sql_common::SqlSecret;
 
@@ -90,7 +91,7 @@ impl SqlQueryService {
             Some(row) => row,
             None => {
                 recorder
-                    .denied("credential_not_found", "credential not found")
+                    .denied(reason::CREDENTIAL_NOT_FOUND, "credential not found")
                     .await;
                 return Err(Error::not_found("credential not found"));
             }
@@ -102,25 +103,29 @@ impl SqlQueryService {
         if credential.category != CredentialCategory::Sql || credential.provider != "postgres" {
             recorder
                 .denied(
-                    "wrong_credential_provider",
+                    reason::WRONG_CREDENTIAL_PROVIDER,
                     "credential is not sql/postgres",
                 )
                 .await;
-            return Err(Error::validation("wrong_credential_provider"));
+            return Err(Error::validation(reason::WRONG_CREDENTIAL_PROVIDER));
         }
         if let Err(error) = validate_policy_boundary(&credential, &input) {
-            recorder.denied("policy_denied", &error.to_string()).await;
+            recorder
+                .denied(reason::POLICY_DENIED, &error.to_string())
+                .await;
             return Err(error);
         }
         if let Err(error) = enforce_sql_policy(&input.query, &credential.policy) {
-            recorder.denied("policy_denied", &error.to_string()).await;
+            recorder
+                .denied(reason::POLICY_DENIED, &error.to_string())
+                .await;
             return Err(error);
         }
         let secret_ciphertext = match material.secret_ciphertext {
             Some(secret_ciphertext) => secret_ciphertext,
             None => {
                 recorder
-                    .err("secret_destroyed", "credential secret is destroyed")
+                    .err(reason::SECRET_DESTROYED, "credential secret is destroyed")
                     .await;
                 return Err(Error::validation("credential secret is destroyed"));
             }
@@ -133,7 +138,7 @@ impl SqlQueryService {
             Ok(secret) => secret,
             Err(error) => {
                 recorder
-                    .err("secret_open_failed", "credential secret open failed")
+                    .err(reason::SECRET_OPEN_FAILED, "credential secret open failed")
                     .await;
                 return Err(error);
             }
@@ -148,7 +153,7 @@ impl SqlQueryService {
         let mut output = match execute_postgres(&target, &secret, &input).await {
             Ok(output) => output,
             Err(error) => {
-                recorder.err("query_failed", "sql query failed").await;
+                recorder.err(reason::QUERY_FAILED, "sql query failed").await;
                 return Err(error);
             }
         };
@@ -160,7 +165,7 @@ impl SqlQueryService {
     /// Record an input-validation rejection (before a normalized input exists).
     /// Mirrors the per-tool denial stream so input-shaped abuse is still audited.
     async fn record_bad_input(&self, caller: &Caller, alias: &str, error: &Error) {
-        self.record_pre_input_denial(caller, alias, "bad_input", error)
+        self.record_pre_input_denial(caller, alias, reason::BAD_INPUT, error)
             .await;
     }
 
@@ -876,27 +881,14 @@ fn audit_detail(
     detail.insert("timeout_ms".to_owned(), serde_json::json!(input.timeout_ms));
     detail.insert("purpose".to_owned(), serde_json::json!(input.purpose));
     if let Some(credential) = credential {
-        detail.insert(
-            "credential_category".to_owned(),
-            serde_json::json!(credential.category.as_str()),
-        );
-        detail.insert(
-            "credential_provider".to_owned(),
-            serde_json::json!(credential.provider),
-        );
-        detail.insert(
-            "credential_env".to_owned(),
-            serde_json::json!(credential.env),
+        crate::audit::runtime::insert_credential_detail(
+            &mut detail,
+            credential.category.as_str(),
+            &credential.provider,
+            &credential.env,
         );
     }
-    if let Some(error_kind) = error_kind {
-        let key = if outcome == "denied" {
-            "denial_reason"
-        } else {
-            "error_kind"
-        };
-        detail.insert(key.to_owned(), serde_json::json!(error_kind));
-    }
+    crate::audit::runtime::insert_reason_detail(&mut detail, outcome, error_kind);
     if let Some(output) = output {
         detail.insert(
             "latency_ms".to_owned(),
@@ -1391,20 +1383,20 @@ mod tests {
         let caller = test_caller();
         let error = Error::validation("query exceeds maximum length");
 
-        let history = pre_input_denial_history_params(&caller, "prod", "bad_input", &error);
+        let history = pre_input_denial_history_params(&caller, "prod", reason::BAD_INPUT, &error);
         assert_eq!(history.outcome, "denied");
-        assert_eq!(history.error_kind.as_deref(), Some("bad_input"));
+        assert_eq!(history.error_kind.as_deref(), Some(reason::BAD_INPUT));
         assert!(history.purpose.is_none());
         assert_eq!(history.credential_alias, "prod");
         assert!(history.query_sha256.is_empty());
         assert_eq!(history.params_count, 0);
 
-        let audit = pre_input_denial_audit_event(&caller, "prod", "bad_input").into_params();
+        let audit = pre_input_denial_audit_event(&caller, "prod", reason::BAD_INPUT).into_params();
         assert_eq!(audit.outcome, "denied");
         assert_eq!(audit.action, "mcp.sql.query");
         assert_eq!(
             audit.detail.get("denial_reason"),
-            Some(&serde_json::json!("bad_input"))
+            Some(&serde_json::json!(reason::BAD_INPUT))
         );
     }
 }

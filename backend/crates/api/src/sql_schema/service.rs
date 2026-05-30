@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{FromRow, PgConnection};
 
+use crate::audit::runtime::reason;
 use crate::credential::snapshot::CredentialSnapshot;
 use crate::sql_common::SqlSecret;
 
@@ -64,7 +65,7 @@ impl SqlSchemaService {
             Some(row) => row,
             None => {
                 recorder
-                    .denied("credential_not_found", "credential not found")
+                    .denied(reason::CREDENTIAL_NOT_FOUND, "credential not found")
                     .await;
                 return Err(Error::not_found("credential not found"));
             }
@@ -76,21 +77,23 @@ impl SqlSchemaService {
         if credential.category != CredentialCategory::Sql || credential.provider != "postgres" {
             recorder
                 .denied(
-                    "wrong_credential_provider",
+                    reason::WRONG_CREDENTIAL_PROVIDER,
                     "credential is not sql/postgres",
                 )
                 .await;
-            return Err(Error::validation("wrong_credential_provider"));
+            return Err(Error::validation(reason::WRONG_CREDENTIAL_PROVIDER));
         }
         if let Err(error) = validate_policy(&credential, &input) {
-            recorder.denied("policy_denied", &error.to_string()).await;
+            recorder
+                .denied(reason::POLICY_DENIED, &error.to_string())
+                .await;
             return Err(error);
         }
         let secret_ciphertext = match material.secret_ciphertext {
             Some(secret_ciphertext) => secret_ciphertext,
             None => {
                 recorder
-                    .err("secret_destroyed", "credential secret is destroyed")
+                    .err(reason::SECRET_DESTROYED, "credential secret is destroyed")
                     .await;
                 return Err(Error::validation("credential secret is destroyed"));
             }
@@ -103,7 +106,7 @@ impl SqlSchemaService {
             Ok(secret) => secret,
             Err(error) => {
                 recorder
-                    .err("secret_open_failed", "credential secret open failed")
+                    .err(reason::SECRET_OPEN_FAILED, "credential secret open failed")
                     .await;
                 return Err(error);
             }
@@ -119,7 +122,7 @@ impl SqlSchemaService {
             Ok(output) => output,
             Err(error) => {
                 recorder
-                    .err("schema_lookup_failed", "sql schema lookup failed")
+                    .err(reason::SCHEMA_LOOKUP_FAILED, "sql schema lookup failed")
                     .await;
                 return Err(error);
             }
@@ -131,7 +134,7 @@ impl SqlSchemaService {
     }
 
     async fn record_bad_input(&self, caller: &Caller, alias: &str, _error: &Error) {
-        self.record_pre_input_denial(caller, alias, "bad_input")
+        self.record_pre_input_denial(caller, alias, reason::BAD_INPUT)
             .await;
     }
 
@@ -764,26 +767,13 @@ fn audit_detail(
         serde_json::json!(input.include_indexes),
     );
     detail.insert("purpose".to_owned(), serde_json::json!(input.purpose));
-    if let Some(error_kind) = error_kind {
-        let key = if outcome == "denied" {
-            "denial_reason"
-        } else {
-            "error_kind"
-        };
-        detail.insert(key.to_owned(), serde_json::json!(error_kind));
-    }
+    crate::audit::runtime::insert_reason_detail(&mut detail, outcome, error_kind);
     if let Some(credential) = credential {
-        detail.insert(
-            "credential_category".to_owned(),
-            serde_json::json!(credential.category.as_str()),
-        );
-        detail.insert(
-            "credential_provider".to_owned(),
-            serde_json::json!(credential.provider),
-        );
-        detail.insert(
-            "credential_env".to_owned(),
-            serde_json::json!(credential.env),
+        crate::audit::runtime::insert_credential_detail(
+            &mut detail,
+            credential.category.as_str(),
+            &credential.provider,
+            &credential.env,
         );
     }
     if let Some(output) = output {
@@ -878,7 +868,7 @@ mod tests {
             table: "audit_logs".to_owned(),
             ..base_input()
         })?;
-        let detail = audit_detail(&input, None, "denied", Some("policy_denied"), None);
+        let detail = audit_detail(&input, None, "denied", Some(reason::POLICY_DENIED), None);
         let serialized = detail.to_string();
         assert!(serialized.contains("denial_reason"));
         assert!(!serialized.contains("error_message_safe"));
