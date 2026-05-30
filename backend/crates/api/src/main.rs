@@ -25,7 +25,7 @@ mod sql_schema;
 mod state;
 mod target;
 
-use state::{AppState, AppStateDeps};
+use state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -96,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
         http.clone(),
     ));
     let oidc = std::sync::Arc::new(auth::oidc::OidcProvider::new(&config, http.clone()));
-    let state = AppState::new(AppStateDeps {
+    let state = AppState {
         db: pool.clone(),
         config: config.clone(),
         jwks,
@@ -108,7 +108,7 @@ async fn main() -> anyhow::Result<()> {
         sql_query: sql_query_service,
         audit,
         http,
-    });
+    };
 
     let listener = TcpListener::bind(bind_addr).await?;
     info!(event = "server.listening", addr = %bind_addr);

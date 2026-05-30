@@ -28,35 +28,3 @@ pub struct AppState {
     pub audit: Arc<opsgate_db::AuditRepo>,
     pub http: reqwest::Client,
 }
-
-pub struct AppStateDeps {
-    pub db: PgPool,
-    pub config: Arc<Config>,
-    pub jwks: Arc<JwksCache>,
-    pub oidc: Arc<OidcProvider>,
-    pub resolver: Arc<dyn CallerResolver>,
-    pub credentials: Arc<CredentialService>,
-    pub api_calls: Arc<ApiCallService>,
-    pub sql_schema: Arc<SqlSchemaService>,
-    pub sql_query: Arc<SqlQueryService>,
-    pub audit: Arc<opsgate_db::AuditRepo>,
-    pub http: reqwest::Client,
-}
-
-impl AppState {
-    pub fn new(deps: AppStateDeps) -> Self {
-        Self {
-            db: deps.db,
-            config: deps.config,
-            jwks: deps.jwks,
-            oidc: deps.oidc,
-            resolver: deps.resolver,
-            credentials: deps.credentials,
-            api_calls: deps.api_calls,
-            sql_schema: deps.sql_schema,
-            sql_query: deps.sql_query,
-            audit: deps.audit,
-            http: deps.http,
-        }
-    }
-}

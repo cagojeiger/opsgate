@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use crate::auth::jwks::JwksCache;
 use crate::identity::CallerResolver;
-use crate::state::{AppState, AppStateDeps};
+use crate::state::AppState;
 
 use crate::auth::bearer::{AuthError, verify_bearer};
 
@@ -204,7 +204,7 @@ fn state_with_resource_url(
         audit_repo,
         sealer,
     ));
-    Ok(AppState::new(AppStateDeps {
+    Ok(AppState {
         db: pool,
         config,
         jwks,
@@ -216,7 +216,7 @@ fn state_with_resource_url(
         sql_query,
         audit,
         http: reqwest::Client::new(),
-    }))
+    })
 }
 
 fn registered_state() -> Result<AppState, Box<dyn std::error::Error>> {
