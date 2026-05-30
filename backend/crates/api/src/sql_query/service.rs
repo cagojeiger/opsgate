@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use opsgate_core::llm_output::{
-    JsonOutput, JsonOutputOptions, More, build_json_output, validate_json_paths,
+    JsonOutput, JsonOutputOptions, More, MoreOptions, build_json_output, validate_json_paths,
 };
 use opsgate_core::validation::{trim_required, validate_purpose};
 use opsgate_core::{Error, Result};
@@ -665,17 +665,58 @@ fn build_column_output(
     let bytes = serde_json::to_vec(&body)
         .map_err(|error| Error::internal(format!("serialize sql query body: {error}")))?;
     let shaped = build_shaped_body(&bytes, input)?;
+    let truncated_total = truncated || shaped.truncated;
+    let more = finalize_more(shaped.more, truncated, input);
 
     Ok(SqlQueryOutput {
         body: shaped.body,
         row_count,
-        truncated: truncated || shaped.truncated,
+        truncated: truncated_total,
         original_bytes: shaped.original_bytes,
         returned_bytes: shaped.returned_bytes,
         latency_ms: 0,
-        more: shaped.more,
+        more,
         column_names,
     })
+}
+
+/// SQL-specific narrowing hint appended to byte-overflow guidance: unlike
+/// api.call (where jsonpath is the only lever), sql.query can also rewrite the
+/// query itself to shrink the result.
+const SQL_NARROW_HINT: &str =
+    "sql: you can also narrow the query (fewer columns / WHERE / aggregate) instead of only jsonpath";
+
+/// Decide the final `more` guidance for a column output.
+///
+/// Byte-overflow guidance (`body=null`) takes precedence over row truncation
+/// because the model received no rows at all; when it fires we only append a
+/// SQL-specific narrowing hint to the shared jsonpath guidance. When the body
+/// fit but rows were dropped by `max_rows`, synthesize a row-truncation `more`
+/// so the model knows the next lever instead of seeing a bare `truncated:true`.
+fn finalize_more(shaped_more: Option<More>, row_truncated: bool, input: &NormalizedInput) -> Option<More> {
+    match shaped_more {
+        Some(mut more) => {
+            more.hints.push(SQL_NARROW_HINT.to_owned());
+            Some(more)
+        }
+        None if row_truncated => Some(row_truncation_more(input)),
+        None => None,
+    }
+}
+
+fn row_truncation_more(input: &NormalizedInput) -> More {
+    More {
+        truncated: true,
+        options: MoreOptions {
+            preferred_next: "max_rows".to_owned(),
+            ..MoreOptions::default()
+        },
+        hints: vec![format!(
+            "row limit reached (max_rows={}); raise max_rows up to policy, or narrow with WHERE / aggregate (count, group by) / keyset pagination",
+            input.max_rows
+        )],
+        preview: None,
+    }
 }
 
 fn build_shaped_body(bytes: &[u8], input: &NormalizedInput) -> Result<JsonOutput> {
@@ -1237,6 +1278,59 @@ mod tests {
                 "region": [null, "us"]
             })
         );
+        Ok(())
+    }
+
+    #[test]
+    fn row_truncation_emits_more_hint() -> Result<()> {
+        let rows = vec![serde_json::json!({"id": 1}), serde_json::json!({"id": 2})];
+        let input = normalize_input(SqlQueryInput {
+            max_rows: Some(2),
+            ..base_input()
+        })?;
+        let output = build_column_output(rows, &input, true)?;
+
+        assert!(output.truncated);
+        let more = output.more.ok_or_else(|| Error::internal("missing more"))?;
+        assert_eq!(more.options.preferred_next, "max_rows");
+        assert!(more.options.suggested_jsonpath.is_empty());
+        assert!(
+            more.hints
+                .iter()
+                .any(|hint| hint.contains("max_rows=2") && hint.contains("WHERE"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn untruncated_output_has_no_more() -> Result<()> {
+        let rows = vec![serde_json::json!({"id": 1})];
+        let input = normalize_input(base_input())?;
+        let output = build_column_output(rows, &input, false)?;
+
+        assert!(!output.truncated);
+        assert!(output.more.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn byte_overflow_more_mentions_query_narrowing() -> Result<()> {
+        let byte_more = More {
+            truncated: true,
+            options: MoreOptions {
+                preferred_next: "jsonpath".to_owned(),
+                ..MoreOptions::default()
+            },
+            hints: vec!["response JSON is too large".to_owned()],
+            preview: None,
+        };
+        let input = normalize_input(base_input())?;
+        let more = finalize_more(Some(byte_more), true, &input)
+            .ok_or_else(|| Error::internal("more present"))?;
+
+        // Byte-overflow guidance wins, and gains a SQL-specific narrowing hint.
+        assert_eq!(more.options.preferred_next, "jsonpath");
+        assert!(more.hints.iter().any(|hint| hint.contains("narrow the query")));
         Ok(())
     }
 
