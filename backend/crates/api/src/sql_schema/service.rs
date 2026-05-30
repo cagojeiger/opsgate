@@ -176,14 +176,14 @@ pub(crate) struct SqlSchemaOutput {
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct TableSummary {
+pub(crate) struct TableSummary {
     pub namespace: String,
     pub name: String,
     pub kind: String,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct TableDetail {
+pub(crate) struct TableDetail {
     pub namespace: String,
     pub name: String,
     pub kind: String,
@@ -195,7 +195,7 @@ pub struct TableDetail {
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct Column {
+pub(crate) struct Column {
     pub name: String,
     #[serde(rename = "type")]
     pub data_type: String,
@@ -205,7 +205,7 @@ pub struct Column {
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct Index {
+pub(crate) struct Index {
     pub name: String,
     pub columns: Vec<String>,
     pub unique: bool,
@@ -214,7 +214,7 @@ pub struct Index {
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct Page {
+pub(crate) struct Page {
     pub limit: i32,
     pub returned: usize,
     pub has_more: bool,
@@ -223,13 +223,13 @@ pub struct Page {
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct More {
+pub(crate) struct More {
     pub options: MoreOption,
     pub hints: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct MoreOption {
+pub(crate) struct MoreOption {
     #[serde(skip_serializing_if = "is_false", default)]
     pub retry_without_indexes: bool,
     #[serde(skip_serializing_if = "is_false", default)]
