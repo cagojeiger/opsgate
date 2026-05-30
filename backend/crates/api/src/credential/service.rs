@@ -98,6 +98,7 @@ impl CredentialService {
                     tags: input.tags,
                     policy: input.policy,
                     allow_private_network: input.allow_private_network,
+                    allow_insecure_transport: input.allow_insecure_transport,
                     tls_ca,
                 },
                 audit,
@@ -342,6 +343,8 @@ pub(crate) struct RegisterHttpCredentialInput {
     #[serde(default)]
     pub allow_private_network: bool,
     #[serde(default)]
+    pub allow_insecure_transport: bool,
+    #[serde(default)]
     pub tls_server_ca: String,
 }
 
@@ -363,6 +366,8 @@ pub(crate) struct RegisterSqlCredentialInput {
     pub policy: CredentialPolicy,
     #[serde(default)]
     pub allow_private_network: bool,
+    #[serde(default)]
+    pub allow_insecure_transport: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -415,6 +420,7 @@ impl RegisterHttpCredentialInput {
             tags: self.tags,
             policy: self.policy,
             allow_private_network: self.allow_private_network,
+            allow_insecure_transport: self.allow_insecure_transport,
             tls_server_ca: Some(self.tls_server_ca),
         }
     }
@@ -436,6 +442,7 @@ impl RegisterSqlCredentialInput {
             tags: self.tags,
             policy: self.policy,
             allow_private_network: self.allow_private_network,
+            allow_insecure_transport: self.allow_insecure_transport,
             tls_server_ca: None,
         }
     }
@@ -581,7 +588,15 @@ fn normalize_list_fields(fields: Vec<String>) -> Vec<String> {
 fn allowed_list_field(field: &str) -> bool {
     matches!(
         field,
-        "alias" | "category" | "provider" | "env" | "tags" | "description" | "policy"
+        "alias"
+            | "category"
+            | "provider"
+            | "env"
+            | "tags"
+            | "description"
+            | "policy"
+            | "allow_private_network"
+            | "allow_insecure_transport"
     )
 }
 
@@ -622,6 +637,7 @@ fn register_audit(
             "env": input.env,
             "tags": input.tags,
             "allow_private_network": input.allow_private_network,
+            "allow_insecure_transport": input.allow_insecure_transport,
             "has_tls_ca": input.tls_server_ca.is_some(),
         }),
     )
@@ -705,6 +721,7 @@ mod tests {
             tags: Vec::new(),
             policy: CredentialPolicy::default(),
             allow_private_network,
+            allow_insecure_transport: false,
             tls_server_ca: String::new(),
         }
         .into_domain()
@@ -723,7 +740,7 @@ mod tests {
             alias: "prod".to_owned(),
             endpoint: match category {
                 CredentialCategory::Http => "https://service.example.test",
-                CredentialCategory::Sql => "postgres://db.example.test/app",
+                CredentialCategory::Sql => "postgres://db.example.test/app?sslmode=require",
             }
             .to_owned(),
             description: "old description".to_owned(),
@@ -731,6 +748,7 @@ mod tests {
             tags: vec!["prod".to_owned()],
             policy: CredentialPolicy::default(),
             allow_private_network: false,
+            allow_insecure_transport: false,
             has_tls_ca: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -948,7 +966,7 @@ mod tests {
                 ..valid.clone()
             },
             ListCredentialsInput {
-                fields: Some(vec!["allow_private_network".to_owned()]),
+                fields: Some(vec!["endpoint".to_owned()]),
                 ..valid.clone()
             },
             ListCredentialsInput {

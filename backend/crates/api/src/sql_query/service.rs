@@ -146,6 +146,7 @@ impl SqlQueryService {
         let target = match crate::target::postgres::prepare_postgres_target(
             &credential.endpoint,
             credential.allow_private_network,
+            credential.allow_insecure_transport,
         )
         .await
         {
@@ -1003,12 +1004,13 @@ mod tests {
             category: CredentialCategory::Sql,
             provider: "postgres".to_owned(),
             alias: "analytics".to_owned(),
-            endpoint: "postgres://db.example.test/app".to_owned(),
+            endpoint: "postgres://db.example.test/app?sslmode=require".to_owned(),
             description: String::new(),
             env: "prod".to_owned(),
             tags: Vec::new(),
             policy,
             allow_private_network: false,
+            allow_insecure_transport: false,
             has_tls_ca: false,
             created_at: now,
             updated_at: now,

@@ -37,6 +37,10 @@ pub(crate) struct CredentialOutput {
     pub tags: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policy: Option<CredentialPolicy>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_private_network: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_insecure_transport: Option<bool>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -81,6 +85,10 @@ impl CredentialOutput {
             env: include_field(fields, "env").then_some(credential.env),
             tags: include_field(fields, "tags").then_some(credential.tags),
             policy: include_field(fields, "policy").then_some(credential.policy),
+            allow_private_network: include_field(fields, "allow_private_network")
+                .then_some(credential.allow_private_network),
+            allow_insecure_transport: include_field(fields, "allow_insecure_transport")
+                .then_some(credential.allow_insecure_transport),
         }
     }
 }
@@ -156,6 +164,7 @@ mod tests {
             tags: vec!["prod".to_owned(), "k8s".to_owned()],
             policy: CredentialPolicy::default(),
             allow_private_network: false,
+            allow_insecure_transport: false,
             has_tls_ca: true,
             created_at: Utc::now(),
             updated_at: Utc::now(),

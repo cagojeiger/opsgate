@@ -44,7 +44,11 @@ pub fn validate_register_input(input: &RegisterCredentialInput) -> Result<()> {
     validate_policy_for_category(&input.policy, input.category)?;
     match (&input.category, &input.secret) {
         (CredentialCategory::Http, CredentialSecret::Http { headers }) => {
-            validate_http_endpoint(&input.endpoint)?;
+            validate_http_endpoint(
+                &input.endpoint,
+                input.allow_private_network,
+                input.allow_insecure_transport,
+            )?;
             validate_http_secret(headers)?;
             let names = headers
                 .iter()
@@ -61,7 +65,11 @@ pub fn validate_register_input(input: &RegisterCredentialInput) -> Result<()> {
                     "sql category currently supports provider=postgres only",
                 ));
             }
-            validate_postgres_endpoint(&input.endpoint)?;
+            validate_postgres_endpoint(
+                &input.endpoint,
+                input.allow_private_network,
+                input.allow_insecure_transport,
+            )?;
             validate_sql_secret(username.expose_secret(), password.expose_secret())?;
         }
         _ => {
@@ -140,13 +148,29 @@ pub fn validate_tags(tags: &[String]) -> Result<()> {
     Ok(())
 }
 
-pub fn validate_http_endpoint(raw: &str) -> Result<Url> {
+pub fn validate_http_endpoint(
+    raw: &str,
+    allow_private_network: bool,
+    allow_insecure_transport: bool,
+) -> Result<Url> {
     let url =
         Url::parse(raw).map_err(|error| Error::validation(format!("http endpoint: {error}")))?;
-    if url.scheme() != "https" || url.host_str().is_none() {
-        return Err(Error::validation(
-            "http endpoint must be https:// with a host",
-        ));
+    if url.host_str().is_none() {
+        return Err(Error::validation("http endpoint requires host"));
+    }
+    match url.scheme() {
+        "https" => {}
+        "http" if allow_private_network && allow_insecure_transport => {}
+        "http" => {
+            return Err(Error::validation(
+                "http endpoint requires allow_private_network=true and allow_insecure_transport=true",
+            ));
+        }
+        _ => {
+            return Err(Error::validation(
+                "http endpoint must use http:// or https://",
+            ));
+        }
     }
     if url.query().is_some() || url.fragment().is_some() {
         return Err(Error::validation(
@@ -156,7 +180,11 @@ pub fn validate_http_endpoint(raw: &str) -> Result<Url> {
     Ok(url)
 }
 
-pub fn validate_postgres_endpoint(raw: &str) -> Result<Url> {
+pub fn validate_postgres_endpoint(
+    raw: &str,
+    allow_private_network: bool,
+    allow_insecure_transport: bool,
+) -> Result<Url> {
     let url = Url::parse(raw)
         .map_err(|error| Error::validation(format!("postgres endpoint: {error}")))?;
     if !matches!(url.scheme(), "postgres" | "postgresql") {
@@ -177,15 +205,26 @@ pub fn validate_postgres_endpoint(raw: &str) -> Result<Url> {
             "postgres endpoint must not include fragment",
         ));
     }
+    let mut sslmode = None;
     for (key, value) in url.query_pairs() {
         if key != "sslmode" {
             return Err(Error::validation(format!(
                 "unsupported postgres endpoint query parameter {key:?}"
             )));
         }
-        if value.eq_ignore_ascii_case("verify-full") {
+        sslmode = Some(value.to_ascii_lowercase());
+    }
+    match sslmode.as_deref() {
+        Some("require") => {}
+        Some("verify-full") => {
             return Err(Error::validation(
                 "postgres endpoint sslmode=verify-full is unsupported by guarded SQL targets",
+            ));
+        }
+        _ if allow_private_network && allow_insecure_transport => {}
+        _ => {
+            return Err(Error::validation(
+                "postgres endpoint requires sslmode=require unless allow_private_network=true and allow_insecure_transport=true",
             ));
         }
     }
@@ -339,6 +378,7 @@ mod tests {
             tags: vec![" Prod ".to_owned(), "prod".to_owned()],
             policy: CredentialPolicy::default(),
             allow_private_network: false,
+            allow_insecure_transport: false,
             tls_server_ca: Some("".to_owned()),
         };
         let input = normalize_register_input(input);
@@ -369,6 +409,7 @@ mod tests {
                 ..CredentialPolicy::default()
             },
             allow_private_network: false,
+            allow_insecure_transport: false,
             tls_server_ca: None,
         });
         assert!(validate_register_input(&input).is_err());
@@ -392,6 +433,7 @@ mod tests {
             tags: Vec::new(),
             policy: CredentialPolicy::default(),
             allow_private_network: false,
+            allow_insecure_transport: false,
             tls_server_ca: None,
         });
         assert!(validate_register_input(&input).is_ok());
@@ -416,6 +458,7 @@ mod tests {
                 tags: Vec::new(),
                 policy: CredentialPolicy::default(),
                 allow_private_network: false,
+                allow_insecure_transport: false,
                 tls_server_ca: None,
             });
             assert!(
@@ -443,6 +486,7 @@ mod tests {
             tags: Vec::new(),
             policy: CredentialPolicy::default(),
             allow_private_network: false,
+            allow_insecure_transport: false,
             tls_server_ca: None,
         });
         let msg = validate_register_input(&input)
@@ -459,7 +503,7 @@ mod tests {
             category: CredentialCategory::Sql,
             provider: "postgres".to_owned(),
             alias: "db".to_owned(),
-            endpoint: "postgres://db.example.com/app".to_owned(),
+            endpoint: "postgres://db.example.com/app?sslmode=require".to_owned(),
             secret: CredentialSecret::Http {
                 headers: vec![SecretHeader {
                     name: "X-Api-Key".to_owned(),
@@ -471,6 +515,7 @@ mod tests {
             tags: Vec::new(),
             policy: CredentialPolicy::default(),
             allow_private_network: false,
+            allow_insecure_transport: false,
             tls_server_ca: None,
         });
         assert!(validate_register_input(&input).is_err());
@@ -478,17 +523,46 @@ mod tests {
 
     #[test]
     fn rejects_postgres_verify_full_until_guarded_tls_identity_is_supported() {
-        let err = validate_postgres_endpoint("postgres://db.example.test/app?sslmode=verify-full")
-            .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+        let err = validate_postgres_endpoint(
+            "postgres://db.example.test/app?sslmode=verify-full",
+            false,
+            false,
+        )
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
         assert!(err.contains("verify-full is unsupported"));
     }
 
     #[test]
     fn rejects_postgres_endpoint_with_credentials() {
-        let err = validate_postgres_endpoint("postgres://user:pass@example.com/db").err();
+        let err =
+            validate_postgres_endpoint("postgres://user:pass@example.com/db", false, false).err();
         assert!(err.is_some());
+    }
+
+    #[test]
+    fn insecure_transports_require_explicit_private_opt_in() {
+        assert!(validate_http_endpoint("http://service.local", true, true).is_ok());
+        assert!(validate_http_endpoint("http://service.local", true, false).is_err());
+        assert!(validate_http_endpoint("http://service.local", false, true).is_err());
+
+        assert!(
+            validate_postgres_endpoint("postgres://db.local/app?sslmode=disable", true, true)
+                .is_ok()
+        );
+        assert!(
+            validate_postgres_endpoint("postgres://db.local/app?sslmode=disable", true, false)
+                .is_err()
+        );
+        assert!(
+            validate_postgres_endpoint("postgres://db.local/app?sslmode=disable", false, true)
+                .is_err()
+        );
+        assert!(
+            validate_postgres_endpoint("postgres://db.local/app?sslmode=require", false, false)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -533,7 +607,7 @@ mod tests {
             category: CredentialCategory::Sql,
             provider: "mysql".to_owned(),
             alias: "db-prod".to_owned(),
-            endpoint: "postgres://db.example.com/app".to_owned(),
+            endpoint: "postgres://db.example.com/app?sslmode=require".to_owned(),
             secret: CredentialSecret::Sql {
                 username: secret("user"),
                 password: secret("pass"),
@@ -543,6 +617,7 @@ mod tests {
             tags: Vec::new(),
             policy: CredentialPolicy::default(),
             allow_private_network: false,
+            allow_insecure_transport: false,
             tls_server_ca: None,
         });
 

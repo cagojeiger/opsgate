@@ -143,18 +143,9 @@ impl ApiCallService {
                 return Err(error);
             }
         };
-        let guard_private_network = !credential.allow_private_network;
-
         let started = Instant::now();
         let mut response = match self
-            .send_target(
-                &credential,
-                tls_ca.as_deref(),
-                &url,
-                &input,
-                &secret,
-                guard_private_network,
-            )
+            .send_target(&credential, tls_ca.as_deref(), &url, &input, &secret)
             .await
         {
             Ok(response) => response,
@@ -255,7 +246,6 @@ impl ApiCallService {
         url: &url::Url,
         input: &NormalizedApiCallInput,
         secret: &[SecretHeader],
-        guard_private_network: bool,
     ) -> Result<TargetResponseHead> {
         let method = reqwest::Method::from_bytes(input.method.as_bytes())
             .map_err(|error| Error::validation(format!("invalid method: {error}")))?;
@@ -264,7 +254,8 @@ impl ApiCallService {
             tls_ca,
             method,
             url,
-            guard_private_network,
+            !credential.allow_private_network,
+            credential.allow_insecure_transport,
         )?;
         let mut headers = HeaderMap::new();
         if !input
@@ -860,6 +851,7 @@ mod tests {
             tags: Vec::new(),
             policy,
             allow_private_network: false,
+            allow_insecure_transport: false,
             has_tls_ca: false,
             created_at: now,
             updated_at: now,
@@ -1014,9 +1006,9 @@ mod tests {
             path: "/status".to_owned(),
             ..base_input()
         })?;
-        for endpoint in ["http://127.0.0.1", "http://[::ffff:127.0.0.1]"] {
+        for endpoint in ["https://127.0.0.1", "https://[::ffff:127.0.0.1]"] {
             let url = build_target_url(endpoint, &input)?;
-            let err = crate::target::http::ensure_url_allowed(&url, true)
+            let err = crate::target::http::ensure_url_allowed(&url, true, false)
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default();

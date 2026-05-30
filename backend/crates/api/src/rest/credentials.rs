@@ -158,6 +158,8 @@ struct RegisterCredentialInput {
     #[serde(default)]
     allow_private_network: bool,
     #[serde(default)]
+    allow_insecure_transport: bool,
+    #[serde(default)]
     tls_server_ca: String,
 }
 
@@ -195,6 +197,7 @@ impl RegisterCredentialInput {
                     tags: self.tags,
                     policy: self.policy,
                     allow_private_network: self.allow_private_network,
+                    allow_insecure_transport: self.allow_insecure_transport,
                     tls_server_ca: self.tls_server_ca,
                 }))
             }
@@ -215,6 +218,7 @@ impl RegisterCredentialInput {
                     tags: self.tags,
                     policy: self.policy,
                     allow_private_network: self.allow_private_network,
+                    allow_insecure_transport: self.allow_insecure_transport,
                 }))
             }
         }
@@ -251,6 +255,7 @@ mod tests {
             tags: vec!["k8s".to_owned()],
             policy: CredentialPolicy::default(),
             allow_private_network: true,
+            allow_insecure_transport: false,
             tls_server_ca: "-----BEGIN CERTIFICATE-----".to_owned(),
         };
 
@@ -279,7 +284,7 @@ mod tests {
             category: CredentialCategory::Sql,
             provider: String::new(),
             alias: "prod-db".to_owned(),
-            endpoint: "postgres://db.example.test/app".to_owned(),
+            endpoint: "postgres://db.example.test/app?sslmode=require".to_owned(),
             secret: RegisterSecretInput {
                 headers: Vec::new(),
                 username: "app".to_owned(),
@@ -290,6 +295,7 @@ mod tests {
             tags: Vec::new(),
             policy: CredentialPolicy::default(),
             allow_private_network: false,
+            allow_insecure_transport: false,
             tls_server_ca: "ignored".to_owned(),
         };
 
@@ -326,6 +332,7 @@ mod tests {
             tags: Vec::new(),
             policy: CredentialPolicy::default(),
             allow_private_network: false,
+            allow_insecure_transport: false,
             tls_server_ca: String::new(),
         };
         assert!(http_with_sql_secret.into_service_input().is_err());
@@ -334,7 +341,7 @@ mod tests {
             category: CredentialCategory::Sql,
             provider: String::new(),
             alias: "prod-db".to_owned(),
-            endpoint: "postgres://db.example.test/app".to_owned(),
+            endpoint: "postgres://db.example.test/app?sslmode=require".to_owned(),
             secret: RegisterSecretInput {
                 headers: vec![SecretHeaderInput {
                     name: "Authorization".to_owned(),
@@ -348,6 +355,7 @@ mod tests {
             tags: Vec::new(),
             policy: CredentialPolicy::default(),
             allow_private_network: false,
+            allow_insecure_transport: false,
             tls_server_ca: String::new(),
         };
         assert!(sql_with_http_secret.into_service_input().is_err());

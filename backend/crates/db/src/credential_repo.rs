@@ -41,11 +41,12 @@ impl CredentialRepo {
                 tags,
                 policy,
                 allow_private_network,
+                allow_insecure_transport,
                 tls_ca,
                 created_by,
                 updated_by
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
             RETURNING
                 id,
                 owner_user_id,
@@ -58,6 +59,7 @@ impl CredentialRepo {
                 tags,
                 policy,
                 allow_private_network,
+                allow_insecure_transport,
                 tls_ca IS NOT NULL AS has_tls_ca,
                 created_at,
                 updated_at
@@ -74,6 +76,7 @@ impl CredentialRepo {
         .bind(params.tags)
         .bind(policy)
         .bind(params.allow_private_network)
+        .bind(params.allow_insecure_transport)
         .bind(params.tls_ca)
         .bind(params.actor_user_id)
         .fetch_one(&mut *tx)
@@ -105,6 +108,7 @@ impl CredentialRepo {
                 tags,
                 policy,
                 allow_private_network,
+                allow_insecure_transport,
                 tls_ca IS NOT NULL AS has_tls_ca,
                 created_at,
                 updated_at
@@ -141,6 +145,7 @@ impl CredentialRepo {
                 tags,
                 policy,
                 allow_private_network,
+                allow_insecure_transport,
                 tls_ca IS NOT NULL AS has_tls_ca,
                 created_at,
                 updated_at,
@@ -198,6 +203,7 @@ impl CredentialRepo {
                 tags,
                 policy,
                 allow_private_network,
+                allow_insecure_transport,
                 tls_ca IS NOT NULL AS has_tls_ca,
                 created_at,
                 updated_at
@@ -253,6 +259,7 @@ impl CredentialRepo {
                 tags,
                 policy,
                 allow_private_network,
+                allow_insecure_transport,
                 tls_ca IS NOT NULL AS has_tls_ca,
                 created_at,
                 updated_at
@@ -298,6 +305,7 @@ impl CredentialRepo {
                 tags,
                 policy,
                 allow_private_network,
+                allow_insecure_transport,
                 tls_ca IS NOT NULL AS has_tls_ca,
                 created_at,
                 updated_at
@@ -583,6 +591,7 @@ struct CredentialRow {
     tags: Vec<String>,
     policy: Value,
     allow_private_network: bool,
+    allow_insecure_transport: bool,
     has_tls_ca: bool,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -601,6 +610,7 @@ pub struct CredentialSecretRow {
     tags: Vec<String>,
     policy: Value,
     allow_private_network: bool,
+    allow_insecure_transport: bool,
     has_tls_ca: bool,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -628,6 +638,7 @@ impl CredentialSecretRow {
             tags: self.tags,
             policy: self.policy,
             allow_private_network: self.allow_private_network,
+            allow_insecure_transport: self.allow_insecure_transport,
             has_tls_ca: self.has_tls_ca,
             created_at: self.created_at,
             updated_at: self.updated_at,
@@ -666,6 +677,7 @@ impl CredentialRow {
             tags: self.tags,
             policy,
             allow_private_network: self.allow_private_network,
+            allow_insecure_transport: self.allow_insecure_transport,
             has_tls_ca: self.has_tls_ca,
             created_at: self.created_at,
             updated_at: self.updated_at,

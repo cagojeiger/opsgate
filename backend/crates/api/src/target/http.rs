@@ -39,8 +39,9 @@ impl TargetHttpClients {
         method: reqwest::Method,
         url: &url::Url,
         guard_private_network: bool,
+        allow_insecure_transport: bool,
     ) -> Result<reqwest::RequestBuilder> {
-        ensure_url_allowed(url, guard_private_network)?;
+        ensure_url_allowed(url, guard_private_network, allow_insecure_transport)?;
         let client = self.client_for(credential, tls_ca, guard_private_network)?;
         Ok(client.request(method, url.clone()))
     }
@@ -146,7 +147,21 @@ fn build_client(
 #[derive(Debug)]
 struct GuardedResolver;
 
-pub(crate) fn ensure_url_allowed(url: &url::Url, guard_private_network: bool) -> Result<()> {
+pub(crate) fn ensure_url_allowed(
+    url: &url::Url,
+    guard_private_network: bool,
+    allow_insecure_transport: bool,
+) -> Result<()> {
+    match url.scheme() {
+        "https" => {}
+        "http" if !guard_private_network && allow_insecure_transport => {}
+        "http" => {
+            return Err(Error::validation(
+                "target URL http requires allow_private_network=true and allow_insecure_transport=true",
+            ));
+        }
+        _ => return Err(Error::validation("target URL must use http or https")),
+    }
     if !guard_private_network {
         return Ok(());
     }
@@ -253,22 +268,35 @@ mod tests {
     #[test]
     fn guarded_http_preflight_blocks_private_url_literals() -> Result<()> {
         for raw in [
-            "http://127.0.0.1/status",
-            "http://[::1]/status",
-            "http://[::ffff:127.0.0.1]/status",
+            "https://127.0.0.1/status",
+            "https://[::1]/status",
+            "https://[::ffff:127.0.0.1]/status",
         ] {
             let url = url::Url::parse(raw)
                 .map_err(|error| Error::internal(format!("parse test URL: {error}")))?;
-            let err = ensure_url_allowed(&url, true)
+            let err = ensure_url_allowed(&url, true, false)
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default();
             assert!(err.contains("private/link-local/loopback"), "{raw}: {err}");
         }
-        let public = url::Url::parse("http://93.184.216.34/status")
+        let public = url::Url::parse("https://93.184.216.34/status")
             .map_err(|error| Error::internal(format!("parse test URL: {error}")))?;
-        assert!(ensure_url_allowed(&public, true).is_ok());
-        assert!(ensure_url_allowed(&public, false).is_ok());
+        assert!(ensure_url_allowed(&public, true, false).is_ok());
+        assert!(ensure_url_allowed(&public, false, false).is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn insecure_http_requires_explicit_private_transport_opt_in() -> Result<()> {
+        let url = url::Url::parse("http://10.0.0.10/status")
+            .map_err(|error| Error::internal(format!("parse test URL: {error}")))?;
+        let err = ensure_url_allowed(&url, false, false)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("allow_private_network"));
+        assert!(ensure_url_allowed(&url, false, true).is_ok());
         Ok(())
     }
 
@@ -349,6 +377,7 @@ mod tests {
             tags: Vec::new(),
             policy: CredentialPolicy::default(),
             allow_private_network: false,
+            allow_insecure_transport: false,
             has_tls_ca,
             created_at: now,
             updated_at: now,

@@ -415,6 +415,7 @@ fn insert_params(owner: Uuid, alias: &str) -> InsertCredentialParams {
         tags: vec!["prod".to_owned()],
         policy: CredentialPolicy::default(),
         allow_private_network: false,
+        allow_insecure_transport: false,
         tls_ca: None,
     }
 }

@@ -35,6 +35,7 @@ pub struct Credential {
     pub tags: Vec<String>,
     pub policy: CredentialPolicy,
     pub allow_private_network: bool,
+    pub allow_insecure_transport: bool,
     pub has_tls_ca: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -68,6 +69,7 @@ pub struct RegisterHttpCredentialInput {
     pub tags: Vec<String>,
     pub policy: CredentialPolicy,
     pub allow_private_network: bool,
+    pub allow_insecure_transport: bool,
     pub tls_server_ca: String,
 }
 
@@ -83,6 +85,7 @@ pub struct RegisterSqlCredentialInput {
     pub tags: Vec<String>,
     pub policy: CredentialPolicy,
     pub allow_private_network: bool,
+    pub allow_insecure_transport: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +100,7 @@ pub struct RegisterCredentialInput {
     pub tags: Vec<String>,
     pub policy: CredentialPolicy,
     pub allow_private_network: bool,
+    pub allow_insecure_transport: bool,
     pub tls_server_ca: Option<String>,
 }
 
@@ -115,6 +119,7 @@ impl From<RegisterHttpCredentialInput> for RegisterCredentialInput {
             tags: input.tags,
             policy: input.policy,
             allow_private_network: input.allow_private_network,
+            allow_insecure_transport: input.allow_insecure_transport,
             tls_server_ca: Some(input.tls_server_ca),
         }
     }
@@ -141,6 +146,7 @@ impl From<RegisterSqlCredentialInput> for RegisterCredentialInput {
             tags: input.tags,
             policy: input.policy,
             allow_private_network: input.allow_private_network,
+            allow_insecure_transport: input.allow_insecure_transport,
             tls_server_ca: None,
         }
     }
@@ -160,6 +166,7 @@ pub struct InsertCredentialParams {
     pub tags: Vec<String>,
     pub policy: CredentialPolicy,
     pub allow_private_network: bool,
+    pub allow_insecure_transport: bool,
     pub tls_ca: Option<Vec<u8>>,
 }
 

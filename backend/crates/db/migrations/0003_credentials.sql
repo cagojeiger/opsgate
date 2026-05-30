@@ -14,6 +14,7 @@ CREATE TABLE credentials (
     tags                  TEXT[] NOT NULL DEFAULT '{}',
     policy                JSONB NOT NULL DEFAULT '{}',
     allow_private_network BOOLEAN NOT NULL DEFAULT false,
+    allow_insecure_transport BOOLEAN NOT NULL DEFAULT false,
     tls_ca                BYTEA,
     created_by            UUID NOT NULL REFERENCES users(id),
     updated_by            UUID NOT NULL REFERENCES users(id),

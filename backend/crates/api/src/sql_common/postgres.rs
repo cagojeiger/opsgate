@@ -1,9 +1,13 @@
+use std::time::Duration;
+
 use opsgate_core::{Error, Result};
 use secrecy::ExposeSecret;
 use sqlx::{Connection, Executor, PgConnection};
 
 use crate::sql_common::SqlSecret;
 use crate::target::postgres::GuardedPostgresTarget;
+
+const POSTGRES_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(crate) async fn begin_read_only_connection(
     target: &GuardedPostgresTarget,
@@ -14,9 +18,13 @@ pub(crate) async fn begin_read_only_connection(
         secret.username.expose_secret(),
         secret.password.expose_secret(),
     )?;
-    let mut conn = PgConnection::connect_with(&options)
-        .await
-        .map_err(|_error| Error::internal("postgres connection failed"))?;
+    let mut conn = tokio::time::timeout(
+        POSTGRES_CONNECT_TIMEOUT,
+        PgConnection::connect_with(&options),
+    )
+    .await
+    .map_err(|_error| Error::internal("postgres connection timed out"))?
+    .map_err(|_error| Error::internal("postgres connection failed"))?;
     conn.execute("BEGIN READ ONLY")
         .await
         .map_err(|_error| Error::internal("postgres transaction failed"))?;
@@ -48,4 +56,14 @@ async fn set_statement_timeout(conn: &mut PgConnection, timeout_ms: u32) -> Resu
         .await
         .map_err(|_error| Error::internal("postgres statement timeout setup failed"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn postgres_connect_timeout_is_bounded() {
+        assert_eq!(POSTGRES_CONNECT_TIMEOUT, Duration::from_secs(5));
+    }
 }

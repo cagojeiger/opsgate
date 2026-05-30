@@ -114,6 +114,7 @@ impl SqlSchemaService {
         let target = match crate::target::postgres::prepare_postgres_target(
             &credential.endpoint,
             credential.allow_private_network,
+            credential.allow_insecure_transport,
         )
         .await
         {
