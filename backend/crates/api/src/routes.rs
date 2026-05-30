@@ -23,7 +23,7 @@ use crate::error::ApiError;
 use crate::mcp::server::{mcp_admin_handler, mcp_handler};
 use crate::state::AppState;
 
-pub fn app(state: AppState) -> Router {
+pub(crate) fn app(state: AppState) -> Router {
     let x_request_id = HeaderName::from_static("x-request-id");
 
     Router::new()
