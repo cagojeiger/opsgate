@@ -38,7 +38,7 @@ use crate::sql_schema::{SqlSchemaInput, SqlSchemaOutput};
 use crate::state::AppState;
 
 #[derive(Clone)]
-pub struct RuntimeMcpServer {
+pub(crate) struct RuntimeMcpServer {
     state: AppState,
 }
 
@@ -148,7 +148,7 @@ impl ServerHandler for RuntimeMcpServer {
 }
 
 #[derive(Clone)]
-pub struct AdminMcpServer {
+pub(crate) struct AdminMcpServer {
     state: AppState,
 }
 
@@ -293,7 +293,7 @@ impl ServerHandler for AdminMcpServer {
     }
 }
 
-pub async fn mcp_handler(State(state): State<AppState>, request: Request<Body>) -> Response {
+pub(crate) async fn mcp_handler(State(state): State<AppState>, request: Request<Body>) -> Response {
     let request = match verify_mcp_request(&state, request).await {
         Ok(request) => request,
         Err(error) => return mcp_auth_response(&state, error),
@@ -310,7 +310,10 @@ pub async fn mcp_handler(State(state): State<AppState>, request: Request<Body>) 
     response.map(Body::new).into_response()
 }
 
-pub async fn mcp_admin_handler(State(state): State<AppState>, request: Request<Body>) -> Response {
+pub(crate) async fn mcp_admin_handler(
+    State(state): State<AppState>,
+    request: Request<Body>,
+) -> Response {
     let request = match verify_mcp_request(&state, request).await {
         Ok(request) => request,
         Err(error) => return mcp_auth_response(&state, error),
