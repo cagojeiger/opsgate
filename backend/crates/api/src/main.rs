@@ -76,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
         audit_repo,
         sealer.clone(),
         http.clone(),
-    ));
+    )?);
     let sql_schema_service = std::sync::Arc::new(crate::sql_schema::SqlSchemaService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
         sql_schema_audit_repo,

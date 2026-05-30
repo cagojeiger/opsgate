@@ -191,7 +191,7 @@ fn state_with_resource_url(
         opsgate_db::AuditRepo::new(pool.clone()),
         sealer.clone(),
         reqwest::Client::new(),
-    ));
+    )?);
     let audit_repo = opsgate_db::AuditRepo::new(pool.clone());
     let audit = Arc::new(audit_repo.clone());
     let sql_schema = Arc::new(crate::sql_schema::SqlSchemaService::new(

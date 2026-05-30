@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
-use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use opsgate_core::llm_output::{More, build_json_output, validate_json_paths};
-use opsgate_core::net::ssrf::is_blocked_target_ip;
 use opsgate_core::validation::{
     validate_count, validate_http_header_name, validate_http_header_value, validate_http_path,
     validate_max_bytes, validate_purpose,
@@ -48,14 +46,14 @@ impl ApiCallService {
         audit: AuditRepo,
         sealer: opsgate_core::crypto::Sealer,
         http: reqwest::Client,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        Ok(Self {
             credentials,
             history,
             audit,
             sealer,
-            target_clients: TargetHttpClients::new(http, TARGET_TIMEOUT),
-        }
+            target_clients: TargetHttpClients::new(http, TARGET_TIMEOUT)?,
+        })
     }
 
     pub async fn call(&self, caller: &Caller, input: ApiCallInput) -> Result<ApiCallOutput> {
@@ -120,11 +118,7 @@ impl ApiCallService {
         }
 
         let url = build_target_url(&credential.endpoint, &input)?;
-        let guarded_addrs = if credential.allow_private_network {
-            None
-        } else {
-            Some(resolve_guarded_target_addrs(&url).await?)
-        };
+        let guard_private_network = !credential.allow_private_network;
 
         let started = Instant::now();
         let response = match self
@@ -134,7 +128,7 @@ impl ApiCallService {
                 &url,
                 &input,
                 &secret,
-                guarded_addrs.as_deref(),
+                guard_private_network,
             )
             .await
         {
@@ -231,13 +225,13 @@ impl ApiCallService {
         url: &url::Url,
         input: &NormalizedApiCallInput,
         secret: &[SecretHeader],
-        guarded_addrs: Option<&[SocketAddr]>,
+        guard_private_network: bool,
     ) -> Result<TargetResponse> {
         let method = reqwest::Method::from_bytes(input.method.as_bytes())
             .map_err(|error| Error::validation(format!("invalid method: {error}")))?;
         let http = self
             .target_clients
-            .client_for(credential, tls_ca, guarded_addrs, url)?;
+            .client_for(credential, tls_ca, guard_private_network)?;
         let mut request = http.request(method, url.clone());
         let mut headers = HeaderMap::new();
         if !input
@@ -493,34 +487,6 @@ fn join_endpoint_path(endpoint_path: &str, request_path: &str) -> String {
     } else {
         format!("{base}{request_path}")
     }
-}
-
-async fn resolve_guarded_target_addrs(url: &url::Url) -> Result<Vec<SocketAddr>> {
-    let host = url
-        .host_str()
-        .ok_or_else(|| Error::validation("credential endpoint requires host"))?;
-    let port = url.port_or_known_default().unwrap_or(443);
-    if let Ok(ip) = host.parse::<IpAddr>() {
-        if is_blocked_target_ip(ip) {
-            return Err(Error::validation(
-                "target IP is private/link-local/loopback",
-            ));
-        }
-        return Ok(vec![SocketAddr::new(ip, port)]);
-    }
-    let addrs = tokio::net::lookup_host((host, port))
-        .await
-        .map_err(|error| Error::validation(format!("resolve target host: {error}")))?;
-    let addrs = addrs.collect::<Vec<_>>();
-    if addrs.is_empty() {
-        return Err(Error::validation("resolve target host: no IPs"));
-    }
-    if addrs.iter().map(|addr| addr.ip()).any(is_blocked_target_ip) {
-        return Err(Error::validation(
-            "target IP is private/link-local/loopback",
-        ));
-    }
-    Ok(addrs)
 }
 
 fn header_name(name: &str) -> Result<HeaderName> {
@@ -1019,19 +985,6 @@ mod tests {
         assert!(!serialized.contains("endpoint"));
         assert!(!serialized.contains("secret"));
         assert!(!serialized.contains("\"reason\""));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn guarded_target_resolution_blocks_private_literal() -> Result<()> {
-        let private = url::Url::parse("https://127.0.0.1")
-            .map_err(|error| Error::internal(format!("parse URL: {error}")))?;
-        assert!(resolve_guarded_target_addrs(&private).await.is_err());
-
-        let public = url::Url::parse("https://93.184.216.34")
-            .map_err(|error| Error::internal(format!("parse URL: {error}")))?;
-        let addrs = resolve_guarded_target_addrs(&public).await?;
-        assert_eq!(addrs, [SocketAddr::from(([93, 184, 216, 34], 443))]);
         Ok(())
     }
 
