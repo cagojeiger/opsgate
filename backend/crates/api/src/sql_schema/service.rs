@@ -16,6 +16,7 @@ use crate::sql_common::SqlSecret;
 use super::input::{
     MAX_MAX_BYTES, MODE_TABLE, MODE_TABLES, NormalizedInput, SqlSchemaInput, normalize_input,
 };
+use super::policy::validate_policy;
 
 #[derive(Clone)]
 pub(crate) struct SqlSchemaService {
@@ -77,7 +78,7 @@ impl SqlSchemaService {
                 .await;
             return Err(Error::validation(reason::WRONG_CREDENTIAL_PROVIDER));
         }
-        if let Err(error) = validate_policy(&credential, &input) {
+        if let Err(error) = validate_policy(&credential.policy, &input) {
             recorder
                 .denied(reason::POLICY_DENIED, &error.to_string())
                 .await;
@@ -242,28 +243,6 @@ pub(crate) struct MoreOption {
     pub use_table_mode: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_max_bytes: Option<usize>,
-}
-
-fn validate_policy(credential: &Credential, input: &NormalizedInput) -> Result<()> {
-    let policy = &credential.policy;
-    if policy.allow_explain_analyze && !policy.allow_explain {
-        return Err(Error::validation("sql policy is invalid"));
-    }
-    if policy.max_rows > 0
-        && input.mode == MODE_TABLES
-        && input.limit > i32::try_from(policy.max_rows).unwrap_or(i32::MAX)
-    {
-        return Err(Error::validation("limit exceeds credential policy"));
-    }
-    if policy.max_bytes > 0
-        && input.max_bytes > usize::try_from(policy.max_bytes).unwrap_or(usize::MAX)
-    {
-        return Err(Error::validation("max_bytes exceeds credential policy"));
-    }
-    if policy.timeout_ms > 0 && input.timeout_ms > policy.timeout_ms {
-        return Err(Error::validation("timeout_ms exceeds credential policy"));
-    }
-    Ok(())
 }
 
 async fn execute_schema_query(
