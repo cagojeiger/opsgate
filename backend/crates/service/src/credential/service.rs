@@ -1,4 +1,4 @@
-use opsgate_core::crypto::Sealer;
+use crate::crypto::Sealer;
 use opsgate_core::validation::validate_reason;
 use opsgate_core::{Error, Result};
 use opsgate_db::CredentialRepo;
@@ -313,7 +313,7 @@ mod tests {
             .connect_lazy("postgres://opsgate:opsgate@localhost/opsgate")
             .map_err(Error::internal)?;
         let key = base64::engine::general_purpose::STANDARD.encode([11_u8; 32]);
-        let cipher = opsgate_core::crypto::Cipher::new(&key)?;
+        let cipher = crate::crypto::Cipher::new(&key)?;
         Ok(CredentialService::with_resolver(
             CredentialRepo::new(pool),
             Sealer::new(cipher),
@@ -513,7 +513,7 @@ mod tests {
     #[test]
     fn http_policy_update_rejects_secret_header_overlap() -> Result<()> {
         let key = base64::engine::general_purpose::STANDARD.encode([13_u8; 32]);
-        let cipher = opsgate_core::crypto::Cipher::new(&key)?;
+        let cipher = crate::crypto::Cipher::new(&key)?;
         let sealer = Sealer::new(cipher);
         let secret = CredentialSecret::Http {
             headers: vec![SecretHeader {

@@ -7,6 +7,7 @@
 pub mod api_call;
 mod audit;
 pub mod credential;
+pub mod crypto;
 mod llm_output;
 pub mod sql_common;
 pub mod sql_query;

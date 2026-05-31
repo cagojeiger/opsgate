@@ -1,4 +1,4 @@
-use opsgate_core::crypto::Sealer;
+use crate::crypto::Sealer;
 use opsgate_core::{Error, Result};
 use opsgate_model::credential::{CredentialSecret, SecretHeader};
 use secrecy::{ExposeSecret, SecretString};
@@ -98,7 +98,7 @@ mod tests {
 
     fn sealer() -> Result<Sealer> {
         let key = base64::engine::general_purpose::STANDARD.encode([12_u8; 32]);
-        let cipher = opsgate_core::crypto::Cipher::new(&key)?;
+        let cipher = crate::crypto::Cipher::new(&key)?;
         Ok(Sealer::new(cipher))
     }
 

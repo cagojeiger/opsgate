@@ -1,4 +1,4 @@
-use opsgate_core::crypto::Sealer;
+use crate::crypto::Sealer;
 use opsgate_core::{Error, Result};
 use opsgate_model::credential::{
     Credential, CredentialCategory, CredentialPolicy,

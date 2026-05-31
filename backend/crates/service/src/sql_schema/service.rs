@@ -16,7 +16,7 @@ use crate::audit::runtime::reason;
 pub struct SqlSchemaService {
     credentials: CredentialRepo,
     audit: AuditRepo,
-    sealer: opsgate_core::crypto::Sealer,
+    sealer: crate::crypto::Sealer,
     pools: opsgate_infra::postgres_pool::TargetPgPools,
 }
 
@@ -24,7 +24,7 @@ impl SqlSchemaService {
     pub fn new(
         credentials: CredentialRepo,
         audit: AuditRepo,
-        sealer: opsgate_core::crypto::Sealer,
+        sealer: crate::crypto::Sealer,
         pools: opsgate_infra::postgres_pool::TargetPgPools,
     ) -> Self {
         Self {

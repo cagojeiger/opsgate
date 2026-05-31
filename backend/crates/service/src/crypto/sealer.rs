@@ -1,4 +1,4 @@
-use crate::{Error, Result};
+use opsgate_core::{Error, Result};
 
 use super::Cipher;
 

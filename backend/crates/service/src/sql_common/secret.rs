@@ -1,5 +1,5 @@
+use crate::crypto::Sealer;
 use opsgate_core::Result;
-use opsgate_core::crypto::Sealer;
 
 pub(crate) use crate::credential::secret::SqlSecret;
 

@@ -1660,8 +1660,6 @@ dependencies = [
 name = "opsgate-core"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
- "base64 0.22.1",
  "config",
  "rustls-pemfile",
  "schemars 1.2.1",
@@ -1671,7 +1669,6 @@ dependencies = [
  "thiserror 2.0.18",
  "url",
  "validator",
- "zeroize",
 ]
 
 [[package]]
@@ -1722,6 +1719,7 @@ dependencies = [
 name = "opsgate-service"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
  "base64 0.22.1",
  "chrono",
  "opsgate-core",
@@ -1741,6 +1739,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

@@ -3,7 +3,7 @@ use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use base64::Engine;
 use zeroize::Zeroize;
 
-use crate::{Error, Result};
+use opsgate_core::{Error, Result};
 
 const KEY_BYTES: usize = 32;
 const NONCE_BYTES: usize = 12;

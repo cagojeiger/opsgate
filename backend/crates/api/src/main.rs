@@ -58,8 +58,8 @@ async fn main() -> anyhow::Result<()> {
     let audit = std::sync::Arc::new(audit_repo.clone());
     let sql_schema_audit_repo = audit_repo.clone();
     let sql_query_audit_repo = audit_repo.clone();
-    let cipher = opsgate_core::crypto::Cipher::new(config.master_key.expose_secret())?;
-    let sealer = opsgate_core::crypto::Sealer::new(cipher);
+    let cipher = opsgate_service::crypto::Cipher::new(config.master_key.expose_secret())?;
+    let sealer = opsgate_service::crypto::Sealer::new(cipher);
     let credential_service = std::sync::Arc::new(
         opsgate_service::credential::CredentialService::new(credential_repo, sealer.clone()),
     );

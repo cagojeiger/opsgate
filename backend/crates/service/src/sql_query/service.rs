@@ -17,7 +17,7 @@ pub struct SqlQueryService {
     credentials: CredentialRepo,
     history: SqlQueryHistoryRepo,
     audit: AuditRepo,
-    sealer: opsgate_core::crypto::Sealer,
+    sealer: crate::crypto::Sealer,
     pools: opsgate_infra::postgres_pool::TargetPgPools,
 }
 
@@ -26,7 +26,7 @@ impl SqlQueryService {
         credentials: CredentialRepo,
         history: SqlQueryHistoryRepo,
         audit: AuditRepo,
-        sealer: opsgate_core::crypto::Sealer,
+        sealer: crate::crypto::Sealer,
         pools: opsgate_infra::postgres_pool::TargetPgPools,
     ) -> Self {
         Self {

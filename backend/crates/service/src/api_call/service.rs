@@ -21,7 +21,7 @@ pub struct ApiCallService {
     credentials: CredentialRepo,
     history: ApiCallHistoryRepo,
     audit: AuditRepo,
-    sealer: opsgate_core::crypto::Sealer,
+    sealer: crate::crypto::Sealer,
     target_clients: TargetHttpClients,
 }
 
@@ -30,7 +30,7 @@ impl ApiCallService {
         credentials: CredentialRepo,
         history: ApiCallHistoryRepo,
         audit: AuditRepo,
-        sealer: opsgate_core::crypto::Sealer,
+        sealer: crate::crypto::Sealer,
     ) -> Result<Self> {
         Ok(Self {
             credentials,

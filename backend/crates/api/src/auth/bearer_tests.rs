@@ -182,8 +182,9 @@ fn state_with_resource_url(
         reqwest::Client::new(),
     ));
     let credential_repo = opsgate_db::CredentialRepo::new(pool.clone());
-    let cipher = opsgate_core::crypto::Cipher::new("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")?;
-    let sealer = opsgate_core::crypto::Sealer::new(cipher);
+    let cipher =
+        opsgate_service::crypto::Cipher::new("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")?;
+    let sealer = opsgate_service::crypto::Sealer::new(cipher);
     let credentials = Arc::new(opsgate_service::credential::CredentialService::new(
         credential_repo,
         sealer.clone(),
