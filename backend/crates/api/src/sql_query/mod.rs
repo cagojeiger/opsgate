@@ -1,5 +1,6 @@
 mod output;
 mod policy;
+mod recording;
 mod service;
 
 pub(crate) use output::SqlQueryOutput;
