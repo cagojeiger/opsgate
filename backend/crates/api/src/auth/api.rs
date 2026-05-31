@@ -1,4 +1,5 @@
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use aliri::jwt::{Audiences, BasicClaims, CoreClaims, IssuerRef, SubjectRef};
 use aliri::{Jwt, jwa, jwt};
@@ -16,6 +17,60 @@ use crate::config::Config;
 use crate::identity::CallerResolver;
 use crate::request_context::RequestMetadata;
 use crate::state::AuthRuntimeState;
+
+#[derive(Clone)]
+pub(crate) struct ApiAuthority {
+    inner: Arc<ApiAuthorityInner>,
+}
+
+struct ApiAuthorityInner {
+    jwks_url: Option<String>,
+    validator: jwt::CoreValidator,
+    refresh_interval: Duration,
+    authority: tokio::sync::OnceCell<Authority>,
+}
+
+impl ApiAuthority {
+    fn lazy(config: &Config, jwks_url: String) -> Self {
+        Self {
+            inner: Arc::new(ApiAuthorityInner {
+                jwks_url: Some(jwks_url),
+                validator: api_jwt_validator(config),
+                refresh_interval: config.jwks_cache_ttl,
+                authority: tokio::sync::OnceCell::new(),
+            }),
+        }
+    }
+
+    #[cfg(test)]
+    fn ready(config: &Config, jwks: aliri::Jwks) -> Self {
+        let authority = Authority::new(jwks, api_jwt_validator(config));
+        let cell = tokio::sync::OnceCell::new();
+        let _inserted = cell.set(authority);
+        Self {
+            inner: Arc::new(ApiAuthorityInner {
+                jwks_url: None,
+                validator: api_jwt_validator(config),
+                refresh_interval: config.jwks_cache_ttl,
+                authority: cell,
+            }),
+        }
+    }
+
+    async fn authority(&self) -> Result<&Authority, AuthError> {
+        self.inner
+            .authority
+            .get_or_try_init(|| async {
+                let jwks_url = self.inner.jwks_url.clone().ok_or(AuthError::Internal)?;
+                let authority = Authority::new_from_url(jwks_url, self.inner.validator.clone())
+                    .await
+                    .map_err(|_error| AuthError::Internal)?;
+                authority.spawn_refresh(self.inner.refresh_interval);
+                Ok(authority)
+            })
+            .await
+    }
+}
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct ApiClaims {
@@ -57,18 +112,13 @@ impl HasScope for ApiClaims {
     }
 }
 
-pub(crate) async fn api_authority_from_url(
-    config: &Config,
-    jwks_url: String,
-) -> Result<Authority, reqwest::Error> {
-    let authority = Authority::new_from_url(jwks_url, api_jwt_validator(config)).await?;
-    authority.spawn_refresh(config.jwks_cache_ttl);
-    Ok(authority)
+pub(crate) fn api_authority_from_url(config: &Config, jwks_url: String) -> ApiAuthority {
+    ApiAuthority::lazy(config, jwks_url)
 }
 
 #[cfg(test)]
-pub(crate) fn api_authority_from_jwks(config: &Config, jwks: aliri::Jwks) -> Authority {
-    Authority::new(jwks, api_jwt_validator(config))
+pub(crate) fn api_authority_from_jwks(config: &Config, jwks: aliri::Jwks) -> ApiAuthority {
+    ApiAuthority::ready(config, jwks)
 }
 
 pub(crate) fn api_jwt_validator(config: &Config) -> jwt::CoreValidator {
@@ -141,7 +191,7 @@ pub async fn require_api_bearer(
 }
 
 pub(crate) async fn verify_api_bearer(
-    authority: &Authority,
+    authority: &ApiAuthority,
     resolver: &dyn CallerResolver,
     token: &str,
 ) -> Result<Caller, AuthError> {
@@ -159,7 +209,8 @@ pub(crate) async fn resolve_api_caller(
         .map_err(map_identity_error)
 }
 
-async fn verify_api_claims(authority: &Authority, token: &str) -> Result<ApiClaims, AuthError> {
+async fn verify_api_claims(authority: &ApiAuthority, token: &str) -> Result<ApiClaims, AuthError> {
+    let authority = authority.authority().await?;
     let jwt = Jwt::from(token.trim());
     match authority.verify_token::<ApiClaims>(&jwt, &ScopePolicy::allow_any()) {
         Ok(claims) => Ok(claims),

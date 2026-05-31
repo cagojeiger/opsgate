@@ -27,7 +27,7 @@ pub(crate) struct AppState {
 #[derive(Clone)]
 pub(crate) struct AuthState {
     pub(crate) jwks: Arc<JwksCache>,
-    pub(crate) api_authority: aliri_oauth2::Authority,
+    pub(crate) api_authority: crate::auth::api::ApiAuthority,
     pub(crate) oidc: Arc<OidcProvider>,
     pub(crate) resolver: Arc<dyn CallerResolver>,
 }

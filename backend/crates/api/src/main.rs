@@ -86,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
         target_pg_pools,
     ));
     let config = std::sync::Arc::new(config);
-    let api_authority = auth::api::api_authority_from_url(&config, jwks_url.clone()).await?;
+    let api_authority = auth::api::api_authority_from_url(&config, jwks_url.clone());
     let jwks = std::sync::Arc::new(auth::jwks::JwksCache::new(
         jwks_url,
         config.authgate_url.clone(),
