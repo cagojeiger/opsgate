@@ -3,11 +3,11 @@ use std::str::FromStr;
 
 use opsgate_core::{Error, Result};
 
-use super::ssrf::{ensure_target_ip_allowed, target_ip_is_blocked};
+use crate::network_guard::{ensure_target_ip_allowed, target_ip_is_blocked};
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
 #[derive(Debug, Clone)]
-pub(crate) struct GuardedPostgresTarget {
+pub struct GuardedPostgresTarget {
     database_url: String,
     connect_addr: SocketAddr,
     allow_private_network: bool,
@@ -15,11 +15,7 @@ pub(crate) struct GuardedPostgresTarget {
 }
 
 impl GuardedPostgresTarget {
-    pub(crate) fn connect_options(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> Result<PgConnectOptions> {
+    pub fn connect_options(&self, username: &str, password: &str) -> Result<PgConnectOptions> {
         let options = PgConnectOptions::from_str(&self.database_url)
             .map_err(|error| Error::validation(format!("postgres database_url: {error}")))?;
         validate_ssl_mode(
@@ -41,7 +37,7 @@ impl GuardedPostgresTarget {
     }
 }
 
-pub(crate) async fn prepare_postgres_target(
+pub async fn prepare_postgres_target(
     database_url: &str,
     allow_private_network: bool,
     allow_insecure_transport: bool,

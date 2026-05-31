@@ -9,9 +9,9 @@ use super::input::NormalizedInput;
 use super::output::{SqlQueryOutput, build_column_output};
 
 pub(super) async fn execute_postgres(
-    pools: &crate::target::pg_pool::TargetPgPools,
+    pools: &opsgate_infra::postgres_pool::TargetPgPools,
     credential_id: uuid::Uuid,
-    target: &crate::target::postgres::GuardedPostgresTarget,
+    target: &opsgate_infra::postgres::GuardedPostgresTarget,
     secret: &SqlSecret,
     input: &NormalizedInput,
 ) -> Result<SqlQueryOutput> {

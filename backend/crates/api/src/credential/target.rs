@@ -3,7 +3,7 @@ use std::net::IpAddr;
 use opsgate_core::{Error, Result};
 use opsgate_model::credential::{CredentialCategory, CredentialTarget, RegisterCredentialInput};
 
-use crate::target::ssrf::{BLOCKED_TARGET_IP_MESSAGE, target_ip_is_blocked};
+use opsgate_infra::network_guard::{BLOCKED_TARGET_IP_MESSAGE, target_ip_is_blocked};
 
 #[derive(Clone)]
 pub(super) enum EndpointResolver {

@@ -17,7 +17,7 @@ pub(crate) struct SqlSchemaService {
     credentials: CredentialRepo,
     audit: AuditRepo,
     sealer: opsgate_core::crypto::Sealer,
-    pools: crate::target::pg_pool::TargetPgPools,
+    pools: opsgate_infra::postgres_pool::TargetPgPools,
 }
 
 impl SqlSchemaService {
@@ -25,7 +25,7 @@ impl SqlSchemaService {
         credentials: CredentialRepo,
         audit: AuditRepo,
         sealer: opsgate_core::crypto::Sealer,
-        pools: crate::target::pg_pool::TargetPgPools,
+        pools: opsgate_infra::postgres_pool::TargetPgPools,
     ) -> Self {
         Self {
             credentials,
@@ -100,7 +100,7 @@ impl SqlSchemaService {
                 return Err(error);
             }
         };
-        let target = match crate::target::postgres::prepare_postgres_target(
+        let target = match opsgate_infra::postgres::prepare_postgres_target(
             crate::sql_common::credential_database_url(&credential)?,
             credential.allow_private_network,
             credential.allow_insecure_transport,

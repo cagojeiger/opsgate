@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use opsgate_core::{Error, Result};
 
-use super::ssrf::{BLOCKED_TARGET_IP_MESSAGE, ensure_target_ip_allowed};
+use crate::network_guard::{BLOCKED_TARGET_IP_MESSAGE, ensure_target_ip_allowed};
 use opsgate_model::credential::Credential;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use uuid::Uuid;
@@ -15,7 +15,7 @@ const CLIENT_CACHE_IDLE_TTL: Duration = Duration::from_secs(10 * 60);
 type DnsError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Clone)]
-pub(crate) struct TargetHttpClients {
+pub struct TargetHttpClients {
     private_allowed: reqwest::Client,
     guarded_no_ca: reqwest::Client,
     timeout: Duration,
@@ -23,7 +23,7 @@ pub(crate) struct TargetHttpClients {
 }
 
 impl TargetHttpClients {
-    pub(crate) fn new(timeout: Duration) -> Result<Self> {
+    pub fn new(timeout: Duration) -> Result<Self> {
         Ok(Self {
             private_allowed: build_client(timeout, None, false)?,
             guarded_no_ca: build_client(timeout, None, true)?,
@@ -32,7 +32,7 @@ impl TargetHttpClients {
         })
     }
 
-    pub(crate) fn request_for(
+    pub fn request_for(
         &self,
         credential: &Credential,
         tls_ca: Option<&[u8]>,
@@ -147,7 +147,7 @@ fn build_client(
 #[derive(Debug)]
 struct GuardedResolver;
 
-pub(crate) fn ensure_url_allowed(
+pub fn ensure_url_allowed(
     url: &url::Url,
     guard_private_network: bool,
     allow_insecure_transport: bool,
@@ -173,7 +173,7 @@ pub(crate) fn ensure_url_allowed(
     }
 }
 
-pub(crate) fn map_send_error(error: reqwest::Error) -> Error {
+pub fn map_send_error(error: reqwest::Error) -> Error {
     if has_blocked_target_source(&error) {
         return Error::validation(BLOCKED_TARGET_IP_MESSAGE);
     }

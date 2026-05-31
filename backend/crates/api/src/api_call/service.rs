@@ -5,7 +5,7 @@ use opsgate_model::credential::CredentialCategory;
 
 use crate::audit::runtime::reason;
 use crate::credential::secret;
-use crate::target::http::TargetHttpClients;
+use opsgate_infra::http::TargetHttpClients;
 use std::time::Duration;
 
 use super::input::{ApiCallInput, normalize_input};

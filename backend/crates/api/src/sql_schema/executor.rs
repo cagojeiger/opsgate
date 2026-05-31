@@ -7,9 +7,9 @@ use super::input::{MODE_TABLE, MODE_TABLES, NormalizedInput};
 use super::output::{Column, Index, Page, SqlSchemaOutput, TableDetail, TableSummary, join_cursor};
 
 pub(super) async fn execute_schema_query(
-    pools: &crate::target::pg_pool::TargetPgPools,
+    pools: &opsgate_infra::postgres_pool::TargetPgPools,
     credential_id: uuid::Uuid,
-    target: &crate::target::postgres::GuardedPostgresTarget,
+    target: &opsgate_infra::postgres::GuardedPostgresTarget,
     secret: &SqlSecret,
     input: &NormalizedInput,
 ) -> Result<SqlSchemaOutput> {

@@ -1630,6 +1630,7 @@ dependencies = [
  "openidconnect",
  "opsgate-core",
  "opsgate-db",
+ "opsgate-infra",
  "opsgate-model",
  "rand 0.8.6",
  "reqwest",
@@ -1685,6 +1686,20 @@ dependencies = [
  "sqlx",
  "tokio",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "opsgate-infra"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "opsgate-core",
+ "opsgate-model",
+ "reqwest",
+ "sqlx",
+ "tokio",
+ "url",
  "uuid",
 ]
 

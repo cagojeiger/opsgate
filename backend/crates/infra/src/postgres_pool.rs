@@ -20,7 +20,7 @@ const POOL_CONN_MAX_LIFETIME: Duration = Duration::from_secs(30 * 60);
 /// `sql.schema` calls so each call no longer pays a fresh TCP + TLS + SCRAM
 /// handshake.
 #[derive(Clone)]
-pub(crate) struct TargetPgPools {
+pub struct TargetPgPools {
     cached: Arc<Mutex<HashMap<Uuid, CachedPool>>>,
 }
 
@@ -29,8 +29,14 @@ struct CachedPool {
     last_used: Instant,
 }
 
+impl Default for TargetPgPools {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TargetPgPools {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             cached: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -39,11 +45,7 @@ impl TargetPgPools {
     /// Return the cached pool for this credential, building it lazily on first
     /// use. Credential target URL, secret, and TLS material are immutable, so
     /// the credential id is a stable cache key for the pool's lifetime.
-    pub(crate) fn pool_for(
-        &self,
-        credential_id: Uuid,
-        options: PgConnectOptions,
-    ) -> Result<PgPool> {
+    pub fn pool_for(&self, credential_id: Uuid, options: PgConnectOptions) -> Result<PgPool> {
         let now = Instant::now();
         let mut cached = self
             .cached

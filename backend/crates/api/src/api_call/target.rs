@@ -8,7 +8,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret;
 
 use crate::audit::runtime::reason;
-use crate::target::http::TargetHttpClients;
+use opsgate_infra::http::TargetHttpClients;
 
 use super::input::{MAX_MAX_BYTES, NormalizedApiCallInput};
 use super::output::ApiCallOutput;
@@ -147,7 +147,7 @@ async fn send_target(
     let response = request
         .send()
         .await
-        .map_err(crate::target::http::map_send_error)?;
+        .map_err(opsgate_infra::http::map_send_error)?;
     Ok(TargetResponseHead {
         status: response.status(),
         headers: response.headers().clone(),
@@ -298,7 +298,7 @@ mod tests {
                 base_path: "/".to_owned(),
             };
             let url = build_target_url(&target, &input)?;
-            let err = crate::target::http::ensure_url_allowed(&url, true, false)
+            let err = opsgate_infra::http::ensure_url_allowed(&url, true, false)
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default();

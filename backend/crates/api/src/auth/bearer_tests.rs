@@ -196,7 +196,7 @@ fn state_with_resource_url(
     )?);
     let audit_repo = opsgate_db::AuditRepo::new(pool.clone());
     let audit = Arc::new(audit_repo.clone());
-    let target_pg_pools = crate::target::pg_pool::TargetPgPools::new();
+    let target_pg_pools = opsgate_infra::postgres_pool::TargetPgPools::new();
     let sql_schema = Arc::new(crate::sql_schema::SqlSchemaService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
         audit_repo.clone(),

@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 opsgate-core.workspace = true
 opsgate-db.workspace = true
+opsgate-infra.workspace = true
 opsgate-model.workspace = true
 
 tokio.workspace = true

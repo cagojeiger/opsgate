@@ -7,8 +7,8 @@ use sqlx::{Executor, PgConnection, Postgres};
 use uuid::Uuid;
 
 use crate::sql_common::SqlSecret;
-use crate::target::pg_pool::TargetPgPools;
-use crate::target::postgres::GuardedPostgresTarget;
+use opsgate_infra::postgres::GuardedPostgresTarget;
+use opsgate_infra::postgres_pool::TargetPgPools;
 
 const POSTGRES_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 

@@ -23,7 +23,6 @@ mod sql_common;
 mod sql_query;
 mod sql_schema;
 mod state;
-mod target;
 
 use state::{AppState, AuthState, ToolState};
 
@@ -76,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
         audit_repo,
         sealer.clone(),
     )?);
-    let target_pg_pools = crate::target::pg_pool::TargetPgPools::new();
+    let target_pg_pools = opsgate_infra::postgres_pool::TargetPgPools::new();
     let sql_schema_service = std::sync::Arc::new(crate::sql_schema::SqlSchemaService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
         sql_schema_audit_repo,
