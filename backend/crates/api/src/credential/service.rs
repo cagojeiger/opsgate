@@ -1,17 +1,14 @@
-use std::net::IpAddr;
-
 use opsgate_core::crypto::Sealer;
 use opsgate_core::validation::validate_reason;
 use opsgate_core::{Error, Result};
 use opsgate_db::CredentialRepo;
 use opsgate_domain::Caller;
 use opsgate_domain::credential::{
-    Credential, CredentialCategory, CredentialListParams, CredentialPolicy, CredentialTarget,
-    InsertCredentialParams, RegisterCredentialInput, UpdateCredentialParams,
-    normalize_policy_for_category, normalize_register_input,
-    normalize_tags as normalize_credential_tags, validate_alias as validate_credential_alias,
-    validate_allowed_headers_do_not_overlap_secret, validate_env as validate_credential_env,
-    validate_policy_for_category, validate_register_input,
+    Credential, CredentialCategory, CredentialListParams, CredentialPolicy, InsertCredentialParams,
+    RegisterCredentialInput, UpdateCredentialParams, normalize_policy_for_category,
+    normalize_register_input, normalize_tags as normalize_credential_tags,
+    validate_alias as validate_credential_alias, validate_allowed_headers_do_not_overlap_secret,
+    validate_env as validate_credential_env, validate_policy_for_category, validate_register_input,
 };
 use uuid::Uuid;
 
@@ -24,14 +21,14 @@ use super::listing::{
 };
 use super::recording::{delete_audit, register_audit, update_audit};
 use super::secret;
-use crate::target::ssrf::{BLOCKED_TARGET_IP_MESSAGE, target_ip_is_blocked};
+use super::target::{EndpointResolver, validate_register_target_ips};
 
 #[cfg(test)]
 use super::input::SecretHeaderInput;
 #[cfg(test)]
 use opsgate_db::CredentialAuditAction;
 #[cfg(test)]
-use opsgate_domain::credential::{CredentialSecret, SecretHeader};
+use opsgate_domain::credential::{CredentialSecret, CredentialTarget, SecretHeader};
 #[cfg(test)]
 use secrecy::SecretString;
 
@@ -300,53 +297,9 @@ pub(crate) struct CredentialUpdate {
     pub changed_fields: Vec<&'static str>,
 }
 
-#[derive(Clone)]
-enum EndpointResolver {
-    System,
-    #[cfg(test)]
-    Fixed(Vec<IpAddr>),
-}
-
-impl EndpointResolver {
-    async fn resolve(&self, host: &str, port: u16) -> Result<Vec<IpAddr>> {
-        match self {
-            Self::System => tokio::net::lookup_host((host, port))
-                .await
-                .map_err(|error| Error::validation(format!("resolve target host: {error}")))
-                .map(|addrs| addrs.map(|addr| addr.ip()).collect()),
-            #[cfg(test)]
-            Self::Fixed(ips) => Ok(ips.clone()),
-        }
-    }
-}
-
 impl CredentialService {
     async fn validate_register_target_ips(&self, input: &RegisterCredentialInput) -> Result<()> {
-        if input.allow_private_network {
-            return Ok(());
-        }
-        let raw_url = match &input.target {
-            CredentialTarget::Http { origin, .. } => origin,
-            CredentialTarget::Sql { database_url } => database_url,
-        };
-        let url = url::Url::parse(raw_url)
-            .map_err(|error| Error::validation(format!("target URL: {error}")))?;
-        let host = url
-            .host_str()
-            .ok_or_else(|| Error::validation("target requires host"))?;
-        let default_port = match input.category {
-            CredentialCategory::Http => 443,
-            CredentialCategory::Sql => 5432,
-        };
-        let port = url.port().unwrap_or(default_port);
-        let ips = self.resolver.resolve(host, port).await?;
-        if ips.is_empty() {
-            return Err(Error::validation("resolve target host: no IPs"));
-        }
-        if ips.into_iter().any(target_ip_is_blocked) {
-            return Err(Error::validation(BLOCKED_TARGET_IP_MESSAGE));
-        }
-        Ok(())
+        validate_register_target_ips(&self.resolver, input).await
     }
 }
 

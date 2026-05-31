@@ -5,6 +5,7 @@ mod recording;
 pub(crate) mod secret;
 mod service;
 pub(crate) mod snapshot;
+mod target;
 
 pub(crate) use input::{
     DeleteCredentialInput, ListCredentialsInput, RegisterHttpCredentialInput,
