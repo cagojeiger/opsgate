@@ -3,16 +3,16 @@ use opsgate_domain::{Caller, IdentityError, ResolveAttrs};
 use crate::auth::bearer::AuthError;
 use crate::auth::jwks::{Claims, JwksCache, JwksError};
 use crate::identity::CallerResolver;
-use crate::state::AppState;
+use crate::state::AuthState;
 
-pub(crate) async fn verify_bearer(state: &AppState, token: &str) -> Result<Caller, AuthError> {
-    let attrs = verify_token_attrs(&state.auth.jwks, token).await?;
-    resolve_api_caller(state.auth.resolver.as_ref(), attrs).await
+pub(crate) async fn verify_bearer(auth: &AuthState, token: &str) -> Result<Caller, AuthError> {
+    let attrs = verify_token_attrs(&auth.jwks, token).await?;
+    resolve_api_caller(auth.resolver.as_ref(), attrs).await
 }
 
-pub(crate) async fn verify_bearer_mcp(state: &AppState, token: &str) -> Result<Caller, AuthError> {
-    let attrs = verify_token_attrs(&state.auth.jwks, token).await?;
-    resolve_mcp_caller(state.auth.resolver.as_ref(), attrs).await
+pub(crate) async fn verify_bearer_mcp(auth: &AuthState, token: &str) -> Result<Caller, AuthError> {
+    let attrs = verify_token_attrs(&auth.jwks, token).await?;
+    resolve_mcp_caller(auth.resolver.as_ref(), attrs).await
 }
 
 /// Verify the bearer JWT against JWKS and extract identity attributes.

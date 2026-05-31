@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use axum::extract::{MatchedPath, State};
+use axum::extract::{FromRef, MatchedPath, State};
 use axum::http::Request;
 use axum::http::header::HeaderName;
 use axum::middleware::from_fn_with_state;
@@ -23,7 +23,7 @@ use crate::auth::metadata::{
 use crate::auth::oauth::{callback, login};
 use crate::error::ApiError;
 use crate::mcp::server::{mcp_admin_handler, mcp_handler};
-use crate::state::AppState;
+use crate::state::{AppState, AuthRuntimeState};
 
 pub(crate) fn app(state: AppState) -> Router {
     let x_request_id = HeaderName::from_static("x-request-id");
@@ -86,13 +86,14 @@ fn metadata_routes(config: &Config) -> Router<AppState> {
 }
 
 fn rest_api_routes(state: AppState) -> Router<AppState> {
+    let auth_state = AuthRuntimeState::from_ref(&state);
     Router::new()
         .merge(crate::rest::api_call::routes())
         .merge(crate::rest::credentials::routes())
         .merge(crate::rest::me::routes())
         .merge(crate::rest::sql_query::routes())
         .fallback(api_not_found)
-        .layer(from_fn_with_state(state, require_bearer))
+        .layer(from_fn_with_state(auth_state, require_bearer))
 }
 
 /// Liveness: the process is up. No dependency checks.

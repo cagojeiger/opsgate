@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::State;
+use axum::extract::{FromRef, State};
 use axum::http::header::WWW_AUTHENTICATE;
 use axum::http::request::Parts;
 use axum::http::{Request, StatusCode};
@@ -35,7 +35,7 @@ use crate::mcp::tools::me::{McpMeOutput, McpToolset};
 use crate::request_context::RequestMetadata;
 use crate::sql_query::{SqlQueryInput, SqlQueryOutput};
 use crate::sql_schema::{SqlSchemaInput, SqlSchemaOutput};
-use crate::state::AppState;
+use crate::state::{AppState, AuthRuntimeState};
 
 #[derive(Clone)]
 pub(crate) struct RuntimeMcpServer {
@@ -294,9 +294,10 @@ impl ServerHandler for AdminMcpServer {
 }
 
 pub(crate) async fn mcp_handler(State(state): State<AppState>, request: Request<Body>) -> Response {
-    let request = match verify_mcp_request(&state, request).await {
+    let auth_state = AuthRuntimeState::from_ref(&state);
+    let request = match verify_mcp_request(&auth_state, request).await {
         Ok(request) => request,
-        Err(error) => return mcp_auth_response(&state, error),
+        Err(error) => return mcp_auth_response(&auth_state, error),
     };
     let config = streamable_config();
     let manager = Arc::new(NeverSessionManager::default());
@@ -314,9 +315,10 @@ pub(crate) async fn mcp_admin_handler(
     State(state): State<AppState>,
     request: Request<Body>,
 ) -> Response {
-    let request = match verify_mcp_request(&state, request).await {
+    let auth_state = AuthRuntimeState::from_ref(&state);
+    let request = match verify_mcp_request(&auth_state, request).await {
         Ok(request) => request,
-        Err(error) => return mcp_auth_response(&state, error),
+        Err(error) => return mcp_auth_response(&auth_state, error),
     };
     let config = streamable_config();
     let manager = Arc::new(NeverSessionManager::default());
@@ -331,7 +333,7 @@ pub(crate) async fn mcp_admin_handler(
 }
 
 async fn verify_mcp_request(
-    state: &AppState,
+    state: &AuthRuntimeState,
     request: Request<Body>,
 ) -> Result<Request<Body>, AuthError> {
     let (mut parts, body) = request.into_parts();
@@ -339,7 +341,7 @@ async fn verify_mcp_request(
         return Err(AuthError::MissingToken);
     };
     let metadata = RequestMetadata::from_headers(&parts.headers);
-    let caller = match verify_bearer_mcp(state, &token).await {
+    let caller = match verify_bearer_mcp(&state.auth, &token).await {
         Ok(caller) => caller.with_request_metadata(
             metadata.request_id.clone(),
             metadata.remote_ip.clone(),
@@ -367,18 +369,18 @@ fn streamable_config() -> StreamableHttpServerConfig {
         .disable_allowed_hosts()
 }
 
-fn mcp_auth_response(state: &AppState, error: AuthError) -> Response {
+fn mcp_auth_response(state: &AuthRuntimeState, error: AuthError) -> Response {
     let status = status_for_error(&error);
     mcp_auth_response_with_status(state, error, status)
 }
 
 fn mcp_auth_response_with_status(
-    state: &AppState,
+    state: &AuthRuntimeState,
     error: AuthError,
     status: StatusCode,
 ) -> Response {
     tracing::warn!(event = "mcp.auth.denied", error = %error, status = status.as_u16());
-    let mut response = (status, axum::Json(auth_error_body(state, &error))).into_response();
+    let mut response = (status, axum::Json(auth_error_body(&state.config, &error))).into_response();
     if status == StatusCode::UNAUTHORIZED {
         response.headers_mut().insert(
             WWW_AUTHENTICATE,

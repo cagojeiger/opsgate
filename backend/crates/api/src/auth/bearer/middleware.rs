@@ -10,19 +10,19 @@ use opsgate_domain::Channel;
 
 use crate::auth::bearer::{AuthError, auth_error_response, extract_bearer, verify_bearer};
 use crate::request_context::RequestMetadata;
-use crate::state::AppState;
+use crate::state::AuthRuntimeState;
 
 pub async fn require_bearer(
-    State(state): State<AppState>,
+    State(state): State<AuthRuntimeState>,
     mut request: Request<Body>,
     next: Next,
 ) -> Response {
     let metadata = RequestMetadata::from_headers(request.headers());
     let Some(token) = extract_bearer(request.headers()).map(str::to_owned) else {
-        return auth_error_response(&state, AuthError::MissingToken);
+        return auth_error_response(&state.config, AuthError::MissingToken);
     };
 
-    let caller = match verify_bearer(&state, &token).await {
+    let caller = match verify_bearer(&state.auth, &token).await {
         Ok(caller) => caller.with_request_metadata(
             metadata.request_id.clone(),
             metadata.remote_ip.clone(),
@@ -31,7 +31,7 @@ pub async fn require_bearer(
         Err(error) => {
             crate::audit::auth::record_auth_denied(&state.audit, Channel::Api, &metadata, &error)
                 .await;
-            return auth_error_response(&state, error);
+            return auth_error_response(&state.config, error);
         }
     };
 
