@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use crate::config::Config;
 use axum::Json;
 use axum::extract::State;
 use axum::http::HeaderValue;
-use opsgate_core::Config;
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,8 +135,8 @@ mod tests {
         protected_resource_metadata_url, scoped_challenge_header,
     };
 
-    fn config() -> opsgate_core::Config {
-        opsgate_core::Config {
+    fn config() -> crate::config::Config {
+        crate::config::Config {
             bind_addr: SocketAddr::from(([127, 0, 0, 1], 9091)),
             database_url: "postgres://example".to_owned(),
             database_migrate_url: "postgres://owner".to_owned(),

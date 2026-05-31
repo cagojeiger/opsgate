@@ -1,7 +1,7 @@
+use crate::config::Config;
 use axum::Json;
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use opsgate_core::Config;
 
 use crate::auth::metadata::{
     challenge_header, protected_resource_metadata_url, scoped_challenge_header,

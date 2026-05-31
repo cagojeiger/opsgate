@@ -1,6 +1,6 @@
 //! Database access: connection pool construction and migrations.
 
-use opsgate_core::{Config, Error, Result};
+use opsgate_core::{Error, Result};
 use sqlx::postgres::PgPoolOptions;
 
 pub mod api_call_history_repo;
@@ -21,16 +21,16 @@ pub use user_repo::UserRepo;
 /// Embedded migrations from `migrations/`, run at startup via [`run_migrations`].
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
-/// Build the narrowed runtime Postgres connection pool from configuration.
-pub async fn connect(config: &Config) -> Result<PgPool> {
-    connect_url(&config.database_url, config.db_max_connections)
+/// Build the narrowed runtime Postgres connection pool.
+pub async fn connect(database_url: &str, max_connections: u32) -> Result<PgPool> {
+    connect_url(database_url, max_connections)
         .await
         .map_err(|e| Error::internal(format!("failed to connect to database: {e}")))
 }
 
-/// Build the owner/migration Postgres connection pool from configuration.
-pub async fn connect_migrate(config: &Config) -> Result<PgPool> {
-    connect_url(&config.database_migrate_url, 1)
+/// Build the owner/migration Postgres connection pool.
+pub async fn connect_migrate(database_migrate_url: &str) -> Result<PgPool> {
+    connect_url(database_migrate_url, 1)
         .await
         .map_err(|e| Error::internal(format!("failed to connect to migration database: {e}")))
 }

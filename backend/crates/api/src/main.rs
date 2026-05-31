@@ -1,6 +1,6 @@
 use std::io;
 
-use opsgate_core::Config;
+use crate::config::Config;
 use secrecy::ExposeSecret;
 use tokio::net::TcpListener;
 #[cfg(unix)]
@@ -11,6 +11,7 @@ use tracing_subscriber::EnvFilter;
 
 mod audit;
 mod auth;
+mod config;
 mod error;
 mod identity;
 mod mcp;
@@ -33,11 +34,11 @@ async fn main() -> anyhow::Result<()> {
     // aborts startup instead of leaving us without graceful shutdown.
     let signals = ShutdownSignals::install()?;
 
-    let migrate_pool = opsgate_db::connect_migrate(&config).await?;
+    let migrate_pool = opsgate_db::connect_migrate(&config.database_migrate_url).await?;
     opsgate_db::run_migrations(&migrate_pool).await?;
     migrate_pool.close().await;
 
-    let pool = opsgate_db::connect(&config).await?;
+    let pool = opsgate_db::connect(&config.database_url, config.db_max_connections).await?;
     info!(
         event = "db.ready",
         max_connections = config.db_max_connections

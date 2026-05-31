@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
+use crate::config::Config;
 use axum::extract::FromRef;
-use opsgate_core::Config;
 use opsgate_db::PgPool;
 
 use crate::identity::CallerResolver;

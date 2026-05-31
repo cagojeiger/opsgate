@@ -162,7 +162,7 @@ fn state_with_resource_url(
     let pool = PgPoolOptions::new()
         .acquire_timeout(Duration::from_millis(50))
         .connect_lazy(TEST_DB_URL)?;
-    let config = Arc::new(opsgate_core::Config {
+    let config = Arc::new(crate::config::Config {
         bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9091),
         database_url: TEST_DB_URL.to_owned(),
         database_migrate_url: TEST_DB_URL.to_owned(),

@@ -1625,6 +1625,7 @@ dependencies = [
  "axum-extra",
  "base64 0.22.1",
  "chrono",
+ "config",
  "dotenvy",
  "jsonwebtoken",
  "openidconnect",
@@ -1654,21 +1655,17 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "validator",
 ]
 
 [[package]]
 name = "opsgate-core"
 version = "0.1.0"
 dependencies = [
- "config",
  "rustls-pemfile",
  "schemars 1.2.1",
- "secrecy",
- "serde",
  "serde_json",
  "thiserror 2.0.18",
- "url",
- "validator",
 ]
 
 [[package]]

@@ -2,13 +2,13 @@
 
 use std::time::Duration;
 
+use crate::config::Config;
 use axum::extract::{FromRef, MatchedPath, State};
 use axum::http::Request;
 use axum::http::header::HeaderName;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{any, get};
 use axum::{Json, Router};
-use opsgate_core::Config;
 use opsgate_db::PgPool;
 use serde::Serialize;
 use tower::ServiceBuilder;

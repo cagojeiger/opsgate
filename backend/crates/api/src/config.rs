@@ -13,7 +13,7 @@ use serde::{Deserialize, Deserializer};
 use url::Url;
 use validator::{Validate, ValidationError};
 
-use crate::error::{Error, Result};
+use opsgate_core::{Error, Result};
 
 const DEFAULT_BIND_ADDR: &str = "0.0.0.0:9091";
 const DEFAULT_DB_MAX_CONNECTIONS: u32 = 10;
@@ -211,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn environment_layer_accepts_prefixed_variable_names() -> crate::Result<()> {
+    fn environment_layer_accepts_prefixed_variable_names() -> opsgate_core::Result<()> {
         let config = load_from_sources(
             false,
             test_env(&[
@@ -247,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn normalize_builds_valid_config() -> crate::Result<()> {
+    fn normalize_builds_valid_config() -> opsgate_core::Result<()> {
         let mut config = valid_config();
         config.validate().map_err(super::map_validation_error)?;
         config.normalize();
@@ -274,13 +274,13 @@ mod tests {
     }
 
     #[test]
-    fn validation_errors_do_not_echo_values() -> crate::Result<()> {
+    fn validation_errors_do_not_echo_values() -> opsgate_core::Result<()> {
         let mut config = valid_config();
         config.authgate_url = "not a url with secret-token".to_owned();
 
         let err = match config.validate().map_err(super::map_validation_error) {
             Ok(()) => {
-                return Err(crate::Error::validation(
+                return Err(opsgate_core::Error::validation(
                     "invalid URL should fail validation",
                 ));
             }

@@ -41,7 +41,7 @@ struct CachedMetadata {
 }
 
 impl OidcProvider {
-    pub(crate) fn new(config: &opsgate_core::Config, http: reqwest::Client) -> Self {
+    pub(crate) fn new(config: &crate::config::Config, http: reqwest::Client) -> Self {
         Self {
             issuer: config.authgate_url.clone(),
             client_id: config.oauth_client_id.clone(),
