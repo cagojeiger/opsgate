@@ -188,19 +188,23 @@ DDD식 풍부한 domain보다 “공통 모델과 순수 규칙”에 가까워�
 - `Result`
 - 작은 validation helper
 - schema helper
+- PEM 인증서 bundle 파싱 helper
 
 원칙:
 
 - 가장 낮은 레이어이므로 가장 작고 안정적이어야 합니다.
 - `core` 수정은 전체 workspace 재컴파일을 유발하기 쉬우므로 자주 바뀌는 코드를 두지 않습니다.
 
-이동 후보:
+현재 이동 완료:
 
-- `config` → `api` bootstrap 또는 별도 config 위치
+- `config` → `api` bootstrap/config 영역
 - `crypto` → `service`의 credential secret 영역
 - `llm_output` → `service`의 output 영역
 - `net/ssrf` → `infra` network guard
-- `tls` → `infra` TLS 처리
+
+현재 유지:
+
+- `tls`는 `model`의 credential validation과 `infra`의 HTTPS client 구성에서 함께 사용하므로, 작고 안정적인 PEM parser helper로 `core`에 남깁니다.
 
 `common`이라는 이름은 사용하지 않습니다. 의미가 넓어져 다시 잡동사니 크레이트가 될 가능성이 높기 때문입니다.
 
@@ -290,7 +294,7 @@ infra 영향 없음
 
 ### core 수정
 
-변경 후에도 전체 영향이 큽니다. 따라서 `core`는 작게 유지해야 합니다.
+변경 후에도 전체 영향이 큽니다. 현재 `core`는 `error/schema/tls/validation`만 남긴 얇은 기반입니다. 따라서 앞으로도 자주 바뀌는 기능 코드는 `core`에 넣지 않습니다.
 
 ## 완료 기준
 
@@ -299,7 +303,7 @@ infra 영향 없음
 - `infra`는 외부 HTTP/Postgres 연결만 담당하고 `db`를 모릅니다.
 - `db`는 내부 저장소만 담당하고 외부 HTTP client를 모릅니다.
 - `model`은 순수 타입/정책/검증만 담당합니다.
-- `core`는 최소 기반만 담당합니다.
+- `core`는 `error/schema/tls/validation` 중심의 최소 기반만 담당합니다.
 - `cargo check --workspace` 통과
 - `cargo clippy --workspace --all-targets -- -D warnings` 통과
 - `cargo test --workspace` 통과

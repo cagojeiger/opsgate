@@ -29,8 +29,5 @@ base64.workspace = true
 tracing.workspace = true
 tokio.workspace = true
 
-[dev-dependencies]
-tokio.workspace = true
-
 [lints]
 workspace = true
