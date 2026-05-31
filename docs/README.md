@@ -6,6 +6,7 @@
 
 - [MCP 도구/서피스 인덱스](mcp-tools.md)
 - [크레이트 경계와 의존성 설계](architecture/crate-boundaries.md)
+- [인증 구조](architecture/auth.md)
 - [api.call boundary 모델](mcp/api-call-boundary.md)
 - [sql.query boundary 모델](mcp/sql-query-boundary.md)
 - [0.1.0 릴리스 준비 체크리스트](release-checklist.md)

@@ -39,7 +39,8 @@ target 재호출이 필요한 경우 LLM이 더 좁은 요청을 만들 수 있�
 
 ### 신원
 
-- REST와 MCP 모두 유효한 Bearer 인증 사용자가 필요합니다.
+- REST와 MCP 모두 같은 JWT 검증 서비스(`auth::jwt::JwtAuthority`)를 통과한 Bearer 인증 사용자가 필요합니다.
+- `/login`/`/callback`만 로컬 user row를 생성하거나 갱신합니다. REST와 MCP는 registered + active user만 허용합니다.
 - inactive 사용자는 거부됩니다.
 - `/mcp`와 `/mcp/admin`의 차이는 role이 아니라 노출되는 도구 목록입니다.
 

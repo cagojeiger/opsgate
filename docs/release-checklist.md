@@ -166,6 +166,15 @@ curl -i -sS http://localhost:9091/mcp/admin -X POST -H 'content-type: applicatio
 Opsgate는 개인용 서비스입니다. `/mcp`와 `/mcp/admin`은 role/admin 게이트가
 아니라 노출되는 도구 목록으로 분리됩니다.
 
+인증 구조 기준:
+
+```text
+JWT 검증은 auth::jwt::JwtAuthority가 API/MCP 공통으로 수행합니다.
+/api/*는 API adapter를 통해 일반 Bearer challenge를 반환합니다.
+/mcp와 /mcp/admin은 MCP adapter를 통해 scoped Bearer challenge를 반환합니다.
+/login과 /callback만 로컬 user row를 생성/갱신합니다.
+```
+
 ## 남은 릴리스 메모
 
 ```text

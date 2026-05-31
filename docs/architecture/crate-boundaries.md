@@ -5,8 +5,8 @@
 
 ## 문제 정의
 
-현재 `opsgate-api`는 HTTP/MCP 노출 계층뿐 아니라 인증, credential 유스케이스, SQL/API 실행 유스케이스, 외부 HTTP/Postgres 연결, audit 조립까지 포함합니다.
-이 구조는 다음 문제가 있습니다.
+초기 구현에서 `opsgate-api`는 HTTP/MCP 노출 계층뿐 아니라 인증, credential 유스케이스, SQL/API 실행 유스케이스, 외부 HTTP/Postgres 연결, audit 조립까지 포함했습니다.
+현재는 credential/API/SQL 실행 흐름은 `service`/`infra`/`db`로 내려갔고, `api`에는 transport/auth/bootstrap 중심 코드만 남기는 방향으로 정리했습니다. 이 문서는 그 경계를 유지하기 위한 기준입니다.
 
 - MCP 도구 설명이나 REST 핸들러를 바꿔도 큰 `api` 크레이트가 자주 흔들립니다.
 - `axum`, `rmcp`, `openidconnect`, `reqwest`, `sqlx`, `sqlparser` 같은 무거운 의존성이 한 크레이트에 모여 있습니다.
@@ -44,8 +44,8 @@ backend/crates/
 - axum route
 - REST handler
 - MCP server/tool adapter
-- OAuth callback
-- bearer extractor/middleware
+- OAuth login/callback adapter
+- JWT 검증 서비스와 API/MCP Bearer adapter
 - HTTP/MCP error mapping
 
 허용 의존성:
@@ -53,7 +53,7 @@ backend/crates/
 - `axum`
 - `rmcp`
 - `tower`, `tower-http`
-- `openidconnect`, `jsonwebtoken`, `axum-extra`
+- `openidconnect`, `aliri`, `aliri_oauth2`, `axum-extra`
 - `opsgate-service`, `opsgate-db`, `opsgate-model`, `opsgate-core`
 
 금지:
@@ -61,6 +61,17 @@ backend/crates/
 - credential 등록/수정/삭제의 핵심 흐름 직접 구현
 - SQL query policy/executor 직접 구현
 - 외부 HTTP/Postgres 호출 구현
+
+인증 경계:
+
+```text
+auth::jwt  = JWT 검증 공통 서비스
+auth::api  = /api/* Bearer adapter
+auth::mcp  = /mcp, /mcp/admin Bearer adapter
+auth::oauth = /login, /callback 브라우저 OAuth adapter
+```
+
+JWT 검증은 `auth::jwt::JwtAuthority` 하나로 통일하고, API/MCP/Login은 각 프로토콜에 맞는 얇은 adapter로 남깁니다.
 
 ### `opsgate-service`
 
