@@ -13,7 +13,7 @@ repository = "https://github.com/cagojeiger/opsgate"
 # Internal crates
 opsgate-core = { path = "backend/crates/core" }
 opsgate-db = { path = "backend/crates/db" }
-opsgate-domain = { path = "backend/crates/domain" }
+opsgate-model = { path = "backend/crates/model" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

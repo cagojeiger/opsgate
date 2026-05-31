@@ -1,4 +1,4 @@
-use opsgate_domain::Caller;
+use opsgate_model::Caller;
 
 use crate::request_context::RequestMetadata;
 

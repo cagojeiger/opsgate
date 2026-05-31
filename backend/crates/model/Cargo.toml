@@ -1,5 +1,5 @@
 [package]
-name = "opsgate-domain"
+name = "opsgate-model"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

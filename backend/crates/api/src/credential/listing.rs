@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use opsgate_core::{Error, Result};
 use opsgate_db::CredentialSummaryRows;
-use opsgate_domain::credential::{
+use opsgate_model::credential::{
     Credential, validate_alias as validate_credential_alias,
     validate_env as validate_credential_env, validate_provider as validate_credential_provider,
     validate_tag as validate_credential_tag,

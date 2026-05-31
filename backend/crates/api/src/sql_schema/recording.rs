@@ -1,6 +1,6 @@
 use opsgate_db::AuditRepo;
-use opsgate_domain::Caller;
-use opsgate_domain::credential::Credential;
+use opsgate_model::Caller;
+use opsgate_model::credential::Credential;
 use serde_json::Value;
 
 use crate::audit::runtime::reason;

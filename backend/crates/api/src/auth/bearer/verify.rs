@@ -1,4 +1,4 @@
-use opsgate_domain::{Caller, IdentityError, ResolveAttrs};
+use opsgate_model::{Caller, IdentityError, ResolveAttrs};
 
 use crate::auth::bearer::AuthError;
 use crate::auth::jwks::{Claims, JwksCache, JwksError};

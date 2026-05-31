@@ -1,5 +1,5 @@
 use opsgate_core::{Error, Result};
-use opsgate_domain::credential::CredentialPolicy;
+use opsgate_model::credential::CredentialPolicy;
 
 use super::input::{MODE_TABLES, NormalizedInput};
 
@@ -27,7 +27,7 @@ pub(super) fn validate_policy(policy: &CredentialPolicy, input: &NormalizedInput
 #[cfg(test)]
 mod tests {
     use opsgate_core::Result;
-    use opsgate_domain::credential::CredentialPolicy;
+    use opsgate_model::credential::CredentialPolicy;
 
     use super::super::input::{SqlSchemaInput, normalize_input};
     use super::*;

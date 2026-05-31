@@ -1,6 +1,6 @@
 use opsgate_core::crypto::Sealer;
 use opsgate_core::{Error, Result};
-use opsgate_domain::credential::{
+use opsgate_model::credential::{
     Credential, CredentialCategory, CredentialPolicy,
     validate_allowed_headers_do_not_overlap_secret,
 };

@@ -56,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
         .build()?;
     let jwks_url = format!("{}/keys", config.authgate_url);
     let user_repo = opsgate_db::UserRepo::new(pool.clone());
-    let resolver = opsgate_domain::Resolver::new(user_repo);
+    let resolver = opsgate_model::Resolver::new(user_repo);
     let credential_repo = opsgate_db::CredentialRepo::new(pool.clone());
     let api_call_history = opsgate_db::ApiCallHistoryRepo::new(pool.clone());
     let sql_query_history = opsgate_db::SqlQueryHistoryRepo::new(pool.clone());

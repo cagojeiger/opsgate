@@ -1,6 +1,6 @@
 use opsgate_core::crypto::Sealer;
 use opsgate_core::{Error, Result};
-use opsgate_domain::credential::{CredentialSecret, SecretHeader};
+use opsgate_model::credential::{CredentialSecret, SecretHeader};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 

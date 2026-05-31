@@ -356,7 +356,7 @@ async fn verify_mcp_request(
         Err(error) => {
             crate::audit::auth::record_auth_denied(
                 &state.audit,
-                opsgate_domain::Channel::Mcp,
+                opsgate_model::Channel::Mcp,
                 &metadata,
                 &error,
             )

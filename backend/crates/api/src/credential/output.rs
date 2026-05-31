@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
-use opsgate_domain::CredentialCategory;
-use opsgate_domain::credential::{Credential, CredentialPolicy};
+use opsgate_model::CredentialCategory;
+use opsgate_model::credential::{Credential, CredentialPolicy};
 use schemars::JsonSchema;
 use serde::Serialize;
 
@@ -158,7 +158,7 @@ mod tests {
             category: CredentialCategory::Http,
             provider: "k8s".to_owned(),
             alias: "prod-api".to_owned(),
-            target: opsgate_domain::credential::CredentialTarget::Http {
+            target: opsgate_model::credential::CredentialTarget::Http {
                 origin: "https://internal.example.test".to_owned(),
                 base_path: "/secret-path".to_owned(),
             },

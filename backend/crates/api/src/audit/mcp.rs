@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use axum::http::request::Parts;
 use opsgate_db::AuditRepo;
-use opsgate_domain::{Caller, Channel};
+use opsgate_model::{Caller, Channel};
 use rmcp::{ErrorData, Json};
 use serde_json::Value;
 
@@ -69,7 +69,7 @@ fn tool_detail(tool: &str, started: Instant, is_error: bool) -> Value {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use opsgate_domain::{Channel, User};
+    use opsgate_model::{Channel, User};
     use uuid::Uuid;
 
     use super::*;

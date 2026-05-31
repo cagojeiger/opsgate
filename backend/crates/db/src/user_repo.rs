@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use opsgate_core::{Error, Result};
-use opsgate_domain::{User, UserStore};
+use opsgate_model::{User, UserStore};
 use sqlx::FromRow;
 use sqlx::PgPool;
 use uuid::Uuid;

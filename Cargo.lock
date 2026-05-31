@@ -1630,7 +1630,7 @@ dependencies = [
  "openidconnect",
  "opsgate-core",
  "opsgate-db",
- "opsgate-domain",
+ "opsgate-model",
  "rand 0.8.6",
  "reqwest",
  "rmcp",
@@ -1680,7 +1680,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "opsgate-core",
- "opsgate-domain",
+ "opsgate-model",
  "serde_json",
  "sqlx",
  "tokio",
@@ -1689,7 +1689,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "opsgate-domain"
+name = "opsgate-model"
 version = "0.1.0"
 dependencies = [
  "chrono",

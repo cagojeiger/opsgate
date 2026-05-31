@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use axum::http::Method;
 use opsgate_db::AuditRepo;
-use opsgate_domain::{Caller, Channel};
+use opsgate_model::{Caller, Channel};
 
 use super::actor::caller_actor;
 use super::{AuditEvent, AuditOutcome, AuditTarget, append_event};
@@ -56,7 +56,7 @@ fn outcome_for_status(status: u16) -> AuditOutcome {
 mod tests {
     use axum::http::Method;
     use chrono::Utc;
-    use opsgate_domain::{Channel, User};
+    use opsgate_model::{Channel, User};
     use uuid::Uuid;
 
     use super::*;

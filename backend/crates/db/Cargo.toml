@@ -7,7 +7,7 @@ license.workspace = true
 
 [dependencies]
 opsgate-core.workspace = true
-opsgate-domain.workspace = true
+opsgate-model.workspace = true
 sqlx.workspace = true
 tracing.workspace = true
 uuid.workspace = true

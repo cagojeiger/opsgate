@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use opsgate_core::{Error, Result};
 
 use super::ssrf::{BLOCKED_TARGET_IP_MESSAGE, ensure_target_ip_allowed};
-use opsgate_domain::credential::Credential;
+use opsgate_model::credential::Credential;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use uuid::Uuid;
 
@@ -228,7 +228,7 @@ fn boxed_error(message: impl Into<String>) -> DnsError {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use opsgate_domain::credential::{CredentialCategory, CredentialPolicy, CredentialTarget};
+    use opsgate_model::credential::{CredentialCategory, CredentialPolicy, CredentialTarget};
 
     #[test]
     fn target_client_rejects_bad_tls_ca() -> Result<()> {

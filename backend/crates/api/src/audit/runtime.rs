@@ -1,5 +1,5 @@
 use opsgate_db::AuditRepo;
-use opsgate_domain::{Caller, Channel};
+use opsgate_model::{Caller, Channel};
 use serde_json::Value;
 
 use crate::credential::snapshot::CredentialSnapshot;

@@ -1,4 +1,4 @@
-use opsgate_domain::credential::{
+use opsgate_model::credential::{
     CredentialCategory, CredentialPolicy, CredentialSecret, CredentialTarget,
     RegisterCredentialInput, SecretHeader,
 };

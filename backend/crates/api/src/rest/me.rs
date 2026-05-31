@@ -1,7 +1,7 @@
 use axum::extract::Extension;
 use axum::routing::get;
 use axum::{Json, Router};
-use opsgate_domain::Caller;
+use opsgate_model::Caller;
 use schemars::JsonSchema;
 use serde::Serialize;
 
@@ -35,7 +35,7 @@ fn build_me(caller: &Caller) -> MeOutput {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use opsgate_domain::{Caller, Channel, User};
+    use opsgate_model::{Caller, Channel, User};
     use uuid::Uuid;
 
     use super::build_me;

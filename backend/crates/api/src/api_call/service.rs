@@ -1,7 +1,7 @@
 use opsgate_core::{Error, Result};
 use opsgate_db::{ApiCallHistoryRepo, AuditRepo, CredentialRepo};
-use opsgate_domain::Caller;
-use opsgate_domain::credential::CredentialCategory;
+use opsgate_model::Caller;
+use opsgate_model::credential::CredentialCategory;
 
 use crate::audit::runtime::reason;
 use crate::credential::secret;

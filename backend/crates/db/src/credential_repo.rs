@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use opsgate_core::{Error, Result};
-use opsgate_domain::credential::{
+use opsgate_model::credential::{
     Credential, CredentialCategory, CredentialListParams, CredentialPolicy, CredentialTarget,
     InsertCredentialParams, UpdateCredentialParams,
 };

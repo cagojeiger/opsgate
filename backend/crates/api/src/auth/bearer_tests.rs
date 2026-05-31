@@ -12,7 +12,7 @@ use axum::http::{Method, Request, StatusCode};
 use axum::response::Response;
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, encode};
-use opsgate_domain::{Caller, Channel, IdentityError, ResolveAttrs, User};
+use opsgate_model::{Caller, Channel, IdentityError, ResolveAttrs, User};
 use serde::Serialize;
 use serde_json::{Value, json};
 use sqlx::postgres::PgPoolOptions;

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use opsgate_db::{CredentialAuditAction, CredentialAuditParams, CredentialRepo};
-use opsgate_domain::credential::{
+use opsgate_model::credential::{
     CredentialCategory, CredentialListParams, CredentialPolicy, CredentialTarget,
     InsertCredentialParams, UpdateCredentialParams,
 };

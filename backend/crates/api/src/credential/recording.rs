@@ -1,6 +1,6 @@
 use opsgate_db::{CredentialAuditAction, CredentialAuditParams};
-use opsgate_domain::Caller;
-use opsgate_domain::credential::RegisterCredentialInput;
+use opsgate_model::Caller;
+use opsgate_model::credential::RegisterCredentialInput;
 
 pub(super) fn register_audit(
     caller: &Caller,

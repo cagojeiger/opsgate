@@ -3,7 +3,7 @@ use axum::http::HeaderMap;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum_extra::extract::CookieJar;
-use opsgate_domain::{IdentityError, ResolveAttrs};
+use opsgate_model::{IdentityError, ResolveAttrs};
 use serde::Deserialize;
 use subtle::ConstantTimeEq;
 
@@ -210,7 +210,7 @@ pub(crate) async fn callback(
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use opsgate_domain::{Caller, Channel, User};
+    use opsgate_model::{Caller, Channel, User};
     use uuid::Uuid;
 
     use super::*;

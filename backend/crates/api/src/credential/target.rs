@@ -1,7 +1,7 @@
 use std::net::IpAddr;
 
 use opsgate_core::{Error, Result};
-use opsgate_domain::credential::{CredentialCategory, CredentialTarget, RegisterCredentialInput};
+use opsgate_model::credential::{CredentialCategory, CredentialTarget, RegisterCredentialInput};
 
 use crate::target::ssrf::{BLOCKED_TARGET_IP_MESSAGE, target_ip_is_blocked};
 

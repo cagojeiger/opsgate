@@ -1,5 +1,5 @@
 use opsgate_db::AuditRepo;
-use opsgate_domain::{Caller, Channel, ResolveAttrs};
+use opsgate_model::{Caller, Channel, ResolveAttrs};
 
 use crate::auth::bearer::AuthError;
 use crate::request_context::RequestMetadata;

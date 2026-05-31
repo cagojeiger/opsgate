@@ -1,7 +1,7 @@
 use std::ops::ControlFlow;
 
 use opsgate_core::{Error, Result};
-use opsgate_domain::credential::CredentialPolicy;
+use opsgate_model::credential::CredentialPolicy;
 use sqlparser::ast::{Expr, ObjectName, Query, SetExpr, Statement, Visit, Visitor};
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
@@ -266,7 +266,7 @@ fn is_metadata_schema(schema: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use opsgate_domain::credential::CredentialPolicy;
+    use opsgate_model::credential::CredentialPolicy;
 
     use super::*;
 

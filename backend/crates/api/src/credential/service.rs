@@ -2,8 +2,8 @@ use opsgate_core::crypto::Sealer;
 use opsgate_core::validation::validate_reason;
 use opsgate_core::{Error, Result};
 use opsgate_db::CredentialRepo;
-use opsgate_domain::Caller;
-use opsgate_domain::credential::{
+use opsgate_model::Caller;
+use opsgate_model::credential::{
     Credential, CredentialCategory, CredentialListParams, InsertCredentialParams,
     RegisterCredentialInput, UpdateCredentialParams, normalize_policy_for_category,
     normalize_register_input, normalize_tags as normalize_credential_tags,
@@ -32,7 +32,7 @@ use super::input::SecretHeaderInput;
 #[cfg(test)]
 use opsgate_db::CredentialAuditAction;
 #[cfg(test)]
-use opsgate_domain::credential::{
+use opsgate_model::credential::{
     CredentialPolicy, CredentialSecret, CredentialTarget, SecretHeader,
 };
 #[cfg(test)]
@@ -230,7 +230,7 @@ impl CredentialService {
         }
         let tags = input.tags.map(normalize_credential_tags);
         if let Some(tags) = &tags {
-            opsgate_domain::credential::validate_tags(tags)?;
+            opsgate_model::credential::validate_tags(tags)?;
         }
         let policy = input
             .policy
@@ -303,7 +303,7 @@ mod tests {
 
     use base64::Engine;
     use chrono::Utc;
-    use opsgate_domain::{Channel, User};
+    use opsgate_model::{Channel, User};
     use sqlx::postgres::PgPoolOptions;
 
     use super::*;

@@ -2,8 +2,8 @@ use axum::body::Bytes;
 use axum::extract::{Extension, Path, RawQuery, State};
 use axum::routing::{delete, get};
 use axum::{Json, Router};
-use opsgate_domain::Caller;
-use opsgate_domain::credential::{CredentialCategory, CredentialPolicy};
+use opsgate_model::Caller;
+use opsgate_model::credential::{CredentialCategory, CredentialPolicy};
 use serde::Deserialize;
 
 use crate::credential::{

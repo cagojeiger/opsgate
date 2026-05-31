@@ -1,5 +1,5 @@
 use axum::http::request::Parts;
-use opsgate_domain::Caller;
+use opsgate_model::Caller;
 use rmcp::ErrorData;
 use rmcp::Json;
 use schemars::JsonSchema;
@@ -143,7 +143,7 @@ fn workflow_for_toolset(toolset: McpToolset) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use opsgate_domain::{Caller, Channel, User};
+    use opsgate_model::{Caller, Channel, User};
     use std::collections::BTreeMap;
     use uuid::Uuid;
 

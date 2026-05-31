@@ -2,7 +2,7 @@ use axum::body::Bytes;
 use axum::extract::{Extension, State};
 use axum::routing::post;
 use axum::{Json, Router};
-use opsgate_domain::Caller;
+use opsgate_model::Caller;
 
 use crate::error::ApiError;
 use crate::sql_query::{SqlQueryInput, SqlQueryOutput};

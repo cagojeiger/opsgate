@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use opsgate_core::llm_output::{JsonOutputOptions, build_json_output};
 use opsgate_core::{Error, Result};
-use opsgate_domain::credential::{Credential, CredentialTarget, SecretHeader};
+use opsgate_model::credential::{Credential, CredentialTarget, SecretHeader};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret;
 
@@ -266,7 +266,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use opsgate_core::Result;
-    use opsgate_domain::credential::CredentialTarget;
+    use opsgate_model::credential::CredentialTarget;
 
     use super::super::input::{ApiCallInput, normalize_input};
     use super::*;

@@ -1,5 +1,5 @@
 use opsgate_core::{Error, Result};
-use opsgate_domain::credential::{
+use opsgate_model::credential::{
     Credential, SecretHeader, contains_fold, header_blocked, request_path_matches_prefix,
 };
 
@@ -63,7 +63,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use chrono::Utc;
-    use opsgate_domain::credential::{
+    use opsgate_model::credential::{
         CredentialCategory, CredentialPolicy, CredentialTarget, SecretHeader,
     };
     use secrecy::SecretString;

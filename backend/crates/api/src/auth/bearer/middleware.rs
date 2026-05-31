@@ -6,7 +6,7 @@ use axum::extract::State;
 use axum::http::Request;
 use axum::middleware::Next;
 use axum::response::Response;
-use opsgate_domain::Channel;
+use opsgate_model::Channel;
 
 use crate::auth::bearer::{AuthError, auth_error_response, extract_bearer, verify_bearer};
 use crate::request_context::RequestMetadata;

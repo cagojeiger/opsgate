@@ -1,5 +1,5 @@
 use opsgate_db::{AuditLogParams, AuditRepo};
-use opsgate_domain::Channel;
+use opsgate_model::Channel;
 use serde_json::Value;
 
 use super::target::AuditTarget;

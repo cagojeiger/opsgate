@@ -177,7 +177,7 @@ infra는 전달받은 endpoint/secret/options로 외부 호출만 수행한다.
 
 비고:
 
-현재 `opsgate-domain`은 이 역할에 가깝기 때문에, 리팩토링 중 `opsgate-model`로 rename하는 것을 목표로 합니다.
+기존 `opsgate-domain`은 이 역할에 가까웠기 때문에, 현재 구조에서는 `opsgate-model` 이름을 사용합니다.
 DDD식 풍부한 domain보다 “공통 모델과 순수 규칙”에 가까워서 `model`이 더 명확합니다.
 
 ### `opsgate-core`

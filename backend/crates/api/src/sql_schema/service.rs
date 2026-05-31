@@ -2,8 +2,8 @@ use std::time::Instant;
 
 use opsgate_core::{Error, Result};
 use opsgate_db::{AuditRepo, CredentialRepo};
-use opsgate_domain::Caller;
-use opsgate_domain::credential::CredentialCategory;
+use opsgate_model::Caller;
+use opsgate_model::credential::CredentialCategory;
 
 use super::executor::execute_schema_query;
 use super::input::{SqlSchemaInput, normalize_input};

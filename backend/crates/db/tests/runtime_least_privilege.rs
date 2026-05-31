@@ -4,8 +4,8 @@ use opsgate_db::{
     ApiCallHistoryParams, ApiCallHistoryRepo, AuditLogParams, AuditRepo, CredentialAuditAction,
     CredentialAuditParams, CredentialRepo, SqlQueryHistoryParams, SqlQueryHistoryRepo, UserRepo,
 };
-use opsgate_domain::UserStore;
-use opsgate_domain::credential::{
+use opsgate_model::UserStore;
+use opsgate_model::credential::{
     CredentialCategory, CredentialPolicy, CredentialTarget, InsertCredentialParams,
     UpdateCredentialParams,
 };

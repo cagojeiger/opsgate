@@ -1,4 +1,4 @@
-use opsgate_domain::credential::{Credential, CredentialCategory};
+use opsgate_model::credential::{Credential, CredentialCategory};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]

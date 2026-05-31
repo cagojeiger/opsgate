@@ -1,7 +1,7 @@
 use opsgate_core::Error;
 use opsgate_db::{ApiCallHistoryParams, ApiCallHistoryRepo, AuditRepo};
-use opsgate_domain::Caller;
-use opsgate_domain::credential::Credential;
+use opsgate_model::Caller;
+use opsgate_model::credential::Credential;
 use serde_json::Value;
 
 use crate::audit::runtime::reason;
@@ -262,7 +262,7 @@ mod tests {
 
     use chrono::Utc;
     use opsgate_core::Result;
-    use opsgate_domain::credential::{
+    use opsgate_model::credential::{
         Credential, CredentialCategory, CredentialPolicy, CredentialTarget,
     };
     use serde_json::Value;
@@ -367,10 +367,10 @@ mod tests {
         Ok(())
     }
 
-    fn test_caller() -> opsgate_domain::Caller {
+    fn test_caller() -> opsgate_model::Caller {
         let now = Utc::now();
-        opsgate_domain::Caller {
-            user: opsgate_domain::User {
+        opsgate_model::Caller {
+            user: opsgate_model::User {
                 id: uuid::Uuid::nil(),
                 sub: "sub".to_owned(),
                 email: "user@example.test".to_owned(),
@@ -379,7 +379,7 @@ mod tests {
                 created_at: now,
                 updated_at: now,
             },
-            channel: opsgate_domain::Channel::Mcp,
+            channel: opsgate_model::Channel::Mcp,
             request_id: None,
             remote_ip: None,
             user_agent: None,
