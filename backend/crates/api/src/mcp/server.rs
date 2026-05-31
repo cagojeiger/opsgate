@@ -23,8 +23,8 @@ use rmcp::{ErrorData, Json, ServerHandler, tool, tool_handler, tool_router};
 
 use crate::auth::bearer::{
     AuthError, auth_error_body, extract_bearer, shared_scoped_challenge_header, status_for_error,
-    verify_bearer_mcp,
 };
+use crate::auth::mcp::verify_bearer_mcp;
 use crate::mcp::tools::me::{McpMeOutput, McpToolset};
 use crate::request_context::RequestMetadata;
 use crate::state::{AppState, AuthRuntimeState};
