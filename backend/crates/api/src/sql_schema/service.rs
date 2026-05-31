@@ -128,9 +128,12 @@ impl SqlSchemaService {
         {
             Ok(output) => output,
             Err(error) => {
-                recorder
-                    .err(reason::SCHEMA_LOOKUP_FAILED, "sql schema lookup failed")
-                    .await;
+                let (kind, message) = crate::sql_common::safe_error_record(
+                    &error,
+                    reason::SCHEMA_LOOKUP_FAILED,
+                    "sql schema lookup failed",
+                );
+                recorder.err(kind, &message).await;
                 return Err(error);
             }
         };

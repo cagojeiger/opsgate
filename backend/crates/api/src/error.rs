@@ -4,13 +4,13 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use opsgate_core::Error as CoreError;
-use serde_json::json;
 
 #[derive(Debug)]
 pub(crate) struct ApiError {
     status: StatusCode,
     code: &'static str,
     message: String,
+    hint: Option<String>,
 }
 
 impl ApiError {
@@ -19,6 +19,20 @@ impl ApiError {
             status,
             code,
             message: message.into(),
+            hint: None,
+        }
+    }
+
+    pub(crate) fn user_safe(
+        code: &'static str,
+        message: impl Into<String>,
+        hint: Option<String>,
+    ) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code,
+            message: message.into(),
+            hint,
         }
     }
 
@@ -47,6 +61,11 @@ impl From<CoreError> for ApiError {
             CoreError::NotFound(msg) => Self::not_found(msg),
             CoreError::Forbidden(msg) => Self::forbidden(msg),
             CoreError::Validation(msg) => Self::invalid_field(msg),
+            CoreError::UserSafe {
+                kind,
+                message,
+                hint,
+            } => Self::user_safe(kind, message, hint),
             CoreError::Internal(msg) => {
                 tracing::error!(event = "error.internal", detail = %msg);
                 Self::internal("internal server error")
@@ -57,13 +76,36 @@ impl From<CoreError> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (
-            self.status,
-            Json(json!({
-                "error": self.code,
-                "message": self.message,
-            })),
-        )
-            .into_response()
+        let mut body = serde_json::json!({
+            "error": self.code,
+            "message": self.message,
+        });
+        if let Some(hint) = self.hint
+            && let Some(object) = body.as_object_mut()
+        {
+            object.insert("hint".to_owned(), serde_json::json!(hint));
+        }
+        (self.status, Json(body)).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::StatusCode;
+
+    use super::*;
+
+    #[test]
+    fn user_safe_core_error_maps_to_public_http_error() {
+        let error = ApiError::from(opsgate_core::Error::user_safe(
+            "sql_undefined_column",
+            "SQL references a column that does not exist.",
+            Some("Use sql.schema first."),
+        ));
+
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+        assert_eq!(error.code, "sql_undefined_column");
+        assert!(error.message.contains("column"));
+        assert_eq!(error.hint.as_deref(), Some("Use sql.schema first."));
     }
 }

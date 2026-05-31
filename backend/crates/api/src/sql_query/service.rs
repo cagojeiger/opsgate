@@ -132,7 +132,12 @@ impl SqlQueryService {
             match execute_postgres(&self.pools, credential.id, &target, &secret, &input).await {
                 Ok(output) => output,
                 Err(error) => {
-                    recorder.err(reason::QUERY_FAILED, "sql query failed").await;
+                    let (kind, message) = crate::sql_common::safe_error_record(
+                        &error,
+                        reason::QUERY_FAILED,
+                        "sql query failed",
+                    );
+                    recorder.err(kind, &message).await;
                     return Err(error);
                 }
             };

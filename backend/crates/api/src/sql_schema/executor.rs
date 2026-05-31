@@ -47,7 +47,9 @@ async fn list_tables(conn: &mut PgConnection, input: &NormalizedInput) -> Result
     .bind(input.limit + 1)
     .fetch_all(conn)
     .await
-    .map_err(|_error| Error::internal("postgres schema table list failed"))?;
+    .map_err(|error| {
+        crate::sql_common::map_postgres_schema_error(error, "postgres schema table list failed")
+    })?;
 
     let mut tables = Vec::new();
     let mut page = Page {
@@ -142,7 +144,9 @@ async fn load_columns(
     .bind(table)
     .fetch_all(conn)
     .await
-    .map_err(|_error| Error::internal("postgres schema column lookup failed"))?;
+    .map_err(|error| {
+        crate::sql_common::map_postgres_schema_error(error, "postgres schema column lookup failed")
+    })?;
     let mut kind = "table".to_owned();
     let columns = rows
         .into_iter()
@@ -179,7 +183,12 @@ async fn load_primary_key(
     .bind(table)
     .fetch_one(conn)
     .await
-    .map_err(|_error| Error::internal("postgres schema primary key lookup failed"))?;
+    .map_err(|error| {
+        crate::sql_common::map_postgres_schema_error(
+            error,
+            "postgres schema primary key lookup failed",
+        )
+    })?;
     Ok(split_comma_list(&joined))
 }
 
@@ -205,7 +214,9 @@ async fn load_indexes(conn: &mut PgConnection, namespace: &str, table: &str) -> 
     .bind(table)
     .fetch_all(conn)
     .await
-    .map_err(|_error| Error::internal("postgres schema index lookup failed"))?;
+    .map_err(|error| {
+        crate::sql_common::map_postgres_schema_error(error, "postgres schema index lookup failed")
+    })?;
     Ok(rows
         .into_iter()
         .map(|row| Index {

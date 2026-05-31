@@ -47,7 +47,7 @@ async fn load_explain_rows(
     let mut plans = query
         .fetch_all(conn)
         .await
-        .map_err(|_error| Error::internal("sql query failed"))?;
+        .map_err(crate::sql_common::map_postgres_query_error)?;
     let mut truncated = false;
     if plans.len() > usize::try_from(input.max_rows).unwrap_or(usize::MAX) {
         plans.truncate(usize::try_from(input.max_rows).unwrap_or(usize::MAX));
@@ -73,7 +73,7 @@ async fn load_rows(conn: &mut PgConnection, input: &NormalizedInput) -> Result<S
     let value = query
         .fetch_one(conn)
         .await
-        .map_err(|_error| Error::internal("sql query failed"))?;
+        .map_err(crate::sql_common::map_postgres_query_error)?;
     // json_agg always yields an array; move it out instead of cloning the rows.
     let mut rows = match value {
         Value::Array(rows) => rows,

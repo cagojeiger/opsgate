@@ -24,6 +24,14 @@ pub enum Error {
     /// A dependency (db, external service) failed.
     #[error("internal error: {0}")]
     Internal(String),
+
+    /// A dependency returned an error that is safe and useful for the caller.
+    #[error("{kind}: {message}")]
+    UserSafe {
+        kind: &'static str,
+        message: String,
+        hint: Option<String>,
+    },
 }
 
 impl Error {
@@ -41,5 +49,17 @@ impl Error {
 
     pub fn internal(msg: impl fmt::Display) -> Self {
         Self::Internal(msg.to_string())
+    }
+
+    pub fn user_safe(
+        kind: &'static str,
+        message: impl fmt::Display,
+        hint: Option<impl fmt::Display>,
+    ) -> Self {
+        Self::UserSafe {
+            kind,
+            message: message.to_string(),
+            hint: hint.map(|hint| hint.to_string()),
+        }
     }
 }
