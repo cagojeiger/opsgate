@@ -5,10 +5,8 @@ use opsgate_db::CredentialRepo;
 use opsgate_model::Caller;
 use opsgate_model::credential::{
     Credential, CredentialCategory, CredentialListParams, InsertCredentialParams,
-    RegisterCredentialInput, UpdateCredentialParams, normalize_policy_for_category,
-    normalize_register_input, normalize_tags as normalize_credential_tags,
-    validate_alias as validate_credential_alias, validate_env as validate_credential_env,
-    validate_policy_for_category, validate_register_input,
+    RegisterCredentialInput, UpdateCredentialParams, normalize_register_input,
+    validate_alias as validate_credential_alias, validate_register_input,
 };
 use uuid::Uuid;
 
@@ -22,10 +20,7 @@ use super::listing::{
 use super::recording::{delete_audit, register_audit, update_audit};
 use super::secret;
 use super::target::{EndpointResolver, validate_register_target_ips};
-use super::update::{
-    CredentialUpdate, changed_fields, ensure_update_category, trim_optional,
-    validate_http_policy_secret_overlap,
-};
+use super::update::{CredentialUpdate, ensure_update_category, plan_update};
 
 const DEFAULT_LIST_LIMIT: i64 = 50;
 const MAX_LIST_LIMIT: i64 = 100;
@@ -191,7 +186,6 @@ impl CredentialService {
     ) -> Result<CredentialUpdate> {
         let owner_user_id = caller.user.id;
         let alias = input.alias.trim().to_owned();
-        let reason = validate_reason(&input.reason)?;
         validate_credential_alias(&alias)?;
 
         let material = self
@@ -203,57 +197,15 @@ impl CredentialService {
         let before = material.credential;
         ensure_update_category(&before, category)?;
 
-        let description = trim_optional(input.description);
-        let env = trim_optional(input.env);
-        if let Some(env) = &env {
-            validate_credential_env(env)?;
-        }
-        let tags = input.tags.map(normalize_credential_tags);
-        if let Some(tags) = &tags {
-            opsgate_model::credential::validate_tags(tags)?;
-        }
-        let policy = input
-            .policy
-            .map(|policy| normalize_policy_for_category(policy, category));
-        if let Some(policy) = &policy {
-            validate_policy_for_category(policy, category)?;
-        }
-
-        if category == CredentialCategory::Http
-            && let Some(policy) = &policy
-        {
-            validate_http_policy_secret_overlap(
-                &self.sealer,
-                &alias,
-                material.secret_ciphertext.as_deref(),
-                policy,
-            )?;
-        }
-
-        let next_description = description
-            .clone()
-            .unwrap_or_else(|| before.description.clone());
-        let next_env = env.clone().unwrap_or_else(|| before.env.clone());
-        let next_tags = tags.clone().unwrap_or_else(|| before.tags.clone());
-        let next_policy = policy.clone().unwrap_or_else(|| before.policy.clone());
-        let changed_fields = changed_fields(
+        let plan = plan_update(
             &before,
-            &next_description,
-            &next_env,
-            &next_tags,
-            &next_policy,
-        );
-        if changed_fields.is_empty() {
-            return Err(Error::validation("no mutable fields changed"));
-        }
-
-        let audit = update_audit(caller, reason, &changed_fields);
-        let description = changed_fields
-            .contains(&"description")
-            .then_some(next_description);
-        let env = changed_fields.contains(&"env").then_some(next_env);
-        let tags = changed_fields.contains(&"tags").then_some(next_tags);
-        let policy = changed_fields.contains(&"policy").then_some(next_policy);
+            input,
+            category,
+            &self.sealer,
+            material.secret_ciphertext.as_deref(),
+        )?;
+        let audit = update_audit(caller, plan.reason.clone(), &plan.changed_fields);
+        let changed_fields = plan.changed_fields.clone();
         let credential = self
             .repo
             .update_credential_mutable_fields(
@@ -262,10 +214,10 @@ impl CredentialService {
                     actor_user_id: owner_user_id,
                     alias,
                     category,
-                    description,
-                    env,
-                    tags,
-                    policy,
+                    description: plan.description,
+                    env: plan.env,
+                    tags: plan.tags,
+                    policy: plan.policy,
                 },
                 audit,
             )
