@@ -766,18 +766,18 @@ impl<'a> SchemaRecorder<'a> {
         output: Option<&SqlSchemaOutput>,
     ) {
         let credential = self.credential.as_ref();
-        let event = crate::audit::runtime::tool_event(
-            self.caller,
-            "sql.schema",
+        crate::audit::runtime::append_tool_event(crate::audit::runtime::ToolEventRecord {
+            audit: self.audit,
+            caller: self.caller,
+            tool: "sql.schema",
             outcome,
-            credential.map(|credential| credential.id.to_string()),
-            credential
-                .map(|credential| credential.alias.clone())
-                .unwrap_or_else(|| self.input.alias.clone()),
-            Some(self.input.purpose.clone()),
-            audit_detail(self.input, credential, outcome, error_kind, output),
-        );
-        crate::audit::append_event(self.audit, event, "sql.schema.audit_failed").await;
+            credential,
+            fallback_alias: &self.input.alias,
+            purpose: Some(self.input.purpose.clone()),
+            detail: audit_detail(self.input, credential, outcome, error_kind, output),
+            failure_event: "sql.schema.audit_failed",
+        })
+        .await;
     }
 }
 

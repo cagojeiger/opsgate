@@ -6,8 +6,8 @@ use opsgate_core::llm_output::{
 use opsgate_core::validation::{trim_required, validate_purpose};
 use opsgate_core::{Error, Result};
 use opsgate_db::{AuditRepo, CredentialRepo, SqlQueryHistoryParams, SqlQueryHistoryRepo};
+use opsgate_domain::Caller;
 use opsgate_domain::credential::{Credential, CredentialCategory, CredentialPolicy};
-use opsgate_domain::{Caller, Channel};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -821,7 +821,7 @@ impl<'a> QueryRecorder<'a> {
                 .map(|credential| credential.owner_user_id)
                 .or(Some(self.caller.user.id)),
             actor_user_id: Some(self.caller.user.id),
-            channel: channel_str(self.caller.channel).to_owned(),
+            channel: crate::audit::runtime::history_channel_str(self.caller.channel).to_owned(),
             request_id: self.caller.request_id.clone(),
             credential_id: credential.map(|credential| credential.id),
             credential_alias: credential
@@ -866,18 +866,18 @@ impl<'a> QueryRecorder<'a> {
         output: Option<&SqlQueryOutput>,
     ) {
         let credential = self.credential.as_ref();
-        let event = crate::audit::runtime::tool_event(
-            self.caller,
-            "sql.query",
+        crate::audit::runtime::append_tool_event(crate::audit::runtime::ToolEventRecord {
+            audit: self.audit,
+            caller: self.caller,
+            tool: "sql.query",
             outcome,
-            credential.map(|credential| credential.id.to_string()),
-            credential
-                .map(|credential| credential.alias.clone())
-                .unwrap_or_else(|| self.input.alias.clone()),
-            Some(self.input.purpose.clone()),
-            audit_detail(self.input, credential, outcome, error_kind, output),
-        );
-        crate::audit::append_event(self.audit, event, "sql.query.audit_failed").await;
+            credential,
+            fallback_alias: &self.input.alias,
+            purpose: Some(self.input.purpose.clone()),
+            detail: audit_detail(self.input, credential, outcome, error_kind, output),
+            failure_event: "sql.query.audit_failed",
+        })
+        .await;
     }
 }
 
@@ -952,7 +952,7 @@ fn pre_input_denial_history_params(
     SqlQueryHistoryParams {
         owner_user_id: Some(caller.user.id),
         actor_user_id: Some(caller.user.id),
-        channel: channel_str(caller.channel).to_owned(),
+        channel: crate::audit::runtime::history_channel_str(caller.channel).to_owned(),
         request_id: caller.request_id.clone(),
         credential_id: None,
         credential_alias: alias.to_owned(),
@@ -973,13 +973,6 @@ fn pre_input_denial_history_params(
         result_columns: serde_json::json!([]),
         error_kind: Some(reason.to_owned()),
         error_message_safe: Some(crate::audit::safe::message(&error.to_string())),
-    }
-}
-
-fn channel_str(channel: Channel) -> &'static str {
-    match channel {
-        Channel::Api => "api",
-        Channel::Mcp | Channel::Browser => "mcp",
     }
 }
 

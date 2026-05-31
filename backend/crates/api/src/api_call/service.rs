@@ -9,9 +9,9 @@ use opsgate_core::validation::{
 };
 use opsgate_core::{Error, Result};
 use opsgate_db::{ApiCallHistoryParams, ApiCallHistoryRepo, AuditRepo, CredentialRepo};
+use opsgate_domain::Caller;
 use opsgate_domain::credential::{Credential, CredentialCategory, CredentialTarget, SecretHeader};
 use opsgate_domain::credential::{contains_fold, header_blocked, request_path_matches_prefix};
-use opsgate_domain::{Caller, Channel};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use schemars::JsonSchema;
 use secrecy::ExposeSecret;
@@ -645,7 +645,7 @@ impl<'a> CallRecorder<'a> {
                 .map(|credential| credential.owner_user_id)
                 .or(Some(self.caller.user.id)),
             actor_user_id: Some(self.caller.user.id),
-            channel: channel_str(self.caller.channel).to_owned(),
+            channel: crate::audit::runtime::history_channel_str(self.caller.channel).to_owned(),
             request_id: self.caller.request_id.clone(),
             credential_id: credential.map(|credential| credential.id),
             credential_alias: credential
@@ -692,25 +692,18 @@ impl<'a> CallRecorder<'a> {
         output: Option<&ApiCallOutput>,
     ) {
         let credential = self.credential.as_ref();
-        let event = crate::audit::runtime::tool_event(
-            self.caller,
-            "api.call",
+        crate::audit::runtime::append_tool_event(crate::audit::runtime::ToolEventRecord {
+            audit: self.audit,
+            caller: self.caller,
+            tool: "api.call",
             outcome,
-            credential.map(|credential| credential.id.to_string()),
-            credential
-                .map(|credential| credential.alias.clone())
-                .unwrap_or_else(|| self.input.alias.clone()),
-            Some(self.input.purpose.clone()),
-            audit_detail(self.input, credential, outcome, error_kind, output),
-        );
-        crate::audit::append_event(self.audit, event, "api.call.audit_failed").await;
-    }
-}
-
-fn channel_str(channel: Channel) -> &'static str {
-    match channel {
-        Channel::Api => "api",
-        Channel::Mcp | Channel::Browser => "mcp",
+            credential,
+            fallback_alias: &self.input.alias,
+            purpose: Some(self.input.purpose.clone()),
+            detail: audit_detail(self.input, credential, outcome, error_kind, output),
+            failure_event: "api.call.audit_failed",
+        })
+        .await;
     }
 }
 
@@ -797,7 +790,7 @@ fn pre_input_denial_history_params(
     ApiCallHistoryParams {
         owner_user_id: Some(caller.user.id),
         actor_user_id: Some(caller.user.id),
-        channel: channel_str(caller.channel).to_owned(),
+        channel: crate::audit::runtime::history_channel_str(caller.channel).to_owned(),
         request_id: caller.request_id.clone(),
         credential_id: None,
         credential_alias: alias.to_owned(),

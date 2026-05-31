@@ -1,9 +1,12 @@
-use opsgate_domain::Caller;
+use opsgate_db::AuditRepo;
+use opsgate_domain::{Caller, Channel};
 use serde_json::Value;
+
+use crate::credential::snapshot::CredentialSnapshot;
 
 use super::actor::caller_actor;
 use super::event::channel_str;
-use super::{AuditEvent, AuditOutcome, AuditTarget};
+use super::{AuditEvent, AuditOutcome, AuditTarget, append_event};
 
 pub(crate) mod reason {
     pub(crate) const BAD_INPUT: &str = "bad_input";
@@ -46,6 +49,43 @@ pub(crate) fn tool_event(
         event = event.purpose(purpose);
     }
     event
+}
+
+pub(crate) struct ToolEventRecord<'a> {
+    pub(crate) audit: &'a AuditRepo,
+    pub(crate) caller: &'a Caller,
+    pub(crate) tool: &'static str,
+    pub(crate) outcome: &'a str,
+    pub(crate) credential: Option<&'a CredentialSnapshot>,
+    pub(crate) fallback_alias: &'a str,
+    pub(crate) purpose: Option<String>,
+    pub(crate) detail: Value,
+    pub(crate) failure_event: &'static str,
+}
+
+pub(crate) async fn append_tool_event(record: ToolEventRecord<'_>) {
+    let event = tool_event(
+        record.caller,
+        record.tool,
+        record.outcome,
+        record
+            .credential
+            .map(|credential| credential.id.to_string()),
+        record
+            .credential
+            .map(|credential| credential.alias.clone())
+            .unwrap_or_else(|| record.fallback_alias.to_owned()),
+        record.purpose,
+        record.detail,
+    );
+    append_event(record.audit, event, record.failure_event).await;
+}
+
+pub(crate) fn history_channel_str(channel: Channel) -> &'static str {
+    match channel {
+        Channel::Api => "api",
+        Channel::Mcp | Channel::Browser => "mcp",
+    }
 }
 
 pub(crate) fn insert_credential_detail(
