@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use opsgate_core::llm_output::{JsonOutputOptions, build_json_output};
+use crate::llm_output::{JsonOutputOptions, build_json_output};
 use opsgate_core::{Error, Result};
 use opsgate_model::credential::{Credential, CredentialTarget, SecretHeader};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};

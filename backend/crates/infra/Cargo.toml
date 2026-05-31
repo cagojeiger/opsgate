@@ -14,6 +14,7 @@ sqlx.workspace = true
 tokio.workspace = true
 url.workspace = true
 uuid.workspace = true
+ipnet.workspace = true
 
 [dev-dependencies]
 chrono.workspace = true

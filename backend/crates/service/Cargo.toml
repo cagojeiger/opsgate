@@ -13,6 +13,7 @@ opsgate-model.workspace = true
 
 serde.workspace = true
 serde_json.workspace = true
+serde_json_path.workspace = true
 schemars.workspace = true
 secrecy.workspace = true
 sqlparser.workspace = true

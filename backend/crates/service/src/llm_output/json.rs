@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use serde_json_path::JsonPath;
 
-use crate::{Error, Result};
+use opsgate_core::{Error, Result};
 
 const DEFAULT_MAX_BYTES: usize = 4096;
 const DEFAULT_MAX_ALLOWED_BYTES: usize = 1024 * 1024;
@@ -38,7 +38,7 @@ impl Default for JsonOutputOptions {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct JsonOutput {
-    #[schemars(schema_with = "crate::schema::json_value_schema")]
+    #[schemars(schema_with = "opsgate_core::schema::json_value_schema")]
     pub body: Value,
     pub original_bytes: usize,
     pub returned_bytes: usize,

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use opsgate_core::llm_output::More;
+use crate::llm_output::More;
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;

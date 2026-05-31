@@ -1,4 +1,4 @@
-use opsgate_core::llm_output::{
+use crate::llm_output::{
     JsonOutput, JsonOutputOptions, More, MoreOptions, build_json_output_from_value,
 };
 use opsgate_core::{Error, Result};

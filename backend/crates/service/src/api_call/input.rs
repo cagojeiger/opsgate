@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use opsgate_core::llm_output::validate_json_paths;
+use crate::llm_output::validate_json_paths;
 use opsgate_core::validation::{
     reject_crlf, trim_required, validate_count, validate_http_header_name,
     validate_http_header_value, validate_http_path, validate_max_bytes, validate_purpose,

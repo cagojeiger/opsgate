@@ -1,4 +1,4 @@
-use opsgate_core::llm_output::validate_json_paths;
+use crate::llm_output::validate_json_paths;
 use opsgate_core::validation::{trim_required, validate_purpose};
 use opsgate_core::{Error, Result};
 use schemars::JsonSchema;
