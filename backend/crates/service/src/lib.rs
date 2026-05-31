@@ -12,3 +12,6 @@ mod llm_output;
 pub mod sql_common;
 pub mod sql_query;
 pub mod sql_schema;
+
+// Re-exported for bootstrap wiring so the API crate does not depend on infra directly.
+pub use opsgate_infra::postgres_pool::TargetPgPools;

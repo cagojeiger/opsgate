@@ -70,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
         audit_repo,
         sealer.clone(),
     )?);
-    let target_pg_pools = opsgate_infra::postgres_pool::TargetPgPools::new();
+    let target_pg_pools = opsgate_service::TargetPgPools::new();
     let sql_schema_service =
         std::sync::Arc::new(opsgate_service::sql_schema::SqlSchemaService::new(
             opsgate_db::CredentialRepo::new(pool.clone()),

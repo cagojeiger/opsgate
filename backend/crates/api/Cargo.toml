@@ -12,7 +12,6 @@ path = "src/main.rs"
 [dependencies]
 opsgate-core.workspace = true
 opsgate-db.workspace = true
-opsgate-infra.workspace = true
 opsgate-model.workspace = true
 opsgate-service.workspace = true
 
@@ -37,9 +36,6 @@ anyhow.workspace = true
 jsonwebtoken.workspace = true
 openidconnect.workspace = true
 reqwest.workspace = true
-rand.workspace = true
-sha2.workspace = true
-base64.workspace = true
 url.workspace = true
 axum-extra.workspace = true
 subtle.workspace = true
@@ -49,7 +45,9 @@ uuid.workspace = true
 thiserror.workspace = true
 schemars.workspace = true
 time.workspace = true
-sqlparser.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
 
 [lints]
 workspace = true
