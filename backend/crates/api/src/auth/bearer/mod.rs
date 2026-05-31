@@ -10,5 +10,3 @@ pub(crate) use error::{
 };
 pub(crate) use extractor::extract_bearer;
 pub(crate) use verify::verify_bearer_mcp;
-#[cfg(test)]
-pub(crate) use verify::verify_token_attrs;

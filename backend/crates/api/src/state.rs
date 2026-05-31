@@ -12,7 +12,6 @@ use opsgate_service::credential::CredentialService;
 use opsgate_service::sql_query::SqlQueryService;
 use opsgate_service::sql_schema::SqlSchemaService;
 
-use crate::auth::jwks::JwksCache;
 use crate::auth::oidc::OidcProvider;
 
 #[derive(Clone)]
@@ -26,8 +25,7 @@ pub(crate) struct AppState {
 
 #[derive(Clone)]
 pub(crate) struct AuthState {
-    pub(crate) jwks: Arc<JwksCache>,
-    pub(crate) api_authority: crate::auth::api::ApiAuthority,
+    pub(crate) jwt: crate::auth::jwt::JwtAuthority,
     pub(crate) oidc: Arc<OidcProvider>,
     pub(crate) resolver: Arc<dyn CallerResolver>,
 }

@@ -86,21 +86,13 @@ async fn main() -> anyhow::Result<()> {
         target_pg_pools,
     ));
     let config = std::sync::Arc::new(config);
-    let api_authority = auth::api::api_authority_from_url(&config, jwks_url.clone());
-    let jwks = std::sync::Arc::new(auth::jwks::JwksCache::new(
-        jwks_url,
-        config.authgate_url.clone(),
-        config.resource_url.clone(),
-        config.jwks_cache_ttl,
-        http.clone(),
-    ));
+    let jwt = auth::jwt::JwtAuthority::from_url(&config, jwks_url);
     let oidc = std::sync::Arc::new(auth::oidc::OidcProvider::new(&config, http.clone()));
     let state = AppState {
         db: pool.clone(),
         config: config.clone(),
         auth: AuthState {
-            jwks,
-            api_authority,
+            jwt,
             oidc,
             resolver: std::sync::Arc::new(resolver),
         },

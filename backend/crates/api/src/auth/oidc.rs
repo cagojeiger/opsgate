@@ -2,7 +2,7 @@
 //!
 //! Provider discovery (`.well-known/openid-configuration`) returns endpoint
 //! addresses that change far less often than signing keys (those are handled
-//! separately by [`crate::auth::jwks::JwksCache`]). So instead of discovering
+//! separately by the bearer JWT verifier). So instead of discovering
 //! on every login/callback, we cache the discovered metadata with a generous
 //! TTL and rebuild the (cheap, network-free) client per request from it.
 

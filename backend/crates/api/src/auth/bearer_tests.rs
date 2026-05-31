@@ -1,5 +1,4 @@
 use secrecy::SecretString;
-use std::collections::HashMap;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::pin::Pin;
@@ -11,7 +10,7 @@ use axum::http::header::WWW_AUTHENTICATE;
 use axum::http::{Method, Request, StatusCode};
 use axum::response::Response;
 use chrono::Utc;
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, encode};
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use opsgate_model::{Caller, Channel, IdentityError, ResolveAttrs, User};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -19,11 +18,10 @@ use sqlx::postgres::PgPoolOptions;
 use tower::ServiceExt as _;
 use uuid::Uuid;
 
-use crate::auth::jwks::JwksCache;
 use crate::identity::CallerResolver;
 use crate::state::{AppState, AuthState, ToolState};
 
-use crate::auth::bearer::{AuthError, resolve_api_caller, verify_token_attrs};
+use crate::auth::bearer::{AuthError, resolve_api_caller};
 
 const KEY: &str = r#"-----BEGIN PRIVATE KEY-----
 MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCx8TUdJX0WeXTQ
@@ -55,16 +53,6 @@ EmW0T9kajxWyy7ochOgNdA==
 -----END PRIVATE KEY-----"#;
 
 const TEST_DB_URL: &str = "postgres://opsgate:opsgate@localhost/opsgate?connect_timeout=1";
-
-const PUB_KEY: &str = r#"-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsfE1HSV9Fnl00COG8SPE
-tPGOMa95P4XMhpsnSV4lbfoUFyuAjPUc/uFtkmH2s3VoNKdYdHsi/PNycvS5sX0L
-OOE9Zon7OwmZZvIocZmY97p7BUAAO4XfXxh8MDW1UKzBswG+7TVekRKAbPNNKUjJ
-egbWtFYErU/7WlF8CrCX5ebDfyjkuGUH+bYRRnRd10pX/PTIQ6159FdJ6R9wgNIk
-0gRNRHsWEdlV+AxhPAmYXPWFNvYpDtiNlCi3anCp8kTlWzLKKeJdWBHzr3xuByUG
-XLcfCIoVsBd+SXtpS62E2pkt8D8OitcxcE9/8DZcXB7Z+TIj544uAY3XaPTmeKPc
-dwIDAQAB
------END PUBLIC KEY-----"#;
 
 #[derive(Debug, Serialize)]
 struct TestClaims {
@@ -176,8 +164,7 @@ fn state_with_resource_url(
         jwks_cache_ttl: Duration::from_secs(300),
         secure_cookies: false,
     });
-    let jwks = Arc::new(jwks_cache(&config.resource_url)?);
-    let api_authority = crate::auth::api::api_authority_from_jwks(&config, aliri_jwks()?);
+    let jwt = crate::auth::jwt::JwtAuthority::from_jwks(&config, aliri_jwks()?);
     let oidc = Arc::new(crate::auth::oidc::OidcProvider::new(
         &config,
         reqwest::Client::new(),
@@ -215,8 +202,7 @@ fn state_with_resource_url(
         db: pool,
         config,
         auth: AuthState {
-            jwks,
-            api_authority,
+            jwt,
             oidc,
             resolver: Arc::new(TestResolver { mode }),
         },
@@ -230,17 +216,32 @@ fn state_with_resource_url(
     })
 }
 
-fn jwks_cache(resource_url: &str) -> Result<JwksCache, Box<dyn std::error::Error>> {
-    let mut keys = HashMap::new();
-    keys.insert(
-        "kid-1".to_owned(),
-        DecodingKey::from_rsa_pem(PUB_KEY.as_bytes())?,
-    );
-    Ok(JwksCache::with_keys(
-        "https://auth.example.test".to_owned(),
-        resource_url.to_owned(),
-        keys,
+fn jwt_authority(
+    resource_url: &str,
+) -> Result<crate::auth::jwt::JwtAuthority, Box<dyn std::error::Error>> {
+    let mut config = test_config(resource_url);
+    config.resource_url = resource_url.to_owned();
+    Ok(crate::auth::jwt::JwtAuthority::from_jwks(
+        &config,
+        aliri_jwks()?,
     ))
+}
+
+fn test_config(resource_url: &str) -> crate::config::Config {
+    crate::config::Config {
+        bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9091),
+        database_url: TEST_DB_URL.to_owned(),
+        database_migrate_url: TEST_DB_URL.to_owned(),
+        db_max_connections: 1,
+        authgate_url: "https://auth.example.test".to_owned(),
+        opsgate_public_url: "http://localhost:9091".to_owned(),
+        oauth_client_id: "client".to_owned(),
+        oauth_redirect_url: "http://localhost:9091/callback".to_owned(),
+        resource_url: resource_url.to_owned(),
+        master_key: SecretString::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
+        jwks_cache_ttl: Duration::from_secs(300),
+        secure_cookies: false,
+    }
 }
 
 fn aliri_jwks() -> Result<aliri::Jwks, Box<dyn std::error::Error>> {
@@ -343,7 +344,7 @@ fn epoch_secs() -> usize {
 
 #[tokio::test]
 async fn verify_accepts_valid_token() -> Result<(), Box<dyn std::error::Error>> {
-    let jwks = jwks_cache("https://api.example.test")?;
+    let jwt = jwt_authority("https://api.example.test")?;
     let token = token(
         "sub-1",
         "https://auth.example.test",
@@ -351,14 +352,14 @@ async fn verify_accepts_valid_token() -> Result<(), Box<dyn std::error::Error>> 
         future_exp(),
         "kid-1",
     )?;
-    let attrs = verify_token_attrs(&jwks, &token).await?;
+    let attrs = jwt.verify(&token).await?;
     assert_eq!(attrs.sub, "sub-1");
     Ok(())
 }
 
 #[tokio::test]
 async fn verify_rejects_invalid_claims_without_panic() -> Result<(), Box<dyn std::error::Error>> {
-    let jwks = jwks_cache("https://api.example.test")?;
+    let jwt = jwt_authority("https://api.example.test")?;
     let cases = [
         token(
             "sub-1",
@@ -392,7 +393,7 @@ async fn verify_rejects_invalid_claims_without_panic() -> Result<(), Box<dyn std
         alg_none_token(),
     ];
     for (idx, candidate) in cases.into_iter().enumerate() {
-        let err = verify_token_attrs(&jwks, &candidate).await.err();
+        let err = jwt.verify(&candidate).await.err();
         assert!(
             matches!(err, Some(AuthError::InvalidToken)),
             "case {idx}: {err:?}"
@@ -403,7 +404,7 @@ async fn verify_rejects_invalid_claims_without_panic() -> Result<(), Box<dyn std
 
 #[tokio::test]
 async fn verify_accepts_aud_array_and_trailing_slash() -> Result<(), Box<dyn std::error::Error>> {
-    let jwks = jwks_cache("https://api.example.test")?;
+    let jwt = jwt_authority("https://api.example.test")?;
     let token = token(
         "sub-1",
         "https://auth.example.test",
@@ -411,7 +412,7 @@ async fn verify_accepts_aud_array_and_trailing_slash() -> Result<(), Box<dyn std
         future_exp(),
         "kid-1",
     )?;
-    let attrs = verify_token_attrs(&jwks, &token).await?;
+    let attrs = jwt.verify(&token).await?;
     assert_eq!(attrs.sub, "sub-1");
     Ok(())
 }
