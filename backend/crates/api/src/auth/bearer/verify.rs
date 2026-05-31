@@ -6,13 +6,13 @@ use crate::identity::CallerResolver;
 use crate::state::AppState;
 
 pub(crate) async fn verify_bearer(state: &AppState, token: &str) -> Result<Caller, AuthError> {
-    let attrs = verify_token_attrs(&state.jwks, token).await?;
-    resolve_api_caller(state.resolver.as_ref(), attrs).await
+    let attrs = verify_token_attrs(&state.auth.jwks, token).await?;
+    resolve_api_caller(state.auth.resolver.as_ref(), attrs).await
 }
 
 pub(crate) async fn verify_bearer_mcp(state: &AppState, token: &str) -> Result<Caller, AuthError> {
-    let attrs = verify_token_attrs(&state.jwks, token).await?;
-    resolve_mcp_caller(state.resolver.as_ref(), attrs).await
+    let attrs = verify_token_attrs(&state.auth.jwks, token).await?;
+    resolve_mcp_caller(state.auth.resolver.as_ref(), attrs).await
 }
 
 /// Verify the bearer JWT against JWKS and extract identity attributes.

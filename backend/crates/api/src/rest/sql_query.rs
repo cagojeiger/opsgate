@@ -20,6 +20,7 @@ async fn query(
     let input = serde_json::from_slice::<SqlQueryInput>(&body)
         .map_err(|_error| ApiError::invalid_field("invalid json"))?;
     state
+        .tools
         .sql_query
         .execute(&caller, input)
         .await

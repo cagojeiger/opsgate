@@ -29,9 +29,15 @@ async fn register(
         .map_err(|_error| ApiError::invalid_field("invalid json"))?;
     let credential = match input.into_service_input()? {
         RegisterServiceInput::Http(input) => {
-            state.credentials.register_http(&caller, input).await?
+            state
+                .tools
+                .credentials
+                .register_http(&caller, input)
+                .await?
         }
-        RegisterServiceInput::Sql(input) => state.credentials.register_sql(&caller, input).await?,
+        RegisterServiceInput::Sql(input) => {
+            state.tools.credentials.register_sql(&caller, input).await?
+        }
     };
     Ok(Json(RegisterCredentialOutput::created(credential)))
 }
@@ -43,7 +49,7 @@ async fn list(
 ) -> Result<Json<CredentialListOutput>, ApiError> {
     let input = parse_list_query(query.as_deref())?;
     let fields = input.fields.clone().and_then(normalize_fields);
-    let page = state.credentials.list(caller.user.id, input).await?;
+    let page = state.tools.credentials.list(caller.user.id, input).await?;
     let returned = page.credentials.len();
     Ok(Json(CredentialListOutput {
         credentials: page
@@ -133,6 +139,7 @@ async fn remove(
             .reason
     };
     let credential = state
+        .tools
         .credentials
         .delete(&caller, DeleteCredentialInput { alias, reason })
         .await?;

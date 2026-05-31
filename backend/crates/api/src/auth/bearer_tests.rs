@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use crate::auth::jwks::JwksCache;
 use crate::identity::CallerResolver;
-use crate::state::AppState;
+use crate::state::{AppState, AuthState, ToolState};
 
 use crate::auth::bearer::{AuthError, resolve_api_caller, verify_token_attrs};
 
@@ -213,13 +213,17 @@ fn state_with_resource_url(
     Ok(AppState {
         db: pool,
         config,
-        jwks,
-        oidc,
-        resolver: Arc::new(TestResolver { mode }),
-        credentials,
-        api_calls,
-        sql_schema,
-        sql_query,
+        auth: AuthState {
+            jwks,
+            oidc,
+            resolver: Arc::new(TestResolver { mode }),
+        },
+        tools: ToolState {
+            credentials,
+            api_calls,
+            sql_schema,
+            sql_query,
+        },
         audit,
         http: reqwest::Client::new(),
     })

@@ -12,6 +12,7 @@ pub async fn call(
 ) -> Result<Json<ApiCallOutput>, ErrorData> {
     let caller = crate::mcp::tools::context::caller(parts)?;
     state
+        .tools
         .api_calls
         .call(caller, input)
         .await

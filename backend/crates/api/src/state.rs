@@ -18,13 +18,23 @@ use crate::auth::oidc::OidcProvider;
 pub(crate) struct AppState {
     pub(crate) db: PgPool,
     pub(crate) config: Arc<Config>,
+    pub(crate) auth: AuthState,
+    pub(crate) tools: ToolState,
+    pub(crate) audit: Arc<opsgate_db::AuditRepo>,
+    pub(crate) http: reqwest::Client,
+}
+
+#[derive(Clone)]
+pub(crate) struct AuthState {
     pub(crate) jwks: Arc<JwksCache>,
     pub(crate) oidc: Arc<OidcProvider>,
     pub(crate) resolver: Arc<dyn CallerResolver>,
+}
+
+#[derive(Clone)]
+pub(crate) struct ToolState {
     pub(crate) credentials: Arc<CredentialService>,
     pub(crate) api_calls: Arc<ApiCallService>,
     pub(crate) sql_schema: Arc<SqlSchemaService>,
     pub(crate) sql_query: Arc<SqlQueryService>,
-    pub(crate) audit: Arc<opsgate_db::AuditRepo>,
-    pub(crate) http: reqwest::Client,
 }

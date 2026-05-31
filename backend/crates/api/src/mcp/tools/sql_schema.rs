@@ -12,6 +12,7 @@ pub async fn call(
 ) -> Result<Json<SqlSchemaOutput>, ErrorData> {
     let caller = crate::mcp::tools::context::caller(parts)?;
     state
+        .tools
         .sql_schema
         .execute(caller, input)
         .await

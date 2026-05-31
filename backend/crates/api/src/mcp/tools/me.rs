@@ -46,6 +46,7 @@ pub(crate) async fn call(
 ) -> Result<Json<McpMeOutput>, ErrorData> {
     let caller = crate::mcp::tools::context::caller(parts)?;
     let summary = state
+        .tools
         .credentials
         .summary(caller.user.id)
         .await

@@ -24,7 +24,7 @@ pub(crate) struct CallbackQuery {
 }
 
 pub(crate) async fn login(State(state): State<AppState>, jar: CookieJar) -> Response {
-    let login_flow = match new_login_flow(&state.oidc).await {
+    let login_flow = match new_login_flow(&state.auth.oidc).await {
         Ok(flow) => flow,
         Err(error) => {
             tracing::error!(event = "oauth.login_flow_failed", %error);
@@ -132,7 +132,9 @@ pub(crate) async fn callback(
     };
 
     let userinfo =
-        match exchange_code_for_userinfo(&state.oidc, &state.http, code, &verifier, &nonce).await {
+        match exchange_code_for_userinfo(&state.auth.oidc, &state.http, code, &verifier, &nonce)
+            .await
+        {
             Ok(userinfo) => userinfo,
             Err(error) => {
                 tracing::warn!(event = "oauth.exchange_failed", %error);
@@ -152,7 +154,7 @@ pub(crate) async fn callback(
         email: userinfo.email.unwrap_or_default(),
         name: userinfo.name.unwrap_or_default(),
     };
-    match state.resolver.resolve_browser(attrs.clone()).await {
+    match state.auth.resolver.resolve_browser(attrs.clone()).await {
         Ok(caller) => {
             let caller = caller.with_request_metadata(
                 metadata.request_id.clone(),

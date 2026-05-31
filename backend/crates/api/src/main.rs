@@ -25,7 +25,7 @@ mod sql_schema;
 mod state;
 mod target;
 
-use state::AppState;
+use state::{AppState, AuthState, ToolState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -102,13 +102,17 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         db: pool.clone(),
         config: config.clone(),
-        jwks,
-        oidc,
-        resolver: std::sync::Arc::new(resolver),
-        credentials: credential_service,
-        api_calls: api_call_service,
-        sql_schema: sql_schema_service,
-        sql_query: sql_query_service,
+        auth: AuthState {
+            jwks,
+            oidc,
+            resolver: std::sync::Arc::new(resolver),
+        },
+        tools: ToolState {
+            credentials: credential_service,
+            api_calls: api_call_service,
+            sql_schema: sql_schema_service,
+            sql_query: sql_query_service,
+        },
         audit,
         http,
     };

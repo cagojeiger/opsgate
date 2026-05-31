@@ -17,6 +17,7 @@ pub async fn list(
     let caller = crate::mcp::tools::context::caller(parts)?;
     let fields = input.fields.clone().and_then(normalize_fields);
     let page = state
+        .tools
         .credentials
         .list(caller.user.id, input)
         .await
@@ -44,6 +45,7 @@ pub async fn register_http(
 ) -> Result<Json<RegisterCredentialOutput>, ErrorData> {
     let caller = crate::mcp::tools::context::caller(parts)?;
     let credential = state
+        .tools
         .credentials
         .register_http(caller, input)
         .await
@@ -58,6 +60,7 @@ pub async fn register_sql(
 ) -> Result<Json<RegisterCredentialOutput>, ErrorData> {
     let caller = crate::mcp::tools::context::caller(parts)?;
     let credential = state
+        .tools
         .credentials
         .register_sql(caller, input)
         .await
@@ -72,6 +75,7 @@ pub async fn update_http(
 ) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
     let caller = crate::mcp::tools::context::caller(parts)?;
     let update = state
+        .tools
         .credentials
         .update_http(caller, input)
         .await
@@ -86,6 +90,7 @@ pub async fn update_sql(
 ) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
     let caller = crate::mcp::tools::context::caller(parts)?;
     let update = state
+        .tools
         .credentials
         .update_sql(caller, input)
         .await
@@ -100,6 +105,7 @@ pub async fn delete(
 ) -> Result<Json<DeleteCredentialOutput>, ErrorData> {
     let caller = crate::mcp::tools::context::caller(parts)?;
     let credential = state
+        .tools
         .credentials
         .delete(caller, input)
         .await

@@ -20,6 +20,7 @@ async fn call(
     let input = serde_json::from_slice::<ApiCallInput>(&body)
         .map_err(|_error| ApiError::invalid_field("invalid json"))?;
     state
+        .tools
         .api_calls
         .call(&caller, input)
         .await
