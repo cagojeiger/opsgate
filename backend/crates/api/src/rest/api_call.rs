@@ -4,9 +4,9 @@ use axum::routing::post;
 use axum::{Json, Router};
 use opsgate_model::Caller;
 
-use crate::api_call::{ApiCallInput, ApiCallOutput};
 use crate::error::ApiError;
 use crate::state::AppState;
+use opsgate_service::api_call::{ApiCallInput, ApiCallOutput};
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new().route("/v1/api/call", post(call))

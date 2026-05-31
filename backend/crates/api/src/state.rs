@@ -6,11 +6,11 @@ use axum::extract::FromRef;
 use opsgate_core::Config;
 use opsgate_db::PgPool;
 
-use crate::api_call::ApiCallService;
-use crate::credential::CredentialService;
 use crate::identity::CallerResolver;
-use crate::sql_query::SqlQueryService;
-use crate::sql_schema::SqlSchemaService;
+use opsgate_service::api_call::ApiCallService;
+use opsgate_service::credential::CredentialService;
+use opsgate_service::sql_query::SqlQueryService;
+use opsgate_service::sql_schema::SqlSchemaService;
 
 use crate::auth::jwks::JwksCache;
 use crate::auth::oidc::OidcProvider;

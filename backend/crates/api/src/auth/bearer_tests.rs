@@ -184,11 +184,11 @@ fn state_with_resource_url(
     let credential_repo = opsgate_db::CredentialRepo::new(pool.clone());
     let cipher = opsgate_core::crypto::Cipher::new("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")?;
     let sealer = opsgate_core::crypto::Sealer::new(cipher);
-    let credentials = Arc::new(crate::credential::CredentialService::new(
+    let credentials = Arc::new(opsgate_service::credential::CredentialService::new(
         credential_repo,
         sealer.clone(),
     ));
-    let api_calls = Arc::new(crate::api_call::ApiCallService::new(
+    let api_calls = Arc::new(opsgate_service::api_call::ApiCallService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
         opsgate_db::ApiCallHistoryRepo::new(pool.clone()),
         opsgate_db::AuditRepo::new(pool.clone()),
@@ -197,13 +197,13 @@ fn state_with_resource_url(
     let audit_repo = opsgate_db::AuditRepo::new(pool.clone());
     let audit = Arc::new(audit_repo.clone());
     let target_pg_pools = opsgate_infra::postgres_pool::TargetPgPools::new();
-    let sql_schema = Arc::new(crate::sql_schema::SqlSchemaService::new(
+    let sql_schema = Arc::new(opsgate_service::sql_schema::SqlSchemaService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
         audit_repo.clone(),
         sealer.clone(),
         target_pg_pools.clone(),
     ));
-    let sql_query = Arc::new(crate::sql_query::SqlQueryService::new(
+    let sql_query = Arc::new(opsgate_service::sql_query::SqlQueryService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
         opsgate_db::SqlQueryHistoryRepo::new(pool.clone()),
         audit_repo,

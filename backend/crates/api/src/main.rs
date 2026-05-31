@@ -9,19 +9,14 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-mod api_call;
 mod audit;
 mod auth;
-mod credential;
 mod error;
 mod identity;
 mod mcp;
 mod request_context;
 mod rest;
 mod routes;
-mod sql_common;
-mod sql_query;
-mod sql_schema;
 mod state;
 
 use state::{AppState, AuthState, ToolState};
@@ -65,24 +60,24 @@ async fn main() -> anyhow::Result<()> {
     let sql_query_audit_repo = audit_repo.clone();
     let cipher = opsgate_core::crypto::Cipher::new(config.master_key.expose_secret())?;
     let sealer = opsgate_core::crypto::Sealer::new(cipher);
-    let credential_service = std::sync::Arc::new(crate::credential::CredentialService::new(
-        credential_repo,
-        sealer.clone(),
-    ));
-    let api_call_service = std::sync::Arc::new(crate::api_call::ApiCallService::new(
+    let credential_service = std::sync::Arc::new(
+        opsgate_service::credential::CredentialService::new(credential_repo, sealer.clone()),
+    );
+    let api_call_service = std::sync::Arc::new(opsgate_service::api_call::ApiCallService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
         api_call_history,
         audit_repo,
         sealer.clone(),
     )?);
     let target_pg_pools = opsgate_infra::postgres_pool::TargetPgPools::new();
-    let sql_schema_service = std::sync::Arc::new(crate::sql_schema::SqlSchemaService::new(
-        opsgate_db::CredentialRepo::new(pool.clone()),
-        sql_schema_audit_repo,
-        sealer.clone(),
-        target_pg_pools.clone(),
-    ));
-    let sql_query_service = std::sync::Arc::new(crate::sql_query::SqlQueryService::new(
+    let sql_schema_service =
+        std::sync::Arc::new(opsgate_service::sql_schema::SqlSchemaService::new(
+            opsgate_db::CredentialRepo::new(pool.clone()),
+            sql_schema_audit_repo,
+            sealer.clone(),
+            target_pg_pools.clone(),
+        ));
+    let sql_query_service = std::sync::Arc::new(opsgate_service::sql_query::SqlQueryService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
         sql_query_history,
         sql_query_audit_repo,

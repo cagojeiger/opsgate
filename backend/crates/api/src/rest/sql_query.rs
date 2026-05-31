@@ -5,8 +5,8 @@ use axum::{Json, Router};
 use opsgate_model::Caller;
 
 use crate::error::ApiError;
-use crate::sql_query::{SqlQueryInput, SqlQueryOutput};
 use crate::state::AppState;
+use opsgate_service::sql_query::{SqlQueryInput, SqlQueryOutput};
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new().route("/v1/sql/query", post(query))

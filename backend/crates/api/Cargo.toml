@@ -14,6 +14,7 @@ opsgate-core.workspace = true
 opsgate-db.workspace = true
 opsgate-infra.workspace = true
 opsgate-model.workspace = true
+opsgate-service.workspace = true
 
 tokio.workspace = true
 tokio-util.workspace = true

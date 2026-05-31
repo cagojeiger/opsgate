@@ -21,21 +21,21 @@ use rmcp::transport::streamable_http_server::session::never::NeverSessionManager
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::{ErrorData, Json, ServerHandler, tool, tool_handler, tool_router};
 
-use crate::api_call::{ApiCallInput, ApiCallOutput};
 use crate::auth::bearer::{
     AuthError, auth_error_body, extract_bearer, shared_scoped_challenge_header, status_for_error,
     verify_bearer_mcp,
 };
-use crate::credential::{
+use crate::mcp::tools::me::{McpMeOutput, McpToolset};
+use crate::request_context::RequestMetadata;
+use crate::state::{AppState, AuthRuntimeState};
+use opsgate_service::api_call::{ApiCallInput, ApiCallOutput};
+use opsgate_service::credential::{
     CredentialListOutput, DeleteCredentialInput, DeleteCredentialOutput, ListCredentialsInput,
     RegisterCredentialOutput, RegisterHttpCredentialInput, RegisterSqlCredentialInput,
     UpdateCredentialInput, UpdateCredentialOutput,
 };
-use crate::mcp::tools::me::{McpMeOutput, McpToolset};
-use crate::request_context::RequestMetadata;
-use crate::sql_query::{SqlQueryInput, SqlQueryOutput};
-use crate::sql_schema::{SqlSchemaInput, SqlSchemaOutput};
-use crate::state::{AppState, AuthRuntimeState};
+use opsgate_service::sql_query::{SqlQueryInput, SqlQueryOutput};
+use opsgate_service::sql_schema::{SqlSchemaInput, SqlSchemaOutput};
 
 #[derive(Clone)]
 pub(crate) struct RuntimeMcpServer {

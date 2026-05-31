@@ -2,12 +2,12 @@ use axum::http::request::Parts;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{ErrorData, Json};
 
-use crate::credential::{
+use crate::state::AppState;
+use opsgate_service::credential::{
     CredentialListOutput, CredentialOutput, DeleteCredentialInput, DeleteCredentialOutput,
     ListCredentialsInput, PageOutput, RegisterCredentialOutput, RegisterHttpCredentialInput,
     RegisterSqlCredentialInput, UpdateCredentialInput, UpdateCredentialOutput, normalize_fields,
 };
-use crate::state::AppState;
 
 pub async fn list(
     state: &AppState,

@@ -5,8 +5,8 @@ use rmcp::Json;
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::credential::CredentialSummary;
 use crate::state::AppState;
+use opsgate_service::credential::CredentialSummary;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum McpToolset {
@@ -148,7 +148,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::{McpToolset, build_me};
-    use crate::credential::CredentialSummary;
+    use opsgate_service::credential::CredentialSummary;
 
     #[test]
     fn admin_me_reports_admin_capabilities_without_aliases() {

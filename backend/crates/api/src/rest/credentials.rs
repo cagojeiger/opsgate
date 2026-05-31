@@ -6,13 +6,13 @@ use opsgate_model::Caller;
 use opsgate_model::credential::{CredentialCategory, CredentialPolicy};
 use serde::Deserialize;
 
-use crate::credential::{
+use crate::error::ApiError;
+use crate::state::AppState;
+use opsgate_service::credential::{
     CredentialListOutput, CredentialOutput, DeleteCredentialInput, DeleteCredentialOutput,
     ListCredentialsInput, PageOutput, RegisterCredentialOutput, RegisterHttpCredentialInput,
     RegisterSqlCredentialInput, SecretHeaderInput, normalize_fields,
 };
-use crate::error::ApiError;
-use crate::state::AppState;
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()

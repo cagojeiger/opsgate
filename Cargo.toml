@@ -15,6 +15,7 @@ opsgate-core = { path = "backend/crates/core" }
 opsgate-db = { path = "backend/crates/db" }
 opsgate-infra = { path = "backend/crates/infra" }
 opsgate-model = { path = "backend/crates/model" }
+opsgate-service = { path = "backend/crates/service" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

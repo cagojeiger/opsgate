@@ -2,8 +2,8 @@ use axum::http::request::Parts;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{ErrorData, Json};
 
-use crate::sql_query::{SqlQueryInput, SqlQueryOutput};
 use crate::state::AppState;
+use opsgate_service::sql_query::{SqlQueryInput, SqlQueryOutput};
 
 pub async fn call(
     state: &AppState,

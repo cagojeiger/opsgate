@@ -1632,6 +1632,7 @@ dependencies = [
  "opsgate-db",
  "opsgate-infra",
  "opsgate-model",
+ "opsgate-service",
  "rand 0.8.6",
  "reqwest",
  "rmcp",
@@ -1714,6 +1715,30 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "opsgate-service"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "opsgate-core",
+ "opsgate-db",
+ "opsgate-infra",
+ "opsgate-model",
+ "reqwest",
+ "schemars 1.2.1",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlparser",
+ "sqlx",
+ "tokio",
+ "tracing",
  "url",
  "uuid",
 ]

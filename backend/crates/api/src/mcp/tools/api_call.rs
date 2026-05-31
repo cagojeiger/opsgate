@@ -2,8 +2,8 @@ use axum::http::request::Parts;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{ErrorData, Json};
 
-use crate::api_call::{ApiCallInput, ApiCallOutput};
 use crate::state::AppState;
+use opsgate_service::api_call::{ApiCallInput, ApiCallOutput};
 
 pub async fn call(
     state: &AppState,

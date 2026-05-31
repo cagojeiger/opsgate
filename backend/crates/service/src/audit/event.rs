@@ -5,18 +5,26 @@ use serde_json::Value;
 use super::target::AuditTarget;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AuditOutcome {
+pub enum AuditOutcome {
     Ok,
     Denied,
     Error,
 }
 
 impl AuditOutcome {
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Denied => "denied",
             Self::Error => "error",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "ok" => Self::Ok,
+            "denied" => Self::Denied,
+            _ => Self::Error,
         }
     }
 
@@ -29,7 +37,7 @@ impl AuditOutcome {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct AuditEvent {
+pub struct AuditEvent {
     action: String,
     channel: Channel,
     outcome: AuditOutcome,
@@ -43,7 +51,7 @@ pub(crate) struct AuditEvent {
 }
 
 impl AuditEvent {
-    pub(crate) fn new(action: impl Into<String>, channel: Channel, outcome: AuditOutcome) -> Self {
+    pub fn new(action: impl Into<String>, channel: Channel, outcome: AuditOutcome) -> Self {
         Self {
             action: action.into(),
             channel,
@@ -58,7 +66,7 @@ impl AuditEvent {
         }
     }
 
-    pub(crate) fn actor(mut self, actor: AuditActor) -> Self {
+    pub fn actor(mut self, actor: AuditActor) -> Self {
         self.actor_user_id = actor.user_id;
         self.actor_ip = actor.ip;
         self.actor_user_agent = actor.user_agent;
@@ -66,17 +74,22 @@ impl AuditEvent {
         self
     }
 
-    pub(crate) fn target(mut self, target: AuditTarget) -> Self {
+    pub fn target(mut self, target: AuditTarget) -> Self {
         self.target = Some(target);
         self
     }
 
-    pub(crate) fn detail(mut self, detail: Value) -> Self {
+    pub fn purpose(mut self, purpose: impl Into<String>) -> Self {
+        self.purpose = Some(purpose.into());
+        self
+    }
+
+    pub fn detail(mut self, detail: Value) -> Self {
         self.detail = detail;
         self
     }
 
-    pub(crate) fn into_params(self) -> AuditLogParams {
+    pub fn into_params(self) -> AuditLogParams {
         let (target_type, target_id, target_key) = self
             .target
             .map(AuditTarget::into_parts)
@@ -100,24 +113,20 @@ impl AuditEvent {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct AuditActor {
+pub struct AuditActor {
     pub(crate) user_id: Option<uuid::Uuid>,
     pub(crate) ip: Option<String>,
     pub(crate) user_agent: Option<String>,
     pub(crate) request_id: Option<String>,
 }
 
-pub(crate) async fn append_event(
-    audit: &AuditRepo,
-    event: AuditEvent,
-    failure_event: &'static str,
-) {
+pub async fn append_event(audit: &AuditRepo, event: AuditEvent, failure_event: &'static str) {
     if let Err(error) = audit.append(event.into_params()).await {
         tracing::error!(event = failure_event, detail = %error);
     }
 }
 
-pub(crate) fn channel_str(channel: Channel) -> &'static str {
+pub fn channel_str(channel: Channel) -> &'static str {
     match channel {
         Channel::Browser => "browser",
         Channel::Api => "api",
