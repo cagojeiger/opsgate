@@ -1,7 +1,8 @@
 use std::time::Instant;
 
 use opsgate_core::llm_output::{
-    JsonOutput, JsonOutputOptions, More, MoreOptions, build_json_output, validate_json_paths,
+    JsonOutput, JsonOutputOptions, More, MoreOptions, build_json_output_from_value,
+    validate_json_paths,
 };
 use opsgate_core::validation::{trim_required, validate_purpose};
 use opsgate_core::{Error, Result};
@@ -600,7 +601,11 @@ async fn load_rows(conn: &mut PgConnection, input: &NormalizedInput) -> Result<S
         .fetch_one(conn)
         .await
         .map_err(|_error| Error::internal("sql query failed"))?;
-    let mut rows = value.as_array().cloned().unwrap_or_default();
+    // json_agg always yields an array; move it out instead of cloning the rows.
+    let mut rows = match value {
+        Value::Array(rows) => rows,
+        _ => Vec::new(),
+    };
     let mut truncated = false;
     if rows.len() > usize::try_from(input.max_rows).unwrap_or(usize::MAX) {
         rows.truncate(usize::try_from(input.max_rows).unwrap_or(usize::MAX));
@@ -668,9 +673,7 @@ fn build_column_output(
 ) -> Result<SqlQueryOutput> {
     let row_count = rows.len();
     let (body, column_names) = transpose_rows(rows)?;
-    let bytes = serde_json::to_vec(&body)
-        .map_err(|error| Error::internal(format!("serialize sql query body: {error}")))?;
-    let shaped = build_shaped_body(&bytes, input)?;
+    let shaped = build_shaped_body(body, input)?;
     let truncated_total = truncated || shaped.truncated;
     let more = finalize_more(shaped.more, truncated, input);
 
@@ -728,9 +731,9 @@ fn row_truncation_more(input: &NormalizedInput) -> More {
     }
 }
 
-fn build_shaped_body(bytes: &[u8], input: &NormalizedInput) -> Result<JsonOutput> {
-    build_json_output(
-        bytes,
+fn build_shaped_body(body: Value, input: &NormalizedInput) -> Result<JsonOutput> {
+    build_json_output_from_value(
+        body,
         JsonOutputOptions {
             max_bytes: input.max_bytes,
             max_allowed_bytes: MAX_MAX_BYTES,
@@ -746,9 +749,10 @@ fn transpose_rows(rows: Vec<Value>) -> Result<(Value, Vec<String>)> {
     let mut column_values = Vec::<Vec<Value>>::new();
 
     for (row_index, row) in rows.into_iter().enumerate() {
-        let object = row
-            .as_object()
-            .ok_or_else(|| Error::internal("sql result row is not an object"))?;
+        let mut object = match row {
+            Value::Object(object) => object,
+            _ => return Err(Error::internal("sql result row is not an object")),
+        };
         for key in object.keys() {
             if !column_names.iter().any(|name| name == key) {
                 column_names.push(key.clone());
@@ -756,7 +760,7 @@ fn transpose_rows(rows: Vec<Value>) -> Result<(Value, Vec<String>)> {
             }
         }
         for (name, values) in column_names.iter().zip(column_values.iter_mut()) {
-            values.push(object.get(name).cloned().unwrap_or(Value::Null));
+            values.push(object.remove(name).unwrap_or(Value::Null));
         }
     }
 

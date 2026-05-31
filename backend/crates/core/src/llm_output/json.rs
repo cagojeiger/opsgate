@@ -146,6 +146,61 @@ pub fn build_json_output(raw: &[u8], options: JsonOutputOptions) -> Result<JsonO
     ))
 }
 
+/// Shape an already-parsed JSON value for return, skipping the byte parse step.
+///
+/// Callers that build the value in-process (e.g. `sql.query` columnar output)
+/// would otherwise serialize to bytes only for [`build_json_output`] to parse
+/// them straight back. This applies the same JSONPath projection, byte cap, and
+/// truncation guidance directly on the owned value, matching `build_json_output`
+/// byte-for-byte (`compact_json_bytes` is `serde_json::to_vec`).
+pub fn build_json_output_from_value(value: Value, options: JsonOutputOptions) -> Result<JsonOutput> {
+    validate_json_paths(&options.json_paths)?;
+    if options.transport_truncated {
+        return Ok(truncated_output(
+            Value::Null,
+            options.original_bytes.unwrap_or(0),
+            &options,
+            None,
+            true,
+        ));
+    }
+
+    if options.json_paths.is_empty() {
+        // The whole value is the body, so one serialization covers both the
+        // original and returned byte counts.
+        let marshaled = compact_json_bytes(&value)?;
+        let original_bytes = options.original_bytes.unwrap_or(marshaled.len());
+        if marshaled.len() <= options.max_bytes {
+            return Ok(JsonOutput {
+                body: value,
+                original_bytes,
+                returned_bytes: marshaled.len(),
+                truncated: false,
+                more: None,
+            });
+        }
+        let preview = build_preview(&value);
+        return Ok(truncated_output(value, original_bytes, &options, preview, false));
+    }
+
+    let original_bytes = match options.original_bytes {
+        Some(bytes) => bytes,
+        None => compact_json_bytes(&value)?.len(),
+    };
+    let body = project_json_paths(&value, &options.json_paths)?;
+    let marshaled = compact_json_bytes(&body)?;
+    if marshaled.len() <= options.max_bytes {
+        return Ok(JsonOutput {
+            body,
+            original_bytes,
+            returned_bytes: marshaled.len(),
+            truncated: false,
+            more: None,
+        });
+    }
+    Ok(truncated_output(body, original_bytes, &options, None, false))
+}
+
 pub fn validate_json_paths(paths: &[String]) -> Result<()> {
     if paths.len() > MAX_JSON_PATHS {
         return Err(Error::validation(format!(
@@ -479,6 +534,39 @@ mod tests {
 
     fn paths(paths: &[&str]) -> Vec<String> {
         paths.iter().map(|path| (*path).to_owned()).collect()
+    }
+
+    #[test]
+    fn from_value_matches_byte_path_across_cases() -> Result<()> {
+        let value = serde_json::json!({
+            "items": [
+                {"metadata": {"name": "api"}, "status": {"phase": "Running"}},
+                {"metadata": {"name": "worker"}, "status": {"phase": "Pending"}}
+            ]
+        });
+        let raw = serde_json::to_vec(&value)
+            .map_err(|error| Error::internal(error.to_string()))?;
+        let cases = [
+            JsonOutputOptions {
+                max_bytes: 4096,
+                ..JsonOutputOptions::default()
+            },
+            JsonOutputOptions {
+                max_bytes: 4096,
+                json_paths: paths(&["$.items[*].metadata.name"]),
+                ..JsonOutputOptions::default()
+            },
+            JsonOutputOptions {
+                max_bytes: 16,
+                ..JsonOutputOptions::default()
+            },
+        ];
+        for options in cases {
+            let from_bytes = build_json_output(&raw, options.clone())?;
+            let from_value = build_json_output_from_value(value.clone(), options)?;
+            assert_eq!(from_bytes, from_value);
+        }
+        Ok(())
     }
 
     #[test]
