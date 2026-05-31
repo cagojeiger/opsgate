@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use axum::extract::FromRef;
 use opsgate_core::Config;
 use opsgate_db::PgPool;
 
@@ -37,4 +38,16 @@ pub(crate) struct ToolState {
     pub(crate) api_calls: Arc<ApiCallService>,
     pub(crate) sql_schema: Arc<SqlSchemaService>,
     pub(crate) sql_query: Arc<SqlQueryService>,
+}
+
+impl FromRef<AppState> for Arc<Config> {
+    fn from_ref(state: &AppState) -> Self {
+        state.config.clone()
+    }
+}
+
+impl FromRef<AppState> for PgPool {
+    fn from_ref(state: &AppState) -> Self {
+        state.db.clone()
+    }
 }
