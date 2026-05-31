@@ -1,8 +1,8 @@
-use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Duration;
 
+use moka::sync::Cache;
 use opsgate_core::{Error, Result};
 
 use crate::network_guard::{BLOCKED_TARGET_IP_MESSAGE, ensure_target_ip_allowed};
@@ -19,7 +19,7 @@ pub struct TargetHttpClients {
     private_allowed: reqwest::Client,
     guarded_no_ca: reqwest::Client,
     timeout: Duration,
-    cached_tls: Arc<Mutex<HashMap<TlsClientKey, CachedClient>>>,
+    cached_tls: Cache<TlsClientKey, reqwest::Client>,
 }
 
 impl TargetHttpClients {
@@ -28,7 +28,7 @@ impl TargetHttpClients {
             private_allowed: build_client(timeout, None, false)?,
             guarded_no_ca: build_client(timeout, None, true)?,
             timeout,
-            cached_tls: Arc::new(Mutex::new(HashMap::new())),
+            cached_tls: Cache::builder().time_to_idle(CLIENT_CACHE_IDLE_TTL).build(),
         })
     }
 
@@ -72,37 +72,22 @@ impl TargetHttpClients {
             credential_id,
             guard_private_network,
         };
-        let now = Instant::now();
-        let mut cached = self
-            .cached_tls
-            .lock()
-            .map_err(|_error| Error::internal("target client cache lock poisoned"))?;
-        cached.retain(|_id, client| now.duration_since(client.last_used) <= CLIENT_CACHE_IDLE_TTL);
-        if let Some(client) = cached.get_mut(&key) {
-            client.last_used = now;
-            return Ok(client.client.clone());
+        if let Some(client) = self.cached_tls.get(&key) {
+            return Ok(client);
         }
         // Credential updates intentionally cannot mutate target URL, secret, or
         // TLS material. A credential id plus guard mode is therefore a stable
         // cache key for the lifetime of the registered target.
         let client = build_client(self.timeout, Some(tls_ca), guard_private_network)?;
-        cached.insert(
-            key,
-            CachedClient {
-                client: client.clone(),
-                last_used: now,
-            },
-        );
+        self.cached_tls.insert(key, client.clone());
         Ok(client)
     }
 
     #[cfg(test)]
     fn cached_tls_len(&self) -> Result<usize> {
-        let cached = self
-            .cached_tls
-            .lock()
-            .map_err(|_error| Error::internal("target client cache lock poisoned"))?;
-        Ok(cached.len())
+        self.cached_tls.run_pending_tasks();
+        usize::try_from(self.cached_tls.entry_count())
+            .map_err(|error| Error::internal(format!("target client cache size overflow: {error}")))
     }
 }
 
@@ -110,11 +95,6 @@ impl TargetHttpClients {
 struct TlsClientKey {
     credential_id: Uuid,
     guard_private_network: bool,
-}
-
-struct CachedClient {
-    client: reqwest::Client,
-    last_used: Instant,
 }
 
 fn build_client(

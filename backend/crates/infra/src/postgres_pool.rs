@@ -1,8 +1,7 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use opsgate_core::{Error, Result};
+use moka::sync::Cache;
+use opsgate_core::Result;
 use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions};
 use uuid::Uuid;
 
@@ -21,12 +20,7 @@ const POOL_CONN_MAX_LIFETIME: Duration = Duration::from_secs(30 * 60);
 /// handshake.
 #[derive(Clone)]
 pub struct TargetPgPools {
-    cached: Arc<Mutex<HashMap<Uuid, CachedPool>>>,
-}
-
-struct CachedPool {
-    pool: PgPool,
-    last_used: Instant,
+    cached: Cache<Uuid, PgPool>,
 }
 
 impl Default for TargetPgPools {
@@ -38,7 +32,7 @@ impl Default for TargetPgPools {
 impl TargetPgPools {
     pub fn new() -> Self {
         Self {
-            cached: Arc::new(Mutex::new(HashMap::new())),
+            cached: Cache::builder().time_to_idle(POOL_CACHE_IDLE_TTL).build(),
         }
     }
 
@@ -46,15 +40,8 @@ impl TargetPgPools {
     /// use. Credential target URL, secret, and TLS material are immutable, so
     /// the credential id is a stable cache key for the pool's lifetime.
     pub fn pool_for(&self, credential_id: Uuid, options: PgConnectOptions) -> Result<PgPool> {
-        let now = Instant::now();
-        let mut cached = self
-            .cached
-            .lock()
-            .map_err(|_error| Error::internal("target pg pool cache lock poisoned"))?;
-        cached.retain(|_id, entry| now.duration_since(entry.last_used) <= POOL_CACHE_IDLE_TTL);
-        if let Some(entry) = cached.get_mut(&credential_id) {
-            entry.last_used = now;
-            return Ok(entry.pool.clone());
+        if let Some(pool) = self.cached.get(&credential_id) {
+            return Ok(pool);
         }
         let pool = PgPoolOptions::new()
             .max_connections(POOL_MAX_CONNECTIONS)
@@ -62,23 +49,16 @@ impl TargetPgPools {
             .idle_timeout(POOL_CONN_IDLE_TIMEOUT)
             .max_lifetime(POOL_CONN_MAX_LIFETIME)
             .connect_lazy_with(options);
-        cached.insert(
-            credential_id,
-            CachedPool {
-                pool: pool.clone(),
-                last_used: now,
-            },
-        );
+        self.cached.insert(credential_id, pool.clone());
         Ok(pool)
     }
 
     #[cfg(test)]
     fn cached_len(&self) -> Result<usize> {
-        let cached = self
-            .cached
-            .lock()
-            .map_err(|_error| Error::internal("target pg pool cache lock poisoned"))?;
-        Ok(cached.len())
+        self.cached.run_pending_tasks();
+        usize::try_from(self.cached.entry_count()).map_err(|error| {
+            opsgate_core::Error::internal(format!("target pg pool cache size overflow: {error}"))
+        })
     }
 }
 
@@ -89,7 +69,7 @@ mod tests {
 
     fn options() -> Result<PgConnectOptions> {
         PgConnectOptions::from_str("postgres://user:pass@127.0.0.1:5432/app")
-            .map_err(|error| Error::internal(error.to_string()))
+            .map_err(|error| opsgate_core::Error::internal(error.to_string()))
     }
 
     #[tokio::test]

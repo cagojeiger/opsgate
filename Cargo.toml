@@ -61,6 +61,7 @@ http = "1"
 ipnet = "2"
 zeroize = "1"
 rustls-pemfile = "2"
+moka = { version = "0.12.15", default-features = false, features = ["sync"] }
 
 # Auth / OAuth / MCP
 jsonwebtoken = "9"
