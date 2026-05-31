@@ -7,8 +7,8 @@ use serde_json::Value;
 use crate::audit::runtime::reason;
 use crate::credential::snapshot::CredentialSnapshot;
 
+use super::input::NormalizedInput;
 use super::output::SqlQueryOutput;
-use super::service::NormalizedInput;
 
 pub(super) struct QueryRecorder<'a> {
     history: &'a SqlQueryHistoryRepo,

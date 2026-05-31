@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
 
-use super::service::{MAX_MAX_BYTES, NormalizedInput};
+use super::input::{MAX_MAX_BYTES, NormalizedInput};
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub(crate) struct SqlQueryOutput {

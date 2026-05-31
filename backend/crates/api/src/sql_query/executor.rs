@@ -5,8 +5,8 @@ use sqlx::types::Json;
 
 use crate::sql_common::SqlSecret;
 
+use super::input::NormalizedInput;
 use super::output::{SqlQueryOutput, build_column_output};
-use super::service::NormalizedInput;
 
 pub(super) async fn execute_postgres(
     pools: &crate::target::pg_pool::TargetPgPools,

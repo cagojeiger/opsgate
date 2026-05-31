@@ -6,7 +6,7 @@ use sqlparser::ast::{Expr, ObjectName, Query, SetExpr, Statement, Visit, Visitor
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
 
-use super::service::NormalizedInput;
+use super::input::NormalizedInput;
 
 const BUILTIN_DENIED_FUNCTIONS: &[&str] = &[
     "dblink",
