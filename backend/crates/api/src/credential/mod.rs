@@ -6,6 +6,7 @@ pub(crate) mod secret;
 mod service;
 pub(crate) mod snapshot;
 mod target;
+mod update;
 
 pub(crate) use input::{
     DeleteCredentialInput, ListCredentialsInput, RegisterHttpCredentialInput,
@@ -17,4 +18,5 @@ pub(crate) use output::{
     CredentialListOutput, CredentialOutput, DeleteCredentialOutput, PageOutput,
     RegisterCredentialOutput, UpdateCredentialOutput,
 };
-pub(crate) use service::{CredentialService, CredentialUpdate};
+pub(crate) use service::CredentialService;
+pub(crate) use update::CredentialUpdate;

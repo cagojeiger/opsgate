@@ -4,11 +4,11 @@ use opsgate_core::{Error, Result};
 use opsgate_db::CredentialRepo;
 use opsgate_domain::Caller;
 use opsgate_domain::credential::{
-    Credential, CredentialCategory, CredentialListParams, CredentialPolicy, InsertCredentialParams,
+    Credential, CredentialCategory, CredentialListParams, InsertCredentialParams,
     RegisterCredentialInput, UpdateCredentialParams, normalize_policy_for_category,
     normalize_register_input, normalize_tags as normalize_credential_tags,
-    validate_alias as validate_credential_alias, validate_allowed_headers_do_not_overlap_secret,
-    validate_env as validate_credential_env, validate_policy_for_category, validate_register_input,
+    validate_alias as validate_credential_alias, validate_env as validate_credential_env,
+    validate_policy_for_category, validate_register_input,
 };
 use uuid::Uuid;
 
@@ -22,13 +22,19 @@ use super::listing::{
 use super::recording::{delete_audit, register_audit, update_audit};
 use super::secret;
 use super::target::{EndpointResolver, validate_register_target_ips};
+use super::update::{
+    CredentialUpdate, changed_fields, ensure_update_category, trim_optional,
+    validate_http_policy_secret_overlap,
+};
 
 #[cfg(test)]
 use super::input::SecretHeaderInput;
 #[cfg(test)]
 use opsgate_db::CredentialAuditAction;
 #[cfg(test)]
-use opsgate_domain::credential::{CredentialSecret, CredentialTarget, SecretHeader};
+use opsgate_domain::credential::{
+    CredentialPolicy, CredentialSecret, CredentialTarget, SecretHeader,
+};
 #[cfg(test)]
 use secrecy::SecretString;
 
@@ -291,68 +297,10 @@ impl CredentialService {
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct CredentialUpdate {
-    pub credential: Credential,
-    pub changed_fields: Vec<&'static str>,
-}
-
 impl CredentialService {
     async fn validate_register_target_ips(&self, input: &RegisterCredentialInput) -> Result<()> {
         validate_register_target_ips(&self.resolver, input).await
     }
-}
-
-fn ensure_update_category(credential: &Credential, expected: CredentialCategory) -> Result<()> {
-    if credential.category == expected {
-        Ok(())
-    } else {
-        Err(Error::validation(format!(
-            "alias {:?} is category {:?}, not {:?}",
-            credential.alias,
-            credential.category.as_str(),
-            expected.as_str(),
-        )))
-    }
-}
-
-fn validate_http_policy_secret_overlap(
-    sealer: &Sealer,
-    alias: &str,
-    secret_ciphertext: Option<&[u8]>,
-    policy: &CredentialPolicy,
-) -> Result<()> {
-    let ciphertext =
-        secret_ciphertext.ok_or_else(|| Error::internal("credential secret missing"))?;
-    let names = secret::open_http_header_names(sealer, alias, ciphertext)?;
-    validate_allowed_headers_do_not_overlap_secret(policy, &names)
-}
-
-fn changed_fields(
-    before: &Credential,
-    description: &str,
-    env: &str,
-    tags: &[String],
-    policy: &CredentialPolicy,
-) -> Vec<&'static str> {
-    let mut fields = Vec::new();
-    if before.description != description {
-        fields.push("description");
-    }
-    if before.env != env {
-        fields.push("env");
-    }
-    if before.tags != tags {
-        fields.push("tags");
-    }
-    if before.policy != *policy {
-        fields.push("policy");
-    }
-    fields
-}
-
-fn trim_optional(value: Option<String>) -> Option<String> {
-    value.map(|value| value.trim().to_owned())
 }
 
 #[cfg(test)]
