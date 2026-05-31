@@ -1,14 +1,14 @@
 pub(crate) mod error;
 pub(crate) mod extractor;
-pub(crate) mod middleware;
-mod verify;
+pub(crate) mod verify;
 
+#[cfg(test)]
+pub(crate) use crate::auth::api::resolve_api_caller;
 pub(crate) use error::{
     AuthError, auth_error_body, auth_error_response, shared_scoped_challenge_header,
     status_for_error,
 };
 pub(crate) use extractor::extract_bearer;
-pub(crate) use middleware::require_bearer;
+pub(crate) use verify::verify_bearer_mcp;
 #[cfg(test)]
-pub(crate) use verify::{resolve_api_caller, verify_token_attrs};
-pub(crate) use verify::{verify_bearer, verify_bearer_mcp};
+pub(crate) use verify::verify_token_attrs;

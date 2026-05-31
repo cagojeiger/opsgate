@@ -177,6 +177,7 @@ fn state_with_resource_url(
         secure_cookies: false,
     });
     let jwks = Arc::new(jwks_cache(&config.resource_url)?);
+    let api_authority = crate::auth::api::api_authority_from_jwks(&config, aliri_jwks()?);
     let oidc = Arc::new(crate::auth::oidc::OidcProvider::new(
         &config,
         reqwest::Client::new(),
@@ -215,6 +216,7 @@ fn state_with_resource_url(
         config,
         auth: AuthState {
             jwks,
+            api_authority,
             oidc,
             resolver: Arc::new(TestResolver { mode }),
         },
@@ -239,6 +241,22 @@ fn jwks_cache(resource_url: &str) -> Result<JwksCache, Box<dyn std::error::Error
         resource_url.to_owned(),
         keys,
     ))
+}
+
+fn aliri_jwks() -> Result<aliri::Jwks, Box<dyn std::error::Error>> {
+    use base64::Engine as _;
+
+    let n = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(
+        "sfE1HSV9Fnl00COG8SPEtPGOMa95P4XMhpsnSV4lbfoUFyuAjPUc_uFtkmH2s3VoNKdYdHsi_PNycvS5sX0LOOE9Zon7OwmZZvIocZmY97p7BUAAO4XfXxh8MDW1UKzBswG-7TVekRKAbPNNKUjJegbWtFYErU_7WlF8CrCX5ebDfyjkuGUH-bYRRnRd10pX_PTIQ6159FdJ6R9wgNIk0gRNRHsWEdlV-AxhPAmYXPWFNvYpDtiNlCi3anCp8kTlWzLKKeJdWBHzr3xuByUGXLcfCIoVsBd-SXtpS62E2pkt8D8OitcxcE9_8DZcXB7Z-TIj544uAY3XaPTmeKPcdw",
+    )?;
+    let e = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode("AQAB")?;
+    let rsa = aliri::jwa::Rsa::from_public_components(n, e)?;
+    let key = aliri::Jwk::from(rsa)
+        .with_algorithm(aliri::jwa::Algorithm::RS256)
+        .with_key_id(aliri::jwk::KeyId::from_static("kid-1"));
+    let mut jwks = aliri::Jwks::default();
+    jwks.add_key(key);
+    Ok(jwks)
 }
 
 fn registered_state() -> Result<AppState, Box<dyn std::error::Error>> {
@@ -453,6 +471,31 @@ async fn api_routes_accept_valid_bearer() -> Result<(), Box<dyn std::error::Erro
         .await?;
 
     assert_eq!(response.status(), StatusCode::OK);
+    Ok(())
+}
+
+#[tokio::test]
+async fn api_routes_reject_invalid_bearer() -> Result<(), Box<dyn std::error::Error>> {
+    let app = crate::routes::app(state(ResolverMode::Registered(true))?);
+    let expired = token(
+        "sub-1",
+        "https://auth.example.test",
+        json!("https://api.example.test"),
+        epoch_secs().saturating_sub(3600),
+        "kid-1",
+    )?;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/me")
+                .header("authorization", format!("Bearer {expired}"))
+                .body(Body::empty())?,
+        )
+        .await?;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = response_json(response).await?;
+    assert_eq!(body.get("error"), Some(&json!("invalid_token")));
     Ok(())
 }
 

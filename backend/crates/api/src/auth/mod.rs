@@ -1,3 +1,4 @@
+pub(crate) mod api;
 pub(crate) mod bearer;
 #[cfg(test)]
 mod bearer_tests;

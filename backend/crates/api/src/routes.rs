@@ -16,7 +16,7 @@ use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetReques
 use tower_http::trace::TraceLayer;
 use tracing::{Span, info, info_span};
 
-use crate::auth::bearer::require_bearer;
+use crate::auth::api::require_api_bearer;
 use crate::auth::metadata::{
     authorization_server_metadata, protected_resource_metadata, protected_resource_metadata_url,
 };
@@ -93,7 +93,7 @@ fn rest_api_routes(state: AppState) -> Router<AppState> {
         .merge(crate::rest::me::routes())
         .merge(crate::rest::sql_query::routes())
         .fallback(api_not_found)
-        .layer(from_fn_with_state(auth_state, require_bearer))
+        .layer(from_fn_with_state(auth_state, require_api_bearer))
 }
 
 /// Liveness: the process is up. No dependency checks.

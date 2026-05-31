@@ -64,6 +64,9 @@ rustls-pemfile = "2"
 moka = { version = "0.12.15", default-features = false, features = ["sync"] }
 
 # Auth / OAuth / MCP
+aliri = { version = "0.6.4", default-features = false, features = ["rsa"] }
+aliri_oauth2 = { version = "0.10.2", default-features = false, features = ["rsa", "reqwest", "tokio", "rustls-tls"] }
+aliri_clock = "0.1.0"
 jsonwebtoken = "9"
 openidconnect = { version = "4.0.1", default-features = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
