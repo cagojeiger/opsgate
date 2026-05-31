@@ -90,7 +90,7 @@ impl CredentialService {
         let owner_user_id = caller.user.id;
         let input = normalize_register_input(input);
         validate_register_input(&input)?;
-        self.validate_register_target_ips(&input).await?;
+        validate_register_target_ips(&self.resolver, &input).await?;
         let secret_ciphertext = secret::seal(&self.sealer, &input.alias, &input.secret)?;
         let tls_ca = input
             .tls_server_ca
@@ -297,12 +297,6 @@ impl CredentialService {
     }
 }
 
-impl CredentialService {
-    async fn validate_register_target_ips(&self, input: &RegisterCredentialInput) -> Result<()> {
-        validate_register_target_ips(&self.resolver, input).await
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -402,8 +396,7 @@ mod tests {
     #[tokio::test]
     async fn service_rejects_private_register_target_ip() -> Result<()> {
         let service = service_with_ips(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))])?;
-        let err = service
-            .validate_register_target_ips(&http_input(false))
+        let err = validate_register_target_ips(&service.resolver, &http_input(false))
             .await
             .err()
             .map(|error| error.to_string())
@@ -418,8 +411,7 @@ mod tests {
         let service = service_with_ips(vec![IpAddr::V6(Ipv6Addr::new(
             0, 0, 0, 0, 0, 0xffff, 0x7f00, 0x0001,
         ))])?;
-        let err = service
-            .validate_register_target_ips(&http_input(false))
+        let err = validate_register_target_ips(&service.resolver, &http_input(false))
             .await
             .err()
             .map(|error| error.to_string())
@@ -433,8 +425,7 @@ mod tests {
     async fn service_allows_private_register_target_when_explicitly_enabled() -> Result<()> {
         let service = service_with_ips(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))])?;
         assert!(
-            service
-                .validate_register_target_ips(&http_input(true))
+            validate_register_target_ips(&service.resolver, &http_input(true))
                 .await
                 .is_ok()
         );
