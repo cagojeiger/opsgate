@@ -57,7 +57,7 @@ make release-check
 ```
 
 Release and MCP smoke details are tracked in
-`docs/release-checklist.md` and `docs/mcp/smoke-report.md`.
+`docs/release-checklist.md`.
 
 ## Full stack via Docker
 

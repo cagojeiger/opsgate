@@ -1,14 +1,14 @@
 # `credential.register_sql`
 
-Surface:
+서피스:
 
 ```text
 /mcp/admin
 ```
 
-Purpose: 이후 `sql.query`에서 사용할 Postgres credential을 등록합니다.
+목적: 이후 `sql.query`에서 사용할 Postgres credential을 등록합니다.
 
-Input:
+입력:
 
 ```json
 {
@@ -34,7 +34,7 @@ Input:
 }
 ```
 
-Required:
+필수:
 
 - `alias`
 - `database_url`
@@ -42,7 +42,7 @@ Required:
 - `password`
 - `policy`
 
-Output:
+출력:
 
 ```json
 {
@@ -56,7 +56,7 @@ Output:
 }
 ```
 
-Rules:
+규칙:
 
 - `provider`의 기본값은 `postgres`입니다.
 - `policy={}`는 유효합니다.

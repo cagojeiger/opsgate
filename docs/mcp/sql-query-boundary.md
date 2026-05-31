@@ -1,4 +1,4 @@
-# sql.query boundary model
+# sql.query boundary 모델
 
 이 문서는 `sql.query` 고유의 닫힌 boundary 모델을 정의합니다. `api.call`은
 HTTP/JSON 응답을 다루지만, `sql.query`는 Postgres 데이터베이스에 대해
@@ -169,16 +169,16 @@ request budget is inside SQL policy
 중요한 설계:
 
 ```text
-opsgate has no general schema whitelist policy.
-The registered database_url selects the database boundary.
-The DB role grants decide which tables are reachable.
+opsgate는 일반적인 schema whitelist 정책을 두지 않습니다.
+등록된 database_url이 데이터베이스 경계를 선택합니다.
+DB role grant가 접근 가능한 테이블을 결정합니다.
 ```
 
 단, Postgres metadata 영역은 별도 정책 축입니다.
 
 ```text
-pg_catalog / information_schema access requires allow_metadata=true.
-This is metadata gating, not a general schema whitelist.
+pg_catalog / information_schema 접근은 allow_metadata=true가 필요합니다.
+이것은 metadata gate이며 일반적인 schema whitelist가 아닙니다.
 ```
 
 ## 4. SQL AST policy boundary
@@ -201,7 +201,7 @@ denied_functions rejected
 SQL value functions in denied_functions rejected
 EXPLAIN requires allow_explain=true
 EXPLAIN ANALYZE additionally requires allow_explain_analyze=true
-metadata schema access requires allow_metadata=true
+metadata schema 접근은 `allow_metadata=true`가 필요
 ```
 
 이 boundary는 DB 권한을 대체하지 않습니다. 최종 안전망은 항상 DB role 권한과
@@ -303,16 +303,16 @@ database_url
 raw driver error with database_url/secret risk
 ```
 
-## Current closure assessment
+## 현재 구현 상태
 
 현재 구현 기준:
 
 ```text
-input boundary: mostly closed
-identity boundary: closed
-credential/policy boundary: mostly closed
-SQL AST policy boundary: mostly closed
-target execution boundary: mostly closed
-output/budget boundary: mostly closed
-audit/history boundary: mostly closed, live MCP smoke remains valuable
+input boundary: validation test로 닫혀 있음
+identity boundary: 닫혀 있음
+credential/policy boundary: policy test로 닫혀 있음
+SQL AST policy boundary: AST policy test로 닫혀 있음
+target execution boundary: guard test로 닫혀 있음
+output/budget boundary: output test로 닫혀 있음
+audit/history boundary: 단위/통합 테스트로 닫혀 있으며 live 스모크도 유효함
 ```

@@ -1,18 +1,18 @@
-# opsgate docs
+# opsgate 문서
 
 이 디렉터리는 현재 Rust 구현과 맞는 문서만 유지합니다.
 
 현재 문서:
 
-- [MCP tool surface specification index](mcp-tools.md)
-- [api.call boundary model](mcp/api-call-boundary.md)
-- [sql.query boundary model](mcp/sql-query-boundary.md)
-- [0.1.0 release readiness checklist](release-checklist.md)
-- [MCP 도구 worst-case 설계와 TC 매트릭스](mcp/worst-cases.md)
-- MCP surfaces:
+- [MCP 도구/서피스 인덱스](mcp-tools.md)
+- [api.call boundary 모델](mcp/api-call-boundary.md)
+- [sql.query boundary 모델](mcp/sql-query-boundary.md)
+- [0.1.0 릴리스 준비 체크리스트](release-checklist.md)
+- [MCP 도구 최악 상황 방어 기준](mcp/worst-cases.md)
+- MCP 서피스:
   - [`/mcp` runtime](mcp/surfaces/runtime.md)
   - [`/mcp/admin` admin](mcp/surfaces/admin.md)
-- MCP tools:
+- MCP 도구:
   - [me](mcp/tools/me.md)
   - [credential.list](mcp/tools/credential-list.md)
   - [credential.register_http](mcp/tools/credential-register-http.md)

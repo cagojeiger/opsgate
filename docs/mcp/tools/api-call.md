@@ -86,10 +86,9 @@
 - `original_bytes`는 일반 응답에서는 compact 전 원본 body 크기이고, hard cap 초과 시에는 전체 크기 또는 확인된 최소 크기입니다.
 - `jsonpath`는 표준 JSONPath 형식의 표현식을 사용하며 flat-keyed object를
   반환합니다.
-- `jsonpath`는 api.call safe subset(root, child, index, slice, wildcard,
-  union, filter 표현식)으로 허용됩니다.
-- recursive descent와 라이브러리 고유 script 확장은 초기 safe subset에
-  포함되지 않습니다.
+- `jsonpath`는 공통 JSONPath 검증 규칙을 따릅니다. 표현식은 `$`로 시작해야
+  하며, 최대 16개/각 512자까지 허용됩니다.
+- recursive descent(`..`)는 허용되지 않습니다.
 
 Truncation:
 

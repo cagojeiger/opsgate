@@ -76,12 +76,23 @@ JSON number는 `UseNumber`로 decode합니다. 큰 숫자 ID가 `float64`로 강
 }
 ```
 
-## JSONPath safe subset
+## JSONPath 검증 규칙
 
-`api.call`은 JSONPath 전체를 무제한으로 열지 않고, 설명 가능하고 제한된
-safe subset만 허용합니다.
+`api.call`과 `sql.query`는 같은 JSONPath 검증을 사용합니다. 현재 구현은
+표현식을 직접 실행하는 확장 언어를 두지 않고, `serde_json_path` parser가
+받아들이는 JSONPath 중 아래 안전 조건을 만족하는 표현식만 허용합니다.
 
-허용:
+허용 조건:
+
+```text
+표현식 개수 최대 16
+표현식 길이 최대 512
+표현식은 $ 로 시작
+recursive descent(`..`) 금지
+parser가 유효한 JSONPath로 인정해야 함
+```
+
+자주 쓰는 예시는 다음과 같습니다.
 
 ```text
 $
@@ -93,16 +104,8 @@ $.items['name','namespace']
 $.items[?(@.status.phase == 'Running')]
 ```
 
-초기 버전에서 제외:
-
-```text
-$..recursive
-script 확장
-safe subset 밖의 라이브러리 고유 연산자
-```
-
-의도는 표준 문법으로 좁히되, 무제한 traversal이나 구현체 특화 동작을
-초기 표면에 열지 않는 것입니다.
+의도는 무제한 recursive traversal을 막으면서도 LLM이 표준 JSONPath로 필요한
+값을 좁힐 수 있게 하는 것입니다.
 
 ## 큰 응답 처리 규칙
 

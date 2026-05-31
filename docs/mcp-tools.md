@@ -1,18 +1,18 @@
-# MCP tool specification
+# MCP 도구 명세
 
-opsgate `0.1.0` MCP surface의 인덱스 문서입니다.
+opsgate `0.1.0` MCP 서피스의 인덱스 문서입니다.
 
 opsgate는 LLM 클라이언트를 위한 policy-gated credential broker입니다. LLM은
 credential의 alias, metadata, policy만 봅니다. opsgate는 secret과 target
 URL 구성값을 숨긴 채, category별 전용 도구를 통해 HTTP 또는 SQL 호출을 대신
 수행합니다.
 
-## Surfaces
+## 서피스
 
-- [Runtime surface: `/mcp`](mcp/surfaces/runtime.md)
-- [Admin surface: `/mcp/admin`](mcp/surfaces/admin.md)
+- [Runtime 서피스: `/mcp`](mcp/surfaces/runtime.md)
+- [Admin 서피스: `/mcp/admin`](mcp/surfaces/admin.md)
 
-## Tools
+## 도구
 
 - [me](mcp/tools/me.md)
 - [credential.list](mcp/tools/credential-list.md)
@@ -69,11 +69,11 @@ table/column/index 구조를 고정된 JSON으로 반환하며 row 값은 포함
 응답 truncation, preview, 토큰 예산 규칙은
 [JSON 출력과 토큰 예산 스펙](mcp/json-output.md)에 정의합니다.
 
-도구별 최악의 경우와 테스트 기준은
-[MCP 도구 worst-case 설계와 TC 매트릭스](mcp/worst-cases.md)에 정의합니다.
+도구별 최악의 경우와 현재 방어 기준은
+[MCP 도구 최악 상황 방어 기준](mcp/worst-cases.md)에 정의합니다.
 
 `api.call` 고유의 닫힌 boundary 모델은
-[api.call boundary model](mcp/api-call-boundary.md)에 정의합니다.
+[api.call boundary 모델](mcp/api-call-boundary.md)에 정의합니다.
 
 `sql.query` 고유의 닫힌 boundary 모델은
-[sql.query boundary model](mcp/sql-query-boundary.md)에 정의합니다.
+[sql.query boundary 모델](mcp/sql-query-boundary.md)에 정의합니다.

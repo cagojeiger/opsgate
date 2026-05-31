@@ -1,4 +1,4 @@
-# api.call boundary model
+# api.call boundary 모델
 
 이 문서는 `api.call` 고유의 닫힌 boundary 모델을 정의합니다. `sql.query`는
 다른 실행 모델을 가지므로 여기서 다루지 않습니다.
@@ -107,16 +107,6 @@ secret decrypt 없음
 safe denial/error만 기록
 ```
 
-P0 TC:
-
-```text
-TestValidateInputRequiresPurpose
-TestValidateInputRejectsPurposeWithCRLF
-TestValidateInputRejectsTraversal
-TestValidateInputRejectsTooManyJSONPathExpressions
-TestValidateInputRejectsUnsupportedJSONPathFragment
-TestValidateInputRejectsNonJSONAccept
-```
 
 ## 2. identity boundary
 
@@ -143,12 +133,6 @@ secret decrypt 없음
 target call 없음
 ```
 
-P0 TC:
-
-```text
-api.call rejects unauthenticated caller before credential lookup
-api.call rejects inactive user before credential lookup
-```
 
 ## 3. credential / policy boundary
 
@@ -192,16 +176,6 @@ LLM still has no secret
 request is inside credential HTTP policy
 ```
 
-P0 TC:
-
-```text
-api.call rejects wrong category
-api.call wrong-category denial keeps credential metadata snapshot
-api.call rejects denied query key
-api.call rejects disallowed caller header
-api.call rejects secret header override
-api.call rejects method/request_path outside policy
-```
 
 ## 4. target execution boundary
 
@@ -232,7 +206,7 @@ response body hard cap read
 ```text
 origin/base_path only from credential row
 redirect blocked
-allow_private_network=false blocks private/link-local/loopback/cloud metadata
+`allow_private_network=false`이면 private/link-local/loopback/cloud metadata 주소를 차단
 call-time DNS/dial guard closes DNS rebinding window
 response read cap is MaxMaxBytes
 known oversized Content-Length is rejected without body read
@@ -247,13 +221,6 @@ body 없음
 audit/history outcome=error
 ```
 
-P0 TC:
-
-```text
-api.call blocks redirect
-api.call blocks private call-time target when allow_private_network=false
-api.call reads at most hard cap before envelope
-```
 
 ## 5. response envelope boundary
 
@@ -288,18 +255,6 @@ body=null + more.truncated=true
 error
 ```
 
-P0 TC:
-
-```text
-TestBuildEnvelopeInlinesJSONBody
-TestBuildEnvelopeAppliesJSONPath
-TestBuildEnvelopeAllowsTopLevelScalarJSON
-TestBuildEnvelopeRejectsNonJSON
-TestBuildEnvelopeRejectsBrokenJSON
-TestBuildEnvelopeRejectsMultipleTopLevelJSONValues
-TestBuildEnvelopeTruncatedReturnsNullBody
-TestBuildEnvelopeTransportTruncatedReturnsHintsWithoutParsing
-```
 
 ## 6. audit / history boundary
 
@@ -345,79 +300,53 @@ target URL
 raw transport error with URL/secret risk
 ```
 
-P0 TC:
-
-```text
-api.call history stores projection keys but not body
-api.call history stores query/header keys but not values
-api.call audit stores purpose/method/request_path/outcome but not body
-api.call truncation history has truncated=true and no response body
-api.call wrong-category denial stores credential snapshot but no secret/body/value
-```
 
 ## 7. future cache boundary
 
 현재 상태:
 
 ```text
-bounded preview path catalog implemented
-preview pagination not implemented
-preview cache not implemented
+bounded preview path catalog 구현됨
+preview pagination 미구현
+preview cache 미구현
 ```
 
 0.1.0 규칙:
 
 ```text
-no preview pagination
-no preview cache
-return only bounded first preview page
+preview pagination 없음
+preview cache 없음
+제한된 첫 preview page만 반환
 ```
 
 future pagination 규칙:
 
 ```text
-preview pagination MUST use preview_id cache
-cache MUST NOT store original response body
-cache stores only path catalog + statistics
-cache is TTL-bound
-cache is bound to owner/caller/request_id
+preview pagination은 반드시 `preview_id` cache를 사용해야 함
+cache는 원본 response body를 저장하면 안 됨
+cache는 path catalog와 statistics만 저장
+cache는 TTL로 제한
+cache는 owner/caller/request_id에 묶임
 ```
 
-P2 TC:
 
-```text
-preview catalog respects max_preview_bytes
-preview catalog respects max_preview_paths
-preview cache read checks caller binding
-preview cache never stores raw response body
-```
-
-## Current closure assessment
+## 현재 구현 상태
 
 현재 구현 기준:
 
 ```text
-input boundary: mostly closed
-identity boundary: closed
-credential/policy boundary: mostly closed
-target execution boundary: mostly closed
-response envelope boundary: mostly closed
-audit/history boundary: mostly closed, live MCP smoke remains valuable
-future cache boundary: not implemented by design for 0.1.0
+input boundary: validation test로 닫혀 있음
+identity boundary: 닫혀 있음
+credential/policy boundary: policy test로 닫혀 있음
+target execution boundary: guard test로 닫혀 있음
+response envelope boundary: JSON output test로 닫혀 있음
+audit/history boundary: 단위/통합 테스트로 닫혀 있으며 live 스모크도 유효함
+future cache boundary: 0.1.0 설계상 미구현
 ```
 
-0.1.0에서 닫아야 할 우선순위:
+현재 0.1.0 범위 밖:
 
 ```text
-P0:
-  live MCP smoke revalidation after docs sync
-  api.call target-not-called tests for bad jsonpath/input
-  MCP schema accepts all JSON body scalar/object/array/null cases
-
-P1:
-  audit/history no-body/no-value regression tests for new tool paths
-  response preview quality tuning
-
-P2:
-  preview cache/pagination
+preview cache
+preview pagination
 ```

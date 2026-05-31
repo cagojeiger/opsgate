@@ -1,22 +1,22 @@
 # `me`
 
-Surface:
+서피스:
 
 ```text
 /mcp
 /mcp/admin
 ```
 
-Purpose: 호출자의 신원, 현재 surface에서 노출되는 capability 목록, 그리고 비밀이
+목적: 호출자의 신원, 현재 surface에서 노출되는 capability 목록, 그리고 비밀이
 아닌 credential 요약을 반환합니다.
 
-Input:
+입력:
 
 ```json
 {}
 ```
 
-Output:
+출력:
 
 ```json
 {
@@ -42,7 +42,7 @@ Output:
 }
 ```
 
-Notes:
+참고:
 
 - role/admin 개념은 반환하지 않습니다. Opsgate는 개인용 서비스이며 권한 경계는
   role이 아니라 surface별 툴 노출로 표현합니다.

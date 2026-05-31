@@ -1,15 +1,15 @@
 # `credential.list`
 
-Surface:
+서피스:
 
 ```text
 /mcp
 /mcp/admin
 ```
 
-Purpose: discovery를 위해 호출자가 볼 수 있는 활성 credential을 나열합니다.
+목적: discovery를 위해 호출자가 볼 수 있는 활성 credential을 나열합니다.
 
-Input:
+입력:
 
 ```json
 {
@@ -27,7 +27,7 @@ Input:
 모든 필드는 선택값입니다. `q`는 alias, description, category, provider, env,
 tags를 대상으로 검색합니다.
 
-Output:
+출력:
 
 ```json
 {
@@ -56,7 +56,7 @@ Output:
 }
 ```
 
-Rules:
+규칙:
 
 - `alias`는 항상 반환됩니다.
 - secret은 절대 반환하지 않습니다.
