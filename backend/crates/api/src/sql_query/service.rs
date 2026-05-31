@@ -1,16 +1,13 @@
 use std::time::Instant;
 
-use opsgate_core::llm_output::{
-    JsonOutput, JsonOutputOptions, More, MoreOptions, build_json_output_from_value,
-    validate_json_paths,
-};
+use opsgate_core::llm_output::validate_json_paths;
 use opsgate_core::validation::{trim_required, validate_purpose};
 use opsgate_core::{Error, Result};
 use opsgate_db::{AuditRepo, CredentialRepo, SqlQueryHistoryParams, SqlQueryHistoryRepo};
 use opsgate_domain::Caller;
 use opsgate_domain::credential::{Credential, CredentialCategory, CredentialPolicy};
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::ops::ControlFlow;
@@ -25,11 +22,13 @@ use crate::audit::runtime::reason;
 use crate::credential::snapshot::CredentialSnapshot;
 use crate::sql_common::SqlSecret;
 
+use super::output::{SqlQueryOutput, build_column_output};
+
 const DEFAULT_MAX_ROWS: i32 = 100;
 const MAX_MAX_ROWS: i32 = 1000;
 const DEFAULT_MAX_BYTES: usize = 64 * 1024;
 const MIN_MAX_BYTES: usize = 1024;
-const MAX_MAX_BYTES: usize = 1024 * 1024;
+pub(super) const MAX_MAX_BYTES: usize = 1024 * 1024;
 const DEFAULT_TIMEOUT_MS: u32 = 3000;
 const MAX_TIMEOUT_MS: u32 = 30000;
 const MAX_QUERY_LEN: usize = 16_000;
@@ -232,33 +231,17 @@ pub(crate) struct SqlQueryInput {
     pub timeout_ms: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, JsonSchema)]
-pub(crate) struct SqlQueryOutput {
-    #[schemars(schema_with = "opsgate_core::schema::json_value_schema")]
-    pub body: Value,
-    /// Rows fetched from Postgres after max_rows enforcement, before JSONPath or byte truncation.
-    pub row_count: usize,
-    pub truncated: bool,
-    pub original_bytes: usize,
-    pub returned_bytes: usize,
-    pub latency_ms: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub more: Option<More>,
-    #[serde(skip)]
-    pub column_names: Vec<String>,
-}
-
 #[derive(Debug, Clone)]
-struct NormalizedInput {
-    alias: String,
-    purpose: String,
-    query: String,
-    params: Vec<Value>,
-    jsonpath: Vec<String>,
-    max_rows: i32,
-    max_bytes: usize,
-    timeout_ms: u32,
-    query_sha256: String,
+pub(super) struct NormalizedInput {
+    pub(super) alias: String,
+    pub(super) purpose: String,
+    pub(super) query: String,
+    pub(super) params: Vec<Value>,
+    pub(super) jsonpath: Vec<String>,
+    pub(super) max_rows: i32,
+    pub(super) max_bytes: usize,
+    pub(super) timeout_ms: u32,
+    pub(super) query_sha256: String,
 }
 
 fn normalize_input(input: SqlQueryInput) -> Result<NormalizedInput> {
@@ -672,111 +655,6 @@ fn bind_json_param<'q>(
         Value::Array(_) | Value::Object(_) => query.bind(Json(value.clone())),
     };
     Ok(query)
-}
-
-fn build_column_output(
-    rows: Vec<Value>,
-    input: &NormalizedInput,
-    truncated: bool,
-) -> Result<SqlQueryOutput> {
-    let row_count = rows.len();
-    let (body, column_names) = transpose_rows(rows)?;
-    let shaped = build_shaped_body(body, input)?;
-    let truncated_total = truncated || shaped.truncated;
-    let more = finalize_more(shaped.more, truncated, input);
-
-    Ok(SqlQueryOutput {
-        body: shaped.body,
-        row_count,
-        truncated: truncated_total,
-        original_bytes: shaped.original_bytes,
-        returned_bytes: shaped.returned_bytes,
-        latency_ms: 0,
-        more,
-        column_names,
-    })
-}
-
-/// SQL-specific narrowing hint appended to byte-overflow guidance: unlike
-/// api.call (where jsonpath is the only lever), sql.query can also rewrite the
-/// query itself to shrink the result.
-const SQL_NARROW_HINT: &str = "sql: you can also narrow the query (fewer columns / WHERE / aggregate) instead of only jsonpath";
-
-/// Decide the final `more` guidance for a column output.
-///
-/// Byte-overflow guidance (`body=null`) takes precedence over row truncation
-/// because the model received no rows at all; when it fires we only append a
-/// SQL-specific narrowing hint to the shared jsonpath guidance. When the body
-/// fit but rows were dropped by `max_rows`, synthesize a row-truncation `more`
-/// so the model knows the next lever instead of seeing a bare `truncated:true`.
-fn finalize_more(
-    shaped_more: Option<More>,
-    row_truncated: bool,
-    input: &NormalizedInput,
-) -> Option<More> {
-    match shaped_more {
-        Some(mut more) => {
-            more.hints.push(SQL_NARROW_HINT.to_owned());
-            Some(more)
-        }
-        None if row_truncated => Some(row_truncation_more(input)),
-        None => None,
-    }
-}
-
-fn row_truncation_more(input: &NormalizedInput) -> More {
-    More {
-        truncated: true,
-        options: MoreOptions {
-            preferred_next: "max_rows".to_owned(),
-            ..MoreOptions::default()
-        },
-        hints: vec![format!(
-            "row limit reached (max_rows={}); raise max_rows up to policy, or narrow with WHERE / aggregate (count, group by) / keyset pagination",
-            input.max_rows
-        )],
-        preview: None,
-    }
-}
-
-fn build_shaped_body(body: Value, input: &NormalizedInput) -> Result<JsonOutput> {
-    build_json_output_from_value(
-        body,
-        JsonOutputOptions {
-            max_bytes: input.max_bytes,
-            max_allowed_bytes: MAX_MAX_BYTES,
-            json_paths: input.jsonpath.clone(),
-            transport_truncated: false,
-            original_bytes: None,
-        },
-    )
-}
-
-fn transpose_rows(rows: Vec<Value>) -> Result<(Value, Vec<String>)> {
-    let mut column_names = Vec::<String>::new();
-    let mut column_values = Vec::<Vec<Value>>::new();
-
-    for (row_index, row) in rows.into_iter().enumerate() {
-        let mut object = match row {
-            Value::Object(object) => object,
-            _ => return Err(Error::internal("sql result row is not an object")),
-        };
-        for key in object.keys() {
-            if !column_names.iter().any(|name| name == key) {
-                column_names.push(key.clone());
-                column_values.push(vec![Value::Null; row_index]);
-            }
-        }
-        for (name, values) in column_names.iter().zip(column_values.iter_mut()) {
-            values.push(object.remove(name).unwrap_or(Value::Null));
-        }
-    }
-
-    let mut object = serde_json::Map::new();
-    for (name, values) in column_names.iter().cloned().zip(column_values) {
-        object.insert(name, Value::Array(values));
-    }
-    Ok((Value::Object(object), column_names))
 }
 
 struct QueryRecorder<'a> {
@@ -1258,113 +1136,6 @@ mod tests {
         };
         assert!(enforce_sql_policy("explain select 1", &policy).is_ok());
         assert!(enforce_sql_policy("explain analyze select 1", &policy).is_err());
-    }
-
-    #[test]
-    fn flat_rows_become_column_oriented_body() -> Result<()> {
-        let rows = vec![
-            serde_json::json!({"status":"failed", "total": 42}),
-            serde_json::json!({"status":"paid", "region": "us"}),
-        ];
-        let input = normalize_input(base_input())?;
-        let output = build_column_output(rows, &input, false)?;
-
-        assert_eq!(output.row_count, 2);
-        assert_eq!(
-            output.column_names,
-            vec!["status".to_owned(), "total".to_owned(), "region".to_owned()]
-        );
-        assert_eq!(
-            output.body,
-            serde_json::json!({
-                "status": ["failed", "paid"],
-                "total": [42, null],
-                "region": [null, "us"]
-            })
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn row_truncation_emits_more_hint() -> Result<()> {
-        let rows = vec![serde_json::json!({"id": 1}), serde_json::json!({"id": 2})];
-        let input = normalize_input(SqlQueryInput {
-            max_rows: Some(2),
-            ..base_input()
-        })?;
-        let output = build_column_output(rows, &input, true)?;
-
-        assert!(output.truncated);
-        let more = output.more.ok_or_else(|| Error::internal("missing more"))?;
-        assert_eq!(more.options.preferred_next, "max_rows");
-        assert!(more.options.suggested_jsonpath.is_empty());
-        assert!(
-            more.hints
-                .iter()
-                .any(|hint| hint.contains("max_rows=2") && hint.contains("WHERE"))
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn untruncated_output_has_no_more() -> Result<()> {
-        let rows = vec![serde_json::json!({"id": 1})];
-        let input = normalize_input(base_input())?;
-        let output = build_column_output(rows, &input, false)?;
-
-        assert!(!output.truncated);
-        assert!(output.more.is_none());
-        Ok(())
-    }
-
-    #[test]
-    fn byte_overflow_more_mentions_query_narrowing() -> Result<()> {
-        let byte_more = More {
-            truncated: true,
-            options: MoreOptions {
-                preferred_next: "jsonpath".to_owned(),
-                ..MoreOptions::default()
-            },
-            hints: vec!["response JSON is too large".to_owned()],
-            preview: None,
-        };
-        let input = normalize_input(base_input())?;
-        let more = finalize_more(Some(byte_more), true, &input)
-            .ok_or_else(|| Error::internal("more present"))?;
-
-        // Byte-overflow guidance wins, and gains a SQL-specific narrowing hint.
-        assert_eq!(more.options.preferred_next, "jsonpath");
-        assert!(
-            more.hints
-                .iter()
-                .any(|hint| hint.contains("narrow the query"))
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn jsonpath_projects_one_column() -> Result<()> {
-        let rows = vec![
-            serde_json::json!({"status":"failed", "total": 42}),
-            serde_json::json!({"status":"paid", "total": 900}),
-        ];
-        let input = normalize_input(SqlQueryInput {
-            jsonpath: vec!["$.status".to_owned()],
-            ..base_input()
-        })?;
-        let output = build_column_output(rows, &input, false)?;
-
-        let projected = output
-            .body
-            .get("$.status")
-            .ok_or_else(|| Error::internal("missing projected column"))?;
-        assert_eq!(projected, &serde_json::json!([["failed", "paid"]]));
-        assert_eq!(output.row_count, 2);
-        assert_eq!(
-            output.column_names,
-            vec!["status".to_owned(), "total".to_owned()]
-        );
-        Ok(())
     }
 
     #[test]

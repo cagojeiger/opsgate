@@ -1,3 +1,5 @@
+mod output;
 mod service;
 
-pub(crate) use service::{SqlQueryInput, SqlQueryOutput, SqlQueryService};
+pub(crate) use output::SqlQueryOutput;
+pub(crate) use service::{SqlQueryInput, SqlQueryService};
