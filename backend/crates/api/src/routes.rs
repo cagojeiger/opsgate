@@ -8,6 +8,8 @@ use axum::http::header::HeaderName;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{any, get};
 use axum::{Json, Router};
+use opsgate_core::Config;
+use opsgate_db::PgPool;
 use serde::Serialize;
 use tower::ServiceBuilder;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
@@ -29,7 +31,7 @@ pub(crate) fn app(state: AppState) -> Router {
     Router::new()
         .merge(system_routes())
         .merge(auth_routes())
-        .merge(metadata_routes(&state))
+        .merge(metadata_routes(&state.config))
         .nest("/api", rest_api_routes(state.clone()))
         .route("/mcp", any(mcp_handler))
         .route("/mcp/admin", any(mcp_admin_handler))
@@ -61,8 +63,8 @@ fn auth_routes() -> Router<AppState> {
         .route("/callback", get(callback))
 }
 
-fn metadata_routes(state: &AppState) -> Router<AppState> {
-    let metadata_path = protected_resource_metadata_url(&state.config.resource_url).route_path;
+fn metadata_routes(config: &Config) -> Router<AppState> {
+    let metadata_path = protected_resource_metadata_url(&config.resource_url).route_path;
     let wildcard_path = format!("{metadata_path}/{{*path}}");
     let router = Router::new()
         .route(
@@ -99,9 +101,9 @@ async fn health() -> Json<HealthResponse> {
 }
 
 /// Readiness: verify the database is reachable before reporting ready.
-async fn ready(State(state): State<AppState>) -> Result<Json<HealthResponse>, ApiError> {
+async fn ready(State(db): State<PgPool>) -> Result<Json<HealthResponse>, ApiError> {
     sqlx::query("SELECT 1")
-        .execute(&state.db)
+        .execute(&db)
         .await
         .map_err(|error| {
             tracing::error!(event = "ready.db_unreachable", %error);

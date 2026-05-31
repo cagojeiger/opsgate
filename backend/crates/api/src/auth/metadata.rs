@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use axum::Json;
+use axum::extract::State;
 use axum::http::HeaderValue;
 use opsgate_core::Config;
 use serde::Serialize;
@@ -73,9 +76,9 @@ pub(crate) struct ProtectedResourceMetadata {
 }
 
 pub(crate) async fn authorization_server_metadata(
-    axum::extract::State(state): axum::extract::State<crate::state::AppState>,
+    State(config): State<Arc<Config>>,
 ) -> Json<AuthorizationServerMetadata> {
-    Json(authorization_server_metadata_for_config(&state.config))
+    Json(authorization_server_metadata_for_config(&config))
 }
 
 pub(crate) fn authorization_server_metadata_for_config(
@@ -106,9 +109,9 @@ pub(crate) fn authorization_server_metadata_for_config(
 }
 
 pub(crate) async fn protected_resource_metadata(
-    axum::extract::State(state): axum::extract::State<crate::state::AppState>,
+    State(config): State<Arc<Config>>,
 ) -> Json<ProtectedResourceMetadata> {
-    Json(protected_resource_metadata_for_config(&state.config))
+    Json(protected_resource_metadata_for_config(&config))
 }
 
 pub(crate) fn protected_resource_metadata_for_config(config: &Config) -> ProtectedResourceMetadata {
