@@ -95,7 +95,7 @@ impl<'a> QueryRecorder<'a> {
                 .map(result_column_names)
                 .unwrap_or_else(|| serde_json::json!([])),
             error_kind: error_kind.map(str::to_owned),
-            error_message_safe: error_message.map(crate::audit::safe::message),
+            error_message_safe: error_message.map(crate::audit::safe_message),
         };
         if let Err(error) = self.history.insert(params).await {
             tracing::error!(event = "sql.query.history_failed", detail = %error);
@@ -241,7 +241,7 @@ fn pre_input_denial_history_params(
         truncated: false,
         result_columns: serde_json::json!([]),
         error_kind: Some(reason.to_owned()),
-        error_message_safe: Some(crate::audit::safe::message(&error.to_string())),
+        error_message_safe: Some(crate::audit::safe_message(&error.to_string())),
     }
 }
 

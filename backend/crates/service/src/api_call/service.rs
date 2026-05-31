@@ -44,7 +44,7 @@ impl ApiCallService {
     pub async fn call(&self, caller: &Caller, input: ApiCallInput) -> Result<ApiCallOutput> {
         // Sanitize the raw alias up front: on the bad-input path it is the only
         // request field we record, and it has not been validated yet.
-        let raw_alias = crate::audit::safe::message(&input.alias);
+        let raw_alias = crate::audit::safe_message(&input.alias);
         let input = match normalize_input(input) {
             Ok(input) => input,
             Err(error) => {

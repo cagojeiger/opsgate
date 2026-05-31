@@ -36,7 +36,7 @@ impl SqlSchemaService {
     }
 
     pub async fn execute(&self, caller: &Caller, input: SqlSchemaInput) -> Result<SqlSchemaOutput> {
-        let raw_alias = crate::audit::safe::message(&input.alias);
+        let raw_alias = crate::audit::safe_message(&input.alias);
         let input = match normalize_input(input) {
             Ok(input) => input,
             Err(error) => {

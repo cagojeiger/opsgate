@@ -97,7 +97,7 @@ impl<'a> CallRecorder<'a> {
                 .map(|output| i32::try_from(output.returned_bytes).unwrap_or(i32::MAX)),
             truncated: output.is_some_and(|output| output.truncated),
             error_kind: error_kind.map(str::to_owned),
-            error_message_safe: error_message.map(crate::audit::safe::message),
+            error_message_safe: error_message.map(crate::audit::safe_message),
         };
         if let Err(error) = self.history.insert(params).await {
             tracing::error!(event = "api.call.history_failed", detail = %error);
@@ -252,7 +252,7 @@ fn pre_input_denial_history_params(
         returned_bytes: None,
         truncated: false,
         error_kind: Some(reason.to_owned()),
-        error_message_safe: Some(crate::audit::safe::message(&error.to_string())),
+        error_message_safe: Some(crate::audit::safe_message(&error.to_string())),
     }
 }
 
@@ -313,7 +313,7 @@ mod tests {
     #[test]
     fn history_message_is_bounded_and_single_line() {
         let message = format!("secret\r\n{}", "x".repeat(600));
-        let safe = crate::audit::safe::message(&message);
+        let safe = crate::audit::safe_message(&message);
         assert!(!safe.contains(['\r', '\n']));
         assert_eq!(safe.chars().count(), 512);
     }
