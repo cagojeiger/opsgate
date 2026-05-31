@@ -1,33 +1,49 @@
 use opsgate_domain::{Caller, IdentityError, ResolveAttrs};
 
 use crate::auth::bearer::AuthError;
-use crate::auth::jwks::{Claims, JwksError};
+use crate::auth::jwks::{Claims, JwksCache, JwksError};
+use crate::identity::CallerResolver;
 use crate::state::AppState;
 
 pub(crate) async fn verify_bearer(state: &AppState, token: &str) -> Result<Caller, AuthError> {
-    let attrs = authenticate(state, token).await?;
-    state
-        .resolver
-        .resolve_api(attrs)
-        .await
-        .map_err(map_identity_error)
+    let attrs = verify_token_attrs(&state.jwks, token).await?;
+    resolve_api_caller(state.resolver.as_ref(), attrs).await
 }
 
 pub(crate) async fn verify_bearer_mcp(state: &AppState, token: &str) -> Result<Caller, AuthError> {
-    let attrs = authenticate(state, token).await?;
-    state
-        .resolver
-        .resolve_mcp(attrs)
-        .await
-        .map_err(map_identity_error)
+    let attrs = verify_token_attrs(&state.jwks, token).await?;
+    resolve_mcp_caller(state.resolver.as_ref(), attrs).await
 }
 
 /// Verify the bearer JWT against JWKS and extract identity attributes.
 /// Shared by the REST and MCP paths, which differ only in how they resolve
 /// the verified attributes into a `Caller`.
-async fn authenticate(state: &AppState, token: &str) -> Result<ResolveAttrs, AuthError> {
-    let claims = state.jwks.verify(token).await.map_err(map_jwks_error)?;
+pub(crate) async fn verify_token_attrs(
+    jwks: &JwksCache,
+    token: &str,
+) -> Result<ResolveAttrs, AuthError> {
+    let claims = jwks.verify(token).await.map_err(map_jwks_error)?;
     Ok(attrs_from_claims(claims))
+}
+
+pub(crate) async fn resolve_api_caller(
+    resolver: &dyn CallerResolver,
+    attrs: ResolveAttrs,
+) -> Result<Caller, AuthError> {
+    resolver
+        .resolve_api(attrs)
+        .await
+        .map_err(map_identity_error)
+}
+
+pub(crate) async fn resolve_mcp_caller(
+    resolver: &dyn CallerResolver,
+    attrs: ResolveAttrs,
+) -> Result<Caller, AuthError> {
+    resolver
+        .resolve_mcp(attrs)
+        .await
+        .map_err(map_identity_error)
 }
 
 fn map_jwks_error(error: JwksError) -> AuthError {

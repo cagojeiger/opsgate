@@ -9,4 +9,6 @@ pub(crate) use error::{
 };
 pub(crate) use extractor::extract_bearer;
 pub(crate) use middleware::require_bearer;
+#[cfg(test)]
+pub(crate) use verify::{resolve_api_caller, verify_token_attrs};
 pub(crate) use verify::{verify_bearer, verify_bearer_mcp};
