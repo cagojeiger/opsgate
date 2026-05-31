@@ -132,3 +132,63 @@ fn trim_optional(value: Option<String>) -> Option<String> {
 fn trim_filter_optional(value: Option<String>) -> Option<String> {
     trim_optional(value).filter(|value| !value.is_empty())
 }
+
+#[cfg(test)]
+mod tests {
+    use opsgate_model::credential::CredentialCategory;
+
+    use super::*;
+
+    #[test]
+    fn list_input_validation_matches_go_boundaries() {
+        let valid = normalize_list_input(ListCredentialsInput {
+            category: Some(CredentialCategory::Http),
+            provider: Some(" k8s ".to_owned()),
+            env: Some("prod".to_owned()),
+            tag: Some(" Cluster ".to_owned()),
+            q: Some(" osaka ".to_owned()),
+            fields: Some(vec![" provider ".to_owned(), "env".to_owned()]),
+            limit: Some(50),
+            cursor: Some("prod-api".to_owned()),
+        });
+        assert!(validate_list_input(&valid, 100).is_ok());
+        assert_eq!(valid.tag.as_deref(), Some("cluster"));
+
+        for input in [
+            ListCredentialsInput {
+                provider: Some("Bad".to_owned()),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                env: Some("qa".to_owned()),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                tag: Some("bad space".to_owned()),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                q: Some("bad\nquery".to_owned()),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                fields: Some((0..9).map(|idx| format!("field{idx}")).collect()),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                fields: Some(vec!["origin".to_owned()]),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                limit: Some(101),
+                ..valid.clone()
+            },
+            ListCredentialsInput {
+                cursor: Some("bad cursor".to_owned()),
+                ..valid
+            },
+        ] {
+            assert!(validate_list_input(&normalize_list_input(input), 100).is_err());
+        }
+    }
+}
