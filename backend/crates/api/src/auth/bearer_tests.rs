@@ -225,7 +225,6 @@ fn state_with_resource_url(
             sql_query,
         },
         audit,
-        http: reqwest::Client::new(),
     })
 }
 

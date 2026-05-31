@@ -52,6 +52,10 @@ impl OidcProvider {
     }
 
     /// Build an OIDC client from cached (or freshly discovered) provider metadata.
+    pub(crate) fn http(&self) -> &reqwest::Client {
+        &self.http
+    }
+
     pub(crate) async fn client(&self) -> opsgate_core::Result<OidcClient> {
         let metadata = self.metadata().await?;
         let client = CoreClient::from_provider_metadata(

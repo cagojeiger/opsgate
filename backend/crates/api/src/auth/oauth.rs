@@ -131,24 +131,22 @@ pub(crate) async fn callback(
             .into_response();
     };
 
-    let userinfo =
-        match exchange_code_for_userinfo(&state.auth.oidc, &state.http, code, &verifier, &nonce)
-            .await
-        {
-            Ok(userinfo) => userinfo,
-            Err(error) => {
-                tracing::warn!(event = "oauth.exchange_failed", %error);
-                return (
-                    jar,
-                    html_page(
-                        StatusCode::BAD_GATEWAY,
-                        "Login error",
-                        "authorization exchange failed",
-                    ),
-                )
-                    .into_response();
-            }
-        };
+    let userinfo = match exchange_code_for_userinfo(&state.auth.oidc, code, &verifier, &nonce).await
+    {
+        Ok(userinfo) => userinfo,
+        Err(error) => {
+            tracing::warn!(event = "oauth.exchange_failed", %error);
+            return (
+                jar,
+                html_page(
+                    StatusCode::BAD_GATEWAY,
+                    "Login error",
+                    "authorization exchange failed",
+                ),
+            )
+                .into_response();
+        }
+    };
     let attrs = ResolveAttrs {
         sub: userinfo.sub,
         email: userinfo.email.unwrap_or_default(),

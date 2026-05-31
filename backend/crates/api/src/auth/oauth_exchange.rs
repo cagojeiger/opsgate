@@ -18,7 +18,6 @@ pub(super) struct UserInfo {
 
 pub(super) async fn exchange_code_for_userinfo(
     oidc: &OidcProvider,
-    http: &reqwest::Client,
     code: &str,
     verifier: &str,
     nonce: &str,
@@ -30,7 +29,7 @@ pub(super) async fn exchange_code_for_userinfo(
             opsgate_core::Error::internal(format!("openid token endpoint unavailable: {error}"))
         })?
         .set_pkce_verifier(PkceCodeVerifier::new(verifier.to_owned()))
-        .request_async(http)
+        .request_async(oidc.http())
         .await
         .map_err(|error| {
             opsgate_core::Error::internal(format!("openid token exchange failed: {error}"))
@@ -72,7 +71,7 @@ pub(super) async fn exchange_code_for_userinfo(
         .map_err(|error| {
             opsgate_core::Error::internal(format!("userinfo endpoint unavailable: {error}"))
         })?
-        .request_async(http)
+        .request_async(oidc.http())
         .await
         .map_err(|error| {
             opsgate_core::Error::internal(format!("userinfo request failed: {error}"))

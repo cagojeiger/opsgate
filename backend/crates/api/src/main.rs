@@ -109,7 +109,6 @@ async fn main() -> anyhow::Result<()> {
             sql_query: sql_query_service,
         },
         audit,
-        http,
     };
 
     let listener = TcpListener::bind(bind_addr).await?;

@@ -22,7 +22,6 @@ pub(crate) struct AppState {
     pub(crate) auth: AuthState,
     pub(crate) tools: ToolState,
     pub(crate) audit: Arc<opsgate_db::AuditRepo>,
-    pub(crate) http: reqwest::Client,
 }
 
 #[derive(Clone)]
