@@ -14,14 +14,14 @@ pub async fn list(
     parts: &Parts,
     Parameters(input): Parameters<ListCredentialsInput>,
 ) -> Result<Json<CredentialListOutput>, ErrorData> {
-    let caller = crate::mcp::tools::context::caller(parts)?;
+    let caller = crate::mcp::tools::caller(parts)?;
     let fields = input.fields.clone().and_then(normalize_fields);
     let page = state
         .tools
         .credentials
         .list(caller.user.id, input)
         .await
-        .map_err(|error| crate::mcp::tools::error::map_core_error("credential", error))?;
+        .map_err(|error| crate::mcp::tools::map_core_error("credential", error))?;
     let returned = page.credentials.len();
     Ok(Json(CredentialListOutput {
         credentials: page
@@ -43,13 +43,13 @@ pub async fn register_http(
     parts: &Parts,
     Parameters(input): Parameters<RegisterHttpCredentialInput>,
 ) -> Result<Json<RegisterCredentialOutput>, ErrorData> {
-    let caller = crate::mcp::tools::context::caller(parts)?;
+    let caller = crate::mcp::tools::caller(parts)?;
     let credential = state
         .tools
         .credentials
         .register_http(caller, input)
         .await
-        .map_err(|error| crate::mcp::tools::error::map_core_error("credential", error))?;
+        .map_err(|error| crate::mcp::tools::map_core_error("credential", error))?;
     Ok(Json(RegisterCredentialOutput::created(credential)))
 }
 
@@ -58,13 +58,13 @@ pub async fn register_sql(
     parts: &Parts,
     Parameters(input): Parameters<RegisterSqlCredentialInput>,
 ) -> Result<Json<RegisterCredentialOutput>, ErrorData> {
-    let caller = crate::mcp::tools::context::caller(parts)?;
+    let caller = crate::mcp::tools::caller(parts)?;
     let credential = state
         .tools
         .credentials
         .register_sql(caller, input)
         .await
-        .map_err(|error| crate::mcp::tools::error::map_core_error("credential", error))?;
+        .map_err(|error| crate::mcp::tools::map_core_error("credential", error))?;
     Ok(Json(RegisterCredentialOutput::created(credential)))
 }
 
@@ -73,13 +73,13 @@ pub async fn update_http(
     parts: &Parts,
     Parameters(input): Parameters<UpdateCredentialInput>,
 ) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
-    let caller = crate::mcp::tools::context::caller(parts)?;
+    let caller = crate::mcp::tools::caller(parts)?;
     let update = state
         .tools
         .credentials
         .update_http(caller, input)
         .await
-        .map_err(|error| crate::mcp::tools::error::map_core_error("credential", error))?;
+        .map_err(|error| crate::mcp::tools::map_core_error("credential", error))?;
     Ok(Json(UpdateCredentialOutput::from_update(update)))
 }
 
@@ -88,13 +88,13 @@ pub async fn update_sql(
     parts: &Parts,
     Parameters(input): Parameters<UpdateCredentialInput>,
 ) -> Result<Json<UpdateCredentialOutput>, ErrorData> {
-    let caller = crate::mcp::tools::context::caller(parts)?;
+    let caller = crate::mcp::tools::caller(parts)?;
     let update = state
         .tools
         .credentials
         .update_sql(caller, input)
         .await
-        .map_err(|error| crate::mcp::tools::error::map_core_error("credential", error))?;
+        .map_err(|error| crate::mcp::tools::map_core_error("credential", error))?;
     Ok(Json(UpdateCredentialOutput::from_update(update)))
 }
 
@@ -103,12 +103,12 @@ pub async fn delete(
     parts: &Parts,
     Parameters(input): Parameters<DeleteCredentialInput>,
 ) -> Result<Json<DeleteCredentialOutput>, ErrorData> {
-    let caller = crate::mcp::tools::context::caller(parts)?;
+    let caller = crate::mcp::tools::caller(parts)?;
     let credential = state
         .tools
         .credentials
         .delete(caller, input)
         .await
-        .map_err(|error| crate::mcp::tools::error::map_core_error("credential", error))?;
+        .map_err(|error| crate::mcp::tools::map_core_error("credential", error))?;
     Ok(Json(DeleteCredentialOutput::deleted(credential.alias)))
 }

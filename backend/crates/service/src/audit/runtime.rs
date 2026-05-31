@@ -1,12 +1,34 @@
 use opsgate_db::AuditRepo;
+use opsgate_model::credential::{Credential, CredentialCategory};
 use opsgate_model::{Caller, Channel};
 use serde_json::Value;
-
-use crate::credential::snapshot::CredentialSnapshot;
 
 use super::actor::caller_actor;
 use super::event::channel_str;
 use super::{AuditEvent, AuditOutcome, AuditTarget, append_event};
+
+#[derive(Debug, Clone)]
+pub(crate) struct CredentialSnapshot {
+    pub(crate) id: uuid::Uuid,
+    pub(crate) owner_user_id: uuid::Uuid,
+    pub(crate) alias: String,
+    pub(crate) category: CredentialCategory,
+    pub(crate) provider: String,
+    pub(crate) env: String,
+}
+
+impl From<&Credential> for CredentialSnapshot {
+    fn from(credential: &Credential) -> Self {
+        Self {
+            id: credential.id,
+            owner_user_id: credential.owner_user_id,
+            alias: credential.alias.clone(),
+            category: credential.category,
+            provider: credential.provider.clone(),
+            env: credential.env.clone(),
+        }
+    }
+}
 
 pub(crate) mod reason {
     pub const BAD_INPUT: &str = "bad_input";

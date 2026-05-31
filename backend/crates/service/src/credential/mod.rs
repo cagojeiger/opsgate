@@ -4,7 +4,6 @@ mod output;
 mod recording;
 pub(crate) mod secret;
 mod service;
-pub(crate) mod snapshot;
 mod target;
 mod update;
 

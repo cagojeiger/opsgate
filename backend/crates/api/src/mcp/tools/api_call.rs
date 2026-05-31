@@ -10,12 +10,12 @@ pub async fn call(
     parts: &Parts,
     Parameters(input): Parameters<ApiCallInput>,
 ) -> Result<Json<ApiCallOutput>, ErrorData> {
-    let caller = crate::mcp::tools::context::caller(parts)?;
+    let caller = crate::mcp::tools::caller(parts)?;
     state
         .tools
         .api_calls
         .call(caller, input)
         .await
         .map(Json)
-        .map_err(|error| crate::mcp::tools::error::map_core_error("api.call", error))
+        .map_err(|error| crate::mcp::tools::map_core_error("api.call", error))
 }

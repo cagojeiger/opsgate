@@ -44,13 +44,13 @@ pub(crate) async fn call(
     parts: &Parts,
     toolset: McpToolset,
 ) -> Result<Json<McpMeOutput>, ErrorData> {
-    let caller = crate::mcp::tools::context::caller(parts)?;
+    let caller = crate::mcp::tools::caller(parts)?;
     let summary = state
         .tools
         .credentials
         .summary(caller.user.id)
         .await
-        .map_err(|error| crate::mcp::tools::error::map_core_error("me", error))?;
+        .map_err(|error| crate::mcp::tools::map_core_error("me", error))?;
     Ok(Json(build_me(caller, toolset, summary)))
 }
 

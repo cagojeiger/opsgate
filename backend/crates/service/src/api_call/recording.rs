@@ -4,8 +4,8 @@ use opsgate_model::Caller;
 use opsgate_model::credential::Credential;
 use serde_json::Value;
 
+use crate::audit::runtime::CredentialSnapshot;
 use crate::audit::runtime::reason;
-use crate::credential::snapshot::CredentialSnapshot;
 
 use super::input::NormalizedApiCallInput;
 use super::output::ApiCallOutput;
