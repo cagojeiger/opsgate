@@ -48,7 +48,10 @@ impl RuntimeMcpServer {
         Self { state }
     }
 
-    #[tool(name = "me", description = "Return the authenticated caller identity.")]
+    #[tool(
+        name = "me",
+        description = "Identify the authenticated owner and show which tools this surface exposes. Does not reveal credentials or targets."
+    )]
     pub async fn me_tool(
         &self,
         Extension(parts): Extension<Parts>,
@@ -64,7 +67,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "credential.list",
-        description = "List visible credential aliases, metadata, and policy without returning secrets or target URLs."
+        description = "Start here. Lists aliases, category/provider/env/tags, and policy only. Never returns secrets, origin/base_path, or database_url."
     )]
     pub async fn credential_list(
         &self,
@@ -82,7 +85,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "api.call",
-        description = "Call category=http alias. JSON-only; use 1-3 jsonpath paths for large lists before max_bytes. Secrets/target URLs hidden."
+        description = "Call an HTTP alias from credential.list. Send only request_path under its hidden origin/base_path. JSON responses only; use 1-3 jsonpath projections for large lists."
     )]
     pub async fn api_call(
         &self,
@@ -100,7 +103,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "sql.query",
-        description = "Run read-only SELECT/WITH via category=sql alias. Prefer columns/WHERE/count/group; avoid SELECT *. Column JSON; jsonpath for large output."
+        description = "Run read-only SELECT/WITH on a SQL alias from credential.list. Prefer explicit columns, WHERE, count/group, and keyset pagination; avoid SELECT *. Use jsonpath only to trim returned JSON."
     )]
     pub async fn sql_query(
         &self,
@@ -118,7 +121,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "sql.schema",
-        description = "Schema only, no row values. mode=tables lists tables; mode=table + namespace/table shows columns/indexes before sql.query."
+        description = "Inspect SQL schema before writing unknown queries. mode=tables lists tables; mode=table with namespace/table shows columns and indexes. Never returns row data."
     )]
     pub async fn sql_schema(
         &self,
@@ -143,7 +146,7 @@ impl ServerHandler for RuntimeMcpServer {
             .with_server_info(
                 Implementation::new("opsgate", env!("CARGO_PKG_VERSION")).with_title("opsgate"),
             )
-            .with_instructions("Use credential.list first. For large JSON use 1-3 jsonpath paths before max_bytes. Use sql.schema before unknown SQL; avoid SELECT *.")
+            .with_instructions("Use credential.list first to choose an alias. For HTTP, call api.call with request_path only; target URLs stay hidden. For SQL, run sql.schema before unknown tables, then sql.query with explicit columns/WHERE/count/group and avoid SELECT *. Use 1-3 jsonpath paths to shrink large JSON outputs.")
     }
 }
 
@@ -158,7 +161,10 @@ impl AdminMcpServer {
         Self { state }
     }
 
-    #[tool(name = "me", description = "Return the authenticated caller identity.")]
+    #[tool(
+        name = "me",
+        description = "Identify the authenticated owner and show which admin tools this surface exposes. Does not reveal credentials or targets."
+    )]
     pub async fn me_tool(
         &self,
         Extension(parts): Extension<Parts>,
@@ -174,7 +180,7 @@ impl AdminMcpServer {
 
     #[tool(
         name = "credential.list",
-        description = "List visible credential aliases, metadata, and policy without returning secrets or target URLs."
+        description = "List existing credential aliases, metadata, and policy before update/delete. Never returns secrets, origin/base_path, or database_url."
     )]
     pub async fn credential_list(
         &self,
@@ -192,7 +198,7 @@ impl AdminMcpServer {
 
     #[tool(
         name = "credential.register_http",
-        description = "Register an HTTPS API credential for later api.call use. Secrets are sealed and never returned."
+        description = "Register an HTTP target for api.call. Put scheme+host in origin, optional fixed prefix in base_path, and per-call paths in api.call.request_path. Secrets are sealed and never returned."
     )]
     pub async fn credential_register_http(
         &self,
@@ -210,7 +216,7 @@ impl AdminMcpServer {
 
     #[tool(
         name = "credential.register_sql",
-        description = "Register a Postgres credential for later sql.schema and sql.query use. Secrets are sealed and never returned."
+        description = "Register a Postgres target for sql.schema/sql.query. database_url identifies host/db/options; username/password are separate secrets and are never returned."
     )]
     pub async fn credential_register_sql(
         &self,
@@ -228,7 +234,7 @@ impl AdminMcpServer {
 
     #[tool(
         name = "credential.update_http",
-        description = "Update mutable metadata and policy for an existing HTTP credential. Secrets and target URLs are immutable."
+        description = "Update metadata and policy for an HTTP alias. origin/base_path and secret headers are immutable; rotate by delete + register."
     )]
     pub async fn credential_update_http(
         &self,
@@ -246,7 +252,7 @@ impl AdminMcpServer {
 
     #[tool(
         name = "credential.update_sql",
-        description = "Update mutable metadata and policy for an existing SQL credential. Secrets and target URLs are immutable."
+        description = "Update metadata and policy for a SQL alias. database_url and username/password are immutable; rotate by delete + register."
     )]
     pub async fn credential_update_sql(
         &self,
@@ -264,7 +270,7 @@ impl AdminMcpServer {
 
     #[tool(
         name = "credential.delete",
-        description = "Soft-delete a credential and destroy its sealed secret material."
+        description = "Delete an alias and destroy its sealed secret material. Use only when the credential should no longer be callable."
     )]
     pub async fn credential_delete(
         &self,
@@ -289,7 +295,7 @@ impl ServerHandler for AdminMcpServer {
             .with_server_info(
                 Implementation::new("opsgate", env!("CARGO_PKG_VERSION")).with_title("opsgate"),
             )
-            .with_instructions("Admin: register/update/delete credentials. Secrets/target URLs are not returned; rotate by delete + re-register.")
+            .with_instructions("Admin surface manages credentials. Use origin/base_path/request_path for HTTP target boundaries: origin is scheme+host, base_path is a fixed hidden prefix, api.call.request_path is supplied later. For SQL, database_url is the target and username/password are separate secrets. Secrets and target URLs are never returned; rotate immutable target/secret fields by delete + register.")
     }
 }
 

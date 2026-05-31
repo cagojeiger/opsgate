@@ -153,7 +153,10 @@ pub fn build_json_output(raw: &[u8], options: JsonOutputOptions) -> Result<JsonO
 /// them straight back. This applies the same JSONPath projection, byte cap, and
 /// truncation guidance directly on the owned value, matching `build_json_output`
 /// byte-for-byte (`compact_json_bytes` is `serde_json::to_vec`).
-pub fn build_json_output_from_value(value: Value, options: JsonOutputOptions) -> Result<JsonOutput> {
+pub fn build_json_output_from_value(
+    value: Value,
+    options: JsonOutputOptions,
+) -> Result<JsonOutput> {
     validate_json_paths(&options.json_paths)?;
     if options.transport_truncated {
         return Ok(truncated_output(
@@ -180,7 +183,13 @@ pub fn build_json_output_from_value(value: Value, options: JsonOutputOptions) ->
             });
         }
         let preview = build_preview(&value);
-        return Ok(truncated_output(value, original_bytes, &options, preview, false));
+        return Ok(truncated_output(
+            value,
+            original_bytes,
+            &options,
+            preview,
+            false,
+        ));
     }
 
     let original_bytes = match options.original_bytes {
@@ -198,7 +207,13 @@ pub fn build_json_output_from_value(value: Value, options: JsonOutputOptions) ->
             more: None,
         });
     }
-    Ok(truncated_output(body, original_bytes, &options, None, false))
+    Ok(truncated_output(
+        body,
+        original_bytes,
+        &options,
+        None,
+        false,
+    ))
 }
 
 pub fn validate_json_paths(paths: &[String]) -> Result<()> {
@@ -544,8 +559,7 @@ mod tests {
                 {"metadata": {"name": "worker"}, "status": {"phase": "Pending"}}
             ]
         });
-        let raw = serde_json::to_vec(&value)
-            .map_err(|error| Error::internal(error.to_string()))?;
+        let raw = serde_json::to_vec(&value).map_err(|error| Error::internal(error.to_string()))?;
         let cases = [
             JsonOutputOptions {
                 max_bytes: 4096,

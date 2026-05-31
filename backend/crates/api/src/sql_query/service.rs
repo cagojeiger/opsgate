@@ -211,16 +211,24 @@ impl SqlQueryService {
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub(crate) struct SqlQueryInput {
+    /// Alias from credential.list with category=sql and provider=postgres.
     pub alias: String,
+    /// Short human reason for the query; stored in audit/history.
     pub purpose: String,
+    /// Read-only SQL. Only SELECT/WITH are allowed. Prefer explicit columns, WHERE, count/group, or keyset pagination; avoid SELECT *.
     pub query: String,
+    /// Positional bind parameters for the SQL query.
     #[serde(default)]
     #[schemars(schema_with = "opsgate_core::schema::json_value_array_schema")]
     pub params: Vec<Value>,
+    /// 1-3 JSONPath projections to shrink the returned JSON after SQL execution.
     #[serde(default)]
     pub jsonpath: Vec<String>,
+    /// Maximum rows to fetch before JSONPath/byte trimming. Prefer narrowing the SQL when possible.
     pub max_rows: Option<i32>,
+    /// Response byte budget after SQL shaping and JSONPath projection.
     pub max_bytes: Option<usize>,
+    /// Query timeout in milliseconds, bounded by credential policy.
     pub timeout_ms: Option<u32>,
 }
 

@@ -8,26 +8,37 @@ use super::model::CredentialCategory;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct CredentialPolicy {
+    /// HTTP methods allowed for api.call. Empty means GET only after normalization.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_methods: Vec<String>,
+    /// api.call.request_path prefixes allowed for this HTTP credential. Empty means / after normalization.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_request_path_prefixes: Vec<String>,
+    /// Query string keys that api.call must not send.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub denied_query_keys: Vec<String>,
+    /// Extra request headers api.call may send. Secret/unsafe headers stay blocked.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_request_headers: Vec<String>,
+    /// Allow sql.schema to expose schema metadata for this SQL credential.
     #[serde(default, skip_serializing_if = "is_false")]
     pub allow_metadata: bool,
+    /// Allow sql.query EXPLAIN without ANALYZE.
     #[serde(default, skip_serializing_if = "is_false")]
     pub allow_explain: bool,
+    /// Allow sql.query EXPLAIN ANALYZE. This can execute the query, so enable carefully.
     #[serde(default, skip_serializing_if = "is_false")]
     pub allow_explain_analyze: bool,
+    /// SQL function names blocked even in read-only SELECT/WITH queries.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub denied_functions: Vec<String>,
+    /// Maximum SQL rows or schema rows allowed. Zero means service default.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub max_rows: u32,
+    /// Maximum response bytes allowed. Zero means service default.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub max_bytes: u32,
+    /// Maximum target timeout in milliseconds. Zero means service default.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub timeout_ms: u32,
 }

@@ -176,19 +176,29 @@ impl SqlSchemaService {
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub(crate) struct SqlSchemaInput {
+    /// Alias from credential.list with category=sql and provider=postgres.
     pub alias: String,
+    /// Short human reason for inspecting schema; stored in audit/history.
     pub purpose: String,
+    /// tables = list tables. table = inspect one table using namespace and table.
     #[serde(default)]
     pub mode: String,
+    /// Schema/namespace for mode=table, usually public.
     #[serde(default)]
     pub namespace: String,
+    /// Table name for mode=table.
     #[serde(default)]
     pub table: String,
+    /// Maximum tables returned in mode=tables.
     pub limit: Option<i32>,
+    /// Pagination cursor returned by a previous mode=tables response.
     #[serde(default)]
     pub cursor: String,
+    /// Response byte budget. If too small, retry with mode=table for one table.
     pub max_bytes: Option<usize>,
+    /// Schema query timeout in milliseconds, bounded by credential policy.
     pub timeout_ms: Option<u32>,
+    /// Include indexes in mode=table output.
     #[serde(default)]
     pub include_indexes: bool,
 }

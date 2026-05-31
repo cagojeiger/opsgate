@@ -303,22 +303,33 @@ impl ApiCallService {
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub(crate) struct ApiCallInput {
+    /// Alias from credential.list with category=http.
     pub alias: String,
+    /// Short human reason for the call; stored in audit/history.
     pub purpose: String,
+    /// HTTP method. Defaults to GET and must be allowed by the credential policy.
     #[serde(default)]
     pub method: String,
+    /// Absolute path for this call, appended after the hidden origin/base_path.
+    /// Example: /api/v1/pods. Do not include scheme, host, or base_path here.
     pub request_path: String,
+    /// Query string key/value pairs for this call. Policy may deny specific keys.
     #[serde(default)]
     pub query: BTreeMap<String, String>,
+    /// Extra request headers allowed by policy. Authorization and other secret/unsafe headers are blocked.
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
+    /// Optional JSON request body for methods that allow a body.
     #[serde(default)]
     #[schemars(schema_with = "opsgate_core::schema::optional_json_value_schema")]
     pub body: Option<Value>,
+    /// Content-Type for body. Defaults to application/json when body is present.
     #[serde(default)]
     pub content_type: String,
+    /// 1-3 JSONPath projections to shrink large JSON responses, e.g. $.items[*].metadata.name.
     #[serde(default)]
     pub jsonpath: Vec<String>,
+    /// Response byte budget after JSONPath projection. Lower values force concise output.
     pub max_bytes: Option<usize>,
 }
 
