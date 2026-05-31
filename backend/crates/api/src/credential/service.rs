@@ -4,7 +4,7 @@ use std::net::IpAddr;
 use opsgate_core::crypto::Sealer;
 use opsgate_core::validation::validate_reason;
 use opsgate_core::{Error, Result};
-use opsgate_db::{CredentialAuditAction, CredentialRepo, CredentialSummaryRows};
+use opsgate_db::{CredentialRepo, CredentialSummaryRows};
 use opsgate_domain::Caller;
 use opsgate_domain::credential::{
     Credential, CredentialCategory, CredentialListParams, CredentialPolicy, CredentialSecret,
@@ -19,8 +19,12 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use super::recording::{delete_audit, register_audit, update_audit};
 use super::secret;
 use crate::target::ssrf::{BLOCKED_TARGET_IP_MESSAGE, target_ip_is_blocked};
+
+#[cfg(test)]
+use opsgate_db::CredentialAuditAction;
 
 const DEFAULT_LIST_LIMIT: i64 = 50;
 const MAX_LIST_LIMIT: i64 = 100;
@@ -673,58 +677,6 @@ fn changed_fields(
         fields.push("policy");
     }
     fields
-}
-
-fn register_audit(
-    caller: &Caller,
-    input: &RegisterCredentialInput,
-) -> opsgate_db::CredentialAuditParams {
-    crate::audit::credential_actor(
-        caller,
-        CredentialAuditAction::Register,
-        None,
-        Vec::new(),
-        serde_json::json!({
-            "provider": input.provider,
-            "env": input.env,
-            "tags": input.tags,
-            "allow_private_network": input.allow_private_network,
-            "allow_insecure_transport": input.allow_insecure_transport,
-            "has_tls_ca": input.tls_server_ca.is_some(),
-        }),
-    )
-}
-
-fn update_audit(
-    caller: &Caller,
-    reason: String,
-    changed_fields: &[&'static str],
-) -> opsgate_db::CredentialAuditParams {
-    let changed_fields = changed_fields
-        .iter()
-        .map(|field| (*field).to_owned())
-        .collect::<Vec<_>>();
-    crate::audit::credential_actor(
-        caller,
-        CredentialAuditAction::Update,
-        Some(reason.trim().to_owned()),
-        changed_fields.clone(),
-        serde_json::json!({
-            "changed_fields": changed_fields,
-        }),
-    )
-}
-
-fn delete_audit(caller: &Caller, reason: String) -> opsgate_db::CredentialAuditParams {
-    crate::audit::credential_actor(
-        caller,
-        CredentialAuditAction::Delete,
-        Some(reason.trim().to_owned()),
-        Vec::new(),
-        serde_json::json!({
-            "secret_destroyed": true,
-        }),
-    )
 }
 
 fn trim_optional(value: Option<String>) -> Option<String> {
