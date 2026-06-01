@@ -670,6 +670,120 @@ mod tests {
     }
 
     #[test]
+    fn jsonpath_no_match_returns_null_body() -> Result<()> {
+        let out = build_json_output(
+            br#"{"items":[{"name":"api"}]}"#,
+            JsonOutputOptions {
+                max_bytes: 4096,
+                json_paths: paths(&["$.items[*].missing"]),
+                ..JsonOutputOptions::default()
+            },
+        )?;
+
+        assert!(!out.truncated);
+        assert_eq!(out.body, Value::Null);
+        assert!(out.more.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn preview_escapes_non_dot_jsonpath_segments() -> Result<()> {
+        let out = build_json_output(
+            br#"{"items":[{"weird-key":{"a.b":1},"quote'name":2}]}"#,
+            JsonOutputOptions {
+                max_bytes: 16,
+                ..JsonOutputOptions::default()
+            },
+        )?;
+        let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
+        let preview = more
+            .preview
+            .ok_or_else(|| Error::internal("missing preview"))?;
+        let paths = preview
+            .paths
+            .into_iter()
+            .map(|path| path.path)
+            .collect::<Vec<_>>();
+
+        assert!(
+            paths
+                .iter()
+                .any(|path| path == "$.items[*]['weird-key']['a.b']")
+        );
+        assert!(
+            paths
+                .iter()
+                .any(|path| path == r#"$.items[*]['quote\'name']"#)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn preview_marks_nested_array_expansion_stopped() -> Result<()> {
+        let out = build_json_output(
+            br#"{"items":[{"matrix":[[1,2],[3,4]]}]}"#,
+            JsonOutputOptions {
+                max_bytes: 16,
+                ..JsonOutputOptions::default()
+            },
+        )?;
+        let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
+        let preview = more
+            .preview
+            .ok_or_else(|| Error::internal("missing preview"))?;
+
+        assert!(
+            preview
+                .paths
+                .iter()
+                .any(|path| { path.path == "$.items[*].matrix" && path.nested_expansion_stopped })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn preview_caps_returned_paths() -> Result<()> {
+        let mut object = Map::new();
+        for idx in 0..40 {
+            object.insert(format!("field_{idx:02}"), Value::from(idx));
+        }
+        let raw = serde_json::to_vec(&Value::Object(object))
+            .map_err(|error| Error::internal(error.to_string()))?;
+        let out = build_json_output(
+            &raw,
+            JsonOutputOptions {
+                max_bytes: 16,
+                ..JsonOutputOptions::default()
+            },
+        )?;
+        let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
+        let preview = more
+            .preview
+            .ok_or_else(|| Error::internal("missing preview"))?;
+
+        assert!(preview.path_count > MAX_PREVIEW_PATHS);
+        assert!(preview.returned_paths <= MAX_PREVIEW_PATHS);
+        assert!(preview.truncated);
+        Ok(())
+    }
+
+    #[test]
+    fn suggested_max_bytes_respects_max_allowed_bytes() -> Result<()> {
+        let out = build_json_output(
+            br#"{"items":[{"name":"api","phase":"Running"},{"name":"worker","phase":"Pending"}]}"#,
+            JsonOutputOptions {
+                max_bytes: 16,
+                max_allowed_bytes: 32,
+                ..JsonOutputOptions::default()
+            },
+        )?;
+        let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
+
+        assert!(more.options.suggested_max_bytes <= Some(32));
+        Ok(())
+    }
+
+    #[test]
     fn transport_truncation_preserves_reported_original_size() -> Result<()> {
         let out = build_json_output(
             br#"{"partial":true}"#,
