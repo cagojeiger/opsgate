@@ -1,9 +1,9 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use opsgate_domain::{Caller, IdentityError, ResolveAttrs, Resolver, UserStore};
+use opsgate_model::{Caller, IdentityError, ResolveAttrs, Resolver, UserStore};
 
-pub trait CallerResolver: Send + Sync {
+pub(crate) trait CallerResolver: Send + Sync {
     fn resolve_browser(
         &self,
         attrs: ResolveAttrs,

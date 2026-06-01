@@ -1,0 +1,33 @@
+[package]
+name = "opsgate-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+opsgate-core.workspace = true
+opsgate-db.workspace = true
+opsgate-infra.workspace = true
+opsgate-model.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+serde_json_path.workspace = true
+schemars.workspace = true
+secrecy.workspace = true
+sqlparser.workspace = true
+sqlx.workspace = true
+reqwest.workspace = true
+sha2.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+url.workspace = true
+zeroize.workspace = true
+aes-gcm.workspace = true
+base64.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

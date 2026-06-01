@@ -1,6 +1,7 @@
 use std::io;
 
-use opsgate_core::Config;
+use crate::config::Config;
+use secrecy::ExposeSecret;
 use tokio::net::TcpListener;
 #[cfg(unix)]
 use tokio::signal::unix::{SignalKind, signal};
@@ -8,15 +9,18 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+mod audit;
 mod auth;
+mod config;
 mod error;
 mod identity;
 mod mcp;
+mod request_context;
 mod rest;
 mod routes;
 mod state;
 
-use state::AppState;
+use state::{AppState, AuthState, ToolState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -30,8 +34,11 @@ async fn main() -> anyhow::Result<()> {
     // aborts startup instead of leaving us without graceful shutdown.
     let signals = ShutdownSignals::install()?;
 
-    let pool = opsgate_db::connect(&config).await?;
-    opsgate_db::run_migrations(&pool).await?;
+    let migrate_pool = opsgate_db::connect_migrate(&config.database_migrate_url).await?;
+    opsgate_db::run_migrations(&migrate_pool).await?;
+    migrate_pool.close().await;
+
+    let pool = opsgate_db::connect(&config.database_url, config.db_max_connections).await?;
     info!(
         event = "db.ready",
         max_connections = config.db_max_connections
@@ -44,24 +51,59 @@ async fn main() -> anyhow::Result<()> {
         .build()?;
     let jwks_url = format!("{}/keys", config.authgate_url);
     let user_repo = opsgate_db::UserRepo::new(pool.clone());
-    let resolver = opsgate_domain::Resolver::new(user_repo);
-    let config = std::sync::Arc::new(config);
-    let jwks = std::sync::Arc::new(auth::jwks::JwksCache::new(
-        jwks_url,
-        config.authgate_url.clone(),
-        config.resource_url.clone(),
-        config.jwks_cache_ttl,
-        http.clone(),
-    ));
-    let oidc = std::sync::Arc::new(auth::oidc::OidcProvider::new(&config, http.clone()));
-    let state = AppState::new(
-        pool.clone(),
-        config.clone(),
-        jwks,
-        oidc,
-        std::sync::Arc::new(resolver),
-        http,
+    let resolver = opsgate_model::Resolver::new(user_repo);
+    let credential_repo = opsgate_db::CredentialRepo::new(pool.clone());
+    let api_call_history = opsgate_db::ApiCallHistoryRepo::new(pool.clone());
+    let sql_query_history = opsgate_db::SqlQueryHistoryRepo::new(pool.clone());
+    let audit_repo = opsgate_db::AuditRepo::new(pool.clone());
+    let audit = std::sync::Arc::new(audit_repo.clone());
+    let sql_schema_audit_repo = audit_repo.clone();
+    let sql_query_audit_repo = audit_repo.clone();
+    let cipher = opsgate_service::Cipher::new(config.master_key.expose_secret())?;
+    let sealer = opsgate_service::Sealer::new(cipher);
+    let credential_service = std::sync::Arc::new(
+        opsgate_service::credential::CredentialService::new(credential_repo, sealer.clone()),
     );
+    let api_call_service = std::sync::Arc::new(opsgate_service::api_call::ApiCallService::new(
+        opsgate_db::CredentialRepo::new(pool.clone()),
+        api_call_history,
+        audit_repo,
+        sealer.clone(),
+    )?);
+    let target_pg_pools = opsgate_service::TargetPgPools::new();
+    let sql_schema_service =
+        std::sync::Arc::new(opsgate_service::sql_schema::SqlSchemaService::new(
+            opsgate_db::CredentialRepo::new(pool.clone()),
+            sql_schema_audit_repo,
+            sealer.clone(),
+            target_pg_pools.clone(),
+        ));
+    let sql_query_service = std::sync::Arc::new(opsgate_service::sql_query::SqlQueryService::new(
+        opsgate_db::CredentialRepo::new(pool.clone()),
+        sql_query_history,
+        sql_query_audit_repo,
+        sealer,
+        target_pg_pools,
+    ));
+    let config = std::sync::Arc::new(config);
+    let jwt = auth::jwt::JwtAuthority::from_url(&config, jwks_url);
+    let oidc = std::sync::Arc::new(auth::oidc::OidcProvider::new(&config, http.clone()));
+    let state = AppState {
+        db: pool.clone(),
+        config: config.clone(),
+        auth: AuthState {
+            jwt,
+            oidc,
+            resolver: std::sync::Arc::new(resolver),
+        },
+        tools: ToolState {
+            credentials: credential_service,
+            api_calls: api_call_service,
+            sql_schema: sql_schema_service,
+            sql_query: sql_query_service,
+        },
+        audit,
+    };
 
     let listener = TcpListener::bind(bind_addr).await?;
     info!(event = "server.listening", addr = %bind_addr);

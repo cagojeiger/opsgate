@@ -1,4 +1,3 @@
 mod adapter;
-pub mod me;
 
-pub use adapter::CallerResolver;
+pub(crate) use adapter::CallerResolver;

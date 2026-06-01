@@ -2,34 +2,39 @@
 
 use std::time::Duration;
 
-use axum::extract::{MatchedPath, State};
+use crate::config::Config;
+use axum::extract::{FromRef, MatchedPath, State};
 use axum::http::Request;
 use axum::http::header::HeaderName;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{any, get};
 use axum::{Json, Router};
+use opsgate_db::PgPool;
 use serde::Serialize;
 use tower::ServiceBuilder;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::TraceLayer;
 use tracing::{Span, info, info_span};
 
-use crate::auth::bearer::require_bearer;
-use crate::auth::metadata::{protected_resource_metadata, protected_resource_metadata_url};
+use crate::auth::api::require_api_bearer;
+use crate::auth::metadata::{
+    authorization_server_metadata, protected_resource_metadata, protected_resource_metadata_url,
+};
 use crate::auth::oauth::{callback, login};
 use crate::error::ApiError;
-use crate::mcp::server::mcp_handler;
-use crate::state::AppState;
+use crate::mcp::server::{mcp_admin_handler, mcp_handler};
+use crate::state::{AppState, AuthRuntimeState};
 
-pub fn app(state: AppState) -> Router {
+pub(crate) fn app(state: AppState) -> Router {
     let x_request_id = HeaderName::from_static("x-request-id");
 
     Router::new()
         .merge(system_routes())
         .merge(auth_routes())
-        .merge(metadata_routes(&state))
+        .merge(metadata_routes(&state.config))
         .nest("/api", rest_api_routes(state.clone()))
         .route("/mcp", any(mcp_handler))
+        .route("/mcp/admin", any(mcp_admin_handler))
         .with_state(state)
         .layer(
             ServiceBuilder::new()
@@ -58,16 +63,37 @@ fn auth_routes() -> Router<AppState> {
         .route("/callback", get(callback))
 }
 
-fn metadata_routes(state: &AppState) -> Router<AppState> {
-    let metadata_path = protected_resource_metadata_url(&state.config.resource_url).route_path;
-    Router::new().route(&metadata_path, get(protected_resource_metadata))
+fn metadata_routes(config: &Config) -> Router<AppState> {
+    let metadata_path = protected_resource_metadata_url(&config.resource_url).route_path;
+    let wildcard_path = format!("{metadata_path}/{{*path}}");
+    let router = Router::new()
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(authorization_server_metadata),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(protected_resource_metadata),
+        );
+
+    if metadata_path == "/.well-known/oauth-protected-resource" {
+        router.route(&wildcard_path, get(protected_resource_metadata))
+    } else {
+        router
+            .route(&metadata_path, get(protected_resource_metadata))
+            .route(&wildcard_path, get(protected_resource_metadata))
+    }
 }
 
 fn rest_api_routes(state: AppState) -> Router<AppState> {
+    let auth_state = AuthRuntimeState::from_ref(&state);
     Router::new()
+        .merge(crate::rest::api_call::routes())
+        .merge(crate::rest::credentials::routes())
         .merge(crate::rest::me::routes())
+        .merge(crate::rest::sql_query::routes())
         .fallback(api_not_found)
-        .layer(from_fn_with_state(state, require_bearer))
+        .layer(from_fn_with_state(auth_state, require_api_bearer))
 }
 
 /// Liveness: the process is up. No dependency checks.
@@ -76,9 +102,9 @@ async fn health() -> Json<HealthResponse> {
 }
 
 /// Readiness: verify the database is reachable before reporting ready.
-async fn ready(State(state): State<AppState>) -> Result<Json<HealthResponse>, ApiError> {
+async fn ready(State(db): State<PgPool>) -> Result<Json<HealthResponse>, ApiError> {
     sqlx::query("SELECT 1")
-        .execute(&state.db)
+        .execute(&db)
         .await
         .map_err(|error| {
             tracing::error!(event = "ready.db_unreachable", %error);

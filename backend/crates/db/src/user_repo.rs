@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use opsgate_core::{Error, Result};
-use opsgate_domain::{User, UserStore};
+use opsgate_model::{User, UserStore};
+use sqlx::FromRow;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -15,7 +16,7 @@ impl UserRepo {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, FromRow)]
 struct UserRow {
     id: Uuid,
     sub: String,
@@ -27,8 +28,8 @@ struct UserRow {
 }
 
 impl UserRow {
-    fn into_user(self) -> User {
-        User {
+    fn into_user(self) -> Result<User> {
+        Ok(User {
             id: self.id,
             sub: self.sub,
             email: self.email,
@@ -36,14 +37,13 @@ impl UserRow {
             is_active: self.is_active,
             created_at: self.created_at,
             updated_at: self.updated_at,
-        }
+        })
     }
 }
 
 impl UserStore for UserRepo {
     async fn upsert_by_sub(&self, sub: &str, email: &str, name: &str) -> Result<User> {
-        let user = sqlx::query_as!(
-            UserRow,
+        let user = sqlx::query_as::<_, UserRow>(
             r#"
             INSERT INTO users (sub, email, display_name)
             VALUES ($1, $2, $3)
@@ -52,32 +52,31 @@ impl UserStore for UserRepo {
                     updated_at = now()
             RETURNING id, sub, email, display_name, is_active, created_at, updated_at
             "#,
-            sub,
-            email,
-            name,
         )
+        .bind(sub)
+        .bind(email)
+        .bind(name)
         .fetch_one(&self.pool)
         .await
         .map_err(map_sqlx_error)?
-        .into_user();
+        .into_user()?;
         Ok(user)
     }
 
     async fn find_by_sub(&self, sub: &str) -> Result<Option<User>> {
-        let row = sqlx::query_as!(
-            UserRow,
+        let row = sqlx::query_as::<_, UserRow>(
             r#"
             SELECT id, sub, email, display_name, is_active, created_at, updated_at
             FROM users
             WHERE sub = $1
             "#,
-            sub,
         )
+        .bind(sub)
         .fetch_optional(&self.pool)
         .await
         .map_err(map_sqlx_error)?;
 
-        Ok(row.map(UserRow::into_user))
+        row.map(UserRow::into_user).transpose()
     }
 }
 

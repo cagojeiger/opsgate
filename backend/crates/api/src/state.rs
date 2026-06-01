@@ -2,40 +2,67 @@
 
 use std::sync::Arc;
 
-use opsgate_core::Config;
+use crate::config::Config;
+use axum::extract::FromRef;
 use opsgate_db::PgPool;
 
 use crate::identity::CallerResolver;
+use opsgate_service::api_call::ApiCallService;
+use opsgate_service::credential::CredentialService;
+use opsgate_service::sql_query::SqlQueryService;
+use opsgate_service::sql_schema::SqlSchemaService;
 
-use crate::auth::jwks::JwksCache;
 use crate::auth::oidc::OidcProvider;
 
 #[derive(Clone)]
-pub struct AppState {
-    pub db: PgPool,
-    pub config: Arc<Config>,
-    pub jwks: Arc<JwksCache>,
-    pub oidc: Arc<OidcProvider>,
-    pub resolver: Arc<dyn CallerResolver>,
-    pub http: reqwest::Client,
+pub(crate) struct AppState {
+    pub(crate) db: PgPool,
+    pub(crate) config: Arc<Config>,
+    pub(crate) auth: AuthState,
+    pub(crate) tools: ToolState,
+    pub(crate) audit: Arc<opsgate_db::AuditRepo>,
 }
 
-impl AppState {
-    pub fn new(
-        db: PgPool,
-        config: Arc<Config>,
-        jwks: Arc<JwksCache>,
-        oidc: Arc<OidcProvider>,
-        resolver: Arc<dyn CallerResolver>,
-        http: reqwest::Client,
-    ) -> Self {
+#[derive(Clone)]
+pub(crate) struct AuthState {
+    pub(crate) jwt: crate::auth::jwt::JwtAuthority,
+    pub(crate) oidc: Arc<OidcProvider>,
+    pub(crate) resolver: Arc<dyn CallerResolver>,
+}
+
+#[derive(Clone)]
+pub(crate) struct AuthRuntimeState {
+    pub(crate) config: Arc<Config>,
+    pub(crate) auth: AuthState,
+    pub(crate) audit: Arc<opsgate_db::AuditRepo>,
+}
+
+#[derive(Clone)]
+pub(crate) struct ToolState {
+    pub(crate) credentials: Arc<CredentialService>,
+    pub(crate) api_calls: Arc<ApiCallService>,
+    pub(crate) sql_schema: Arc<SqlSchemaService>,
+    pub(crate) sql_query: Arc<SqlQueryService>,
+}
+
+impl FromRef<AppState> for Arc<Config> {
+    fn from_ref(state: &AppState) -> Self {
+        state.config.clone()
+    }
+}
+
+impl FromRef<AppState> for PgPool {
+    fn from_ref(state: &AppState) -> Self {
+        state.db.clone()
+    }
+}
+
+impl FromRef<AppState> for AuthRuntimeState {
+    fn from_ref(state: &AppState) -> Self {
         Self {
-            db,
-            config,
-            jwks,
-            oidc,
-            resolver,
-            http,
+            config: state.config.clone(),
+            auth: state.auth.clone(),
+            audit: state.audit.clone(),
         }
     }
 }

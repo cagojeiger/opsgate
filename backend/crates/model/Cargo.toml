@@ -1,0 +1,22 @@
+[package]
+name = "opsgate-model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+opsgate-core.workspace = true
+serde.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+secrecy.workspace = true
+url.workspace = true
+schemars.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

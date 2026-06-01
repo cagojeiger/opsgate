@@ -1,7 +1,7 @@
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 
-pub fn html_page(status: StatusCode, title: &str, body: &str) -> Response {
+pub(crate) fn html_page(status: StatusCode, title: &str, body: &str) -> Response {
     let escaped_title = escape_html(title);
     let escaped_body = escape_html(body);
     (

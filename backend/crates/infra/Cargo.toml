@@ -1,0 +1,24 @@
+[package]
+name = "opsgate-infra"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+opsgate-core.workspace = true
+opsgate-model.workspace = true
+
+reqwest.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+url.workspace = true
+uuid.workspace = true
+ipnet.workspace = true
+moka.workspace = true
+
+[dev-dependencies]
+chrono.workspace = true
+
+[lints]
+workspace = true

@@ -12,7 +12,8 @@ path = "src/main.rs"
 [dependencies]
 opsgate-core.workspace = true
 opsgate-db.workspace = true
-opsgate-domain.workspace = true
+opsgate-model.workspace = true
+opsgate-service.workspace = true
 
 tokio.workspace = true
 tokio-util.workspace = true
@@ -23,18 +24,20 @@ sqlx.workspace = true
 
 serde.workspace = true
 serde_json.workspace = true
+validator.workspace = true
+config.workspace = true
+secrecy.workspace = true
 
 tracing.workspace = true
 tracing-subscriber.workspace = true
 dotenvy.workspace = true
 anyhow.workspace = true
 
-jsonwebtoken.workspace = true
+aliri.workspace = true
+aliri_oauth2.workspace = true
+aliri_clock.workspace = true
 openidconnect.workspace = true
 reqwest.workspace = true
-rand.workspace = true
-sha2.workspace = true
-base64.workspace = true
 url.workspace = true
 axum-extra.workspace = true
 subtle.workspace = true
@@ -44,6 +47,10 @@ uuid.workspace = true
 thiserror.workspace = true
 schemars.workspace = true
 time.workspace = true
+
+[dev-dependencies]
+jsonwebtoken.workspace = true
+base64.workspace = true
 
 [lints]
 workspace = true

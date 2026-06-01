@@ -2,7 +2,7 @@
 //!
 //! Provider discovery (`.well-known/openid-configuration`) returns endpoint
 //! addresses that change far less often than signing keys (those are handled
-//! separately by [`crate::auth::jwks::JwksCache`]). So instead of discovering
+//! separately by the bearer JWT verifier). So instead of discovering
 //! on every login/callback, we cache the discovered metadata with a generous
 //! TTL and rebuild the (cheap, network-free) client per request from it.
 
@@ -41,7 +41,7 @@ struct CachedMetadata {
 }
 
 impl OidcProvider {
-    pub(crate) fn new(config: &opsgate_core::Config, http: reqwest::Client) -> Self {
+    pub(crate) fn new(config: &crate::config::Config, http: reqwest::Client) -> Self {
         Self {
             issuer: config.authgate_url.clone(),
             client_id: config.oauth_client_id.clone(),
@@ -52,14 +52,23 @@ impl OidcProvider {
     }
 
     /// Build an OIDC client from cached (or freshly discovered) provider metadata.
+    pub(crate) fn http(&self) -> &reqwest::Client {
+        &self.http
+    }
+
     pub(crate) async fn client(&self) -> opsgate_core::Result<OidcClient> {
         let metadata = self.metadata().await?;
-        let client =
-            CoreClient::from_provider_metadata(metadata, ClientId::new(self.client_id.clone()), None)
-                .set_redirect_uri(RedirectUrl::new(self.redirect_url.clone()).map_err(|error| {
-                    opsgate_core::Error::validation(format!("invalid redirect URL: {error}"))
-                })?)
-                .set_auth_type(AuthType::RequestBody);
+        let client = CoreClient::from_provider_metadata(
+            metadata,
+            ClientId::new(self.client_id.clone()),
+            None,
+        )
+        .set_redirect_uri(
+            RedirectUrl::new(self.redirect_url.clone()).map_err(|error| {
+                opsgate_core::Error::validation(format!("invalid redirect URL: {error}"))
+            })?,
+        )
+        .set_auth_type(AuthType::RequestBody);
         Ok(client)
     }
 
@@ -86,8 +95,9 @@ impl OidcProvider {
     }
 
     async fn refresh(&self) -> opsgate_core::Result<CoreProviderMetadata> {
-        let issuer = IssuerUrl::new(self.issuer.clone())
-            .map_err(|error| opsgate_core::Error::validation(format!("invalid issuer URL: {error}")))?;
+        let issuer = IssuerUrl::new(self.issuer.clone()).map_err(|error| {
+            opsgate_core::Error::validation(format!("invalid issuer URL: {error}"))
+        })?;
         let metadata = CoreProviderMetadata::discover_async(issuer, &self.http)
             .await
             .map_err(|error| {
