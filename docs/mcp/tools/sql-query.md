@@ -163,6 +163,7 @@ JSONPath projection 결과는 `api.call`과 같은 공통 JSON 출력 규칙을 
 이력/감사 안전성:
 
 - 쿼리 텍스트는 저장되지 않는다.
+- policy/parser 거부 이력은 raw SQL 조각을 남기지 않도록 generic safe message만 저장한다.
 - params 값은 저장되지 않는다.
 - 결과 행과 결과 값은 저장되지 않는다.
 - DB 엔드포인트는 저장되지 않는다.

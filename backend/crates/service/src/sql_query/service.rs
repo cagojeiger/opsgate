@@ -12,6 +12,8 @@ use super::policy::{enforce_sql_policy, validate_policy_boundary};
 use super::recording::{QueryRecorder, record_bad_input};
 use crate::audit::runtime::reason;
 
+const SQL_POLICY_DENIED_MESSAGE: &str = "sql query denied by credential policy";
+
 #[derive(Clone)]
 pub struct SqlQueryService {
     credentials: CredentialRepo,
@@ -79,13 +81,13 @@ impl SqlQueryService {
         }
         if let Err(error) = validate_policy_boundary(&credential.policy, &input) {
             recorder
-                .denied(reason::POLICY_DENIED, &error.to_string())
+                .denied(reason::POLICY_DENIED, policy_denial_history_message(&error))
                 .await;
             return Err(error);
         }
         if let Err(error) = enforce_sql_policy(&input.query, &credential.policy) {
             recorder
-                .denied(reason::POLICY_DENIED, &error.to_string())
+                .denied(reason::POLICY_DENIED, policy_denial_history_message(&error))
                 .await;
             return Err(error);
         }
@@ -144,5 +146,27 @@ impl SqlQueryService {
         output.latency_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
         recorder.ok(&output).await;
         Ok(output)
+    }
+}
+
+fn policy_denial_history_message(_error: &Error) -> &'static str {
+    SQL_POLICY_DENIED_MESSAGE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn policy_denial_history_message_does_not_echo_sql_text() {
+        let error = Error::validation(
+            "query has SQL syntax error: Expected end of statement, found: secret_table",
+        );
+
+        let message = policy_denial_history_message(&error);
+
+        assert_eq!(message, "sql query denied by credential policy");
+        assert!(!message.contains("secret_table"));
+        assert!(!message.contains("Expected"));
     }
 }

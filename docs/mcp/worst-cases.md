@@ -84,6 +84,11 @@ latency/bytes/row count/truncated
 safe error kind/message
 ```
 
+예외적으로 raw dependency error는 저장하지 않습니다. HTTP target 전송 실패는
+opsgate가 분류한 `target_timeout`/`target_unreachable`/`target_private_network_blocked`
+같은 안전한 kind만 기록하고, SQL policy/parser 거부는 raw SQL 조각을 피하기 위해
+generic safe message로 기록합니다.
+
 저장 금지:
 
 ```text

@@ -126,7 +126,7 @@ impl ApiCallService {
         {
             Ok(output) => output,
             Err(error) => {
-                recorder.err(error.kind, error.message).await;
+                recorder.err(error.kind, &error.message).await;
                 return Err(error.error);
             }
         };

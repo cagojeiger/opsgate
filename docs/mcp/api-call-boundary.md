@@ -219,6 +219,7 @@ unknown-size response stops after MaxMaxBytes+1 confirmed bytes
 safe public error
 body 없음
 audit/history outcome=error
+transport 실패가 안전하게 분류된 경우 target_timeout/target_unreachable/target_private_network_blocked 같은 error_kind 기록
 ```
 
 
@@ -287,6 +288,10 @@ truncated
 error_kind
 safe error message
 ```
+
+HTTP target 전송 실패는 raw `reqwest`/transport error를 저장하지 않습니다. 대신
+opsgate가 안전하게 분류한 경우에만 `target_timeout`, `target_unreachable`,
+`target_private_network_blocked` 같은 kind와 짧은 safe message를 저장합니다.
 
 저장 금지:
 

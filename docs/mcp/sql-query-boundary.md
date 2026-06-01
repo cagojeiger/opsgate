@@ -233,6 +233,7 @@ query text 저장 없음
 params values 저장 없음
 result values 저장 없음
 audit/history outcome=error or denied
+policy/parser denied history는 raw SQL 조각 대신 generic safe message 기록
 ```
 
 ## 6. output / budget boundary
@@ -291,6 +292,12 @@ result_columns
 error_kind
 safe error message
 ```
+
+`sql.query`의 policy/parser 거부는 클라이언트 응답에는 실행 가능한 검증 메시지를
+반환할 수 있지만, history에는 raw SQL 조각이 섞일 위험을 피하기 위해 generic
+safe message(`sql query denied by credential policy`)만 저장합니다. SQL 실행 중
+Postgres가 반환한 알려진 SQLSTATE는 `sql_undefined_column` 같은 safe kind/message로
+기록하고, 내부 driver error는 generic message로 축약합니다.
 
 저장 금지:
 

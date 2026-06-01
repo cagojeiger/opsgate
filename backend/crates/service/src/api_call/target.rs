@@ -15,16 +15,27 @@ use super::output::ApiCallOutput;
 
 pub(super) struct CallExecutionError {
     pub(super) kind: &'static str,
-    pub(super) message: &'static str,
+    pub(super) message: String,
     pub(super) error: Error,
 }
 
 impl CallExecutionError {
-    fn new(kind: &'static str, message: &'static str, error: Error) -> Self {
+    fn new(kind: &'static str, message: impl Into<String>, error: Error) -> Self {
         Self {
             kind,
-            message,
+            message: message.into(),
             error,
+        }
+    }
+
+    fn target_request(error: Error) -> Self {
+        match &error {
+            Error::UserSafe { kind, message, .. } => Self::new(kind, message.clone(), error),
+            _ => Self::new(
+                reason::TARGET_REQUEST_FAILED,
+                "target request failed",
+                error,
+            ),
         }
     }
 }
@@ -42,13 +53,7 @@ pub(super) async fn execute_target_call(
     let started = Instant::now();
     let mut response = send_target(target_clients, credential, tls_ca, &url, input, secret)
         .await
-        .map_err(|error| {
-            CallExecutionError::new(
-                reason::TARGET_REQUEST_FAILED,
-                "target request failed",
-                error,
-            )
-        })?;
+        .map_err(CallExecutionError::target_request)?;
     let status_code = i32::from(response.status.as_u16());
     let headers = filtered_response_headers(&response.headers);
     if !response_content_type_is_json(&response.headers) {
@@ -401,6 +406,31 @@ mod tests {
         assert_eq!(filtered.get("resourceversion"), Some(&"123".to_owned()));
         assert!(!filtered.contains_key("authorization"));
         assert!(!filtered.contains_key("set-cookie"));
+    }
+
+    #[test]
+    fn target_request_error_keeps_user_safe_recording_fields() {
+        let error = Error::user_safe(
+            "target_timeout",
+            "Target request timed out before receiving a response.",
+            Some("Check target availability."),
+        );
+
+        let execution = CallExecutionError::target_request(error);
+
+        assert_eq!(execution.kind, "target_timeout");
+        assert_eq!(
+            execution.message,
+            "Target request timed out before receiving a response."
+        );
+    }
+
+    #[test]
+    fn target_request_error_falls_back_for_internal_recording() {
+        let execution = CallExecutionError::target_request(Error::internal("secret target URL"));
+
+        assert_eq!(execution.kind, reason::TARGET_REQUEST_FAILED);
+        assert_eq!(execution.message, "target request failed");
     }
 
     #[test]

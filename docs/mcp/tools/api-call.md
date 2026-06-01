@@ -80,6 +80,9 @@
 - 봉인된 secret header는 덮어쓸 수 없습니다.
 - 대상 응답은 JSON이어야 하며, Content-Type이 JSON이 아니면 body를 읽기 전에 거부합니다.
 - request body와 response body는 history나 audit에 저장되지 않습니다.
+- target 전송 실패는 raw transport error를 저장하지 않고, 안전하게 분류된 경우
+  `target_timeout`, `target_unreachable`, `target_private_network_blocked` 같은
+  error kind와 짧은 safe message만 history에 저장합니다.
 - history는 JSONPath 표현식을 projected value가 아니라 `projection_keys`로
   저장합니다.
 - `truncated`는 top-level 필드로도 반환됩니다.
