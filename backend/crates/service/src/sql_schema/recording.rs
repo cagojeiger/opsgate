@@ -3,8 +3,7 @@ use opsgate_model::Caller;
 use opsgate_model::credential::Credential;
 use serde_json::Value;
 
-use crate::audit::runtime::CredentialSnapshot;
-use crate::audit::runtime::reason;
+use crate::audit::runtime::{CredentialSnapshot, outcome, reason};
 
 use super::input::NormalizedInput;
 use super::output::SqlSchemaOutput;
@@ -35,15 +34,17 @@ impl<'a> SchemaRecorder<'a> {
     }
 
     pub(super) async fn denied(&self, kind: &str, message: &str) {
-        self.record("denied", Some(kind), Some(message), None).await;
+        self.record(outcome::DENIED, Some(kind), Some(message), None)
+            .await;
     }
 
     pub(super) async fn err(&self, kind: &str, message: &str) {
-        self.record("error", Some(kind), Some(message), None).await;
+        self.record(outcome::ERROR, Some(kind), Some(message), None)
+            .await;
     }
 
     pub(super) async fn ok(&self, output: &SqlSchemaOutput) {
-        self.record("ok", None, None, Some(output)).await;
+        self.record(outcome::OK, None, None, Some(output)).await;
     }
 
     async fn record(

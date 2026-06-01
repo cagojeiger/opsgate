@@ -4,8 +4,7 @@ use opsgate_model::Caller;
 use opsgate_model::credential::Credential;
 use serde_json::Value;
 
-use crate::audit::runtime::CredentialSnapshot;
-use crate::audit::runtime::reason;
+use crate::audit::runtime::{CredentialSnapshot, history_credential_fields, outcome, reason};
 
 use super::input::NormalizedApiCallInput;
 use super::output::ApiCallOutput;
@@ -39,15 +38,17 @@ impl<'a> CallRecorder<'a> {
     }
 
     pub(super) async fn denied(&self, kind: &str, message: &str) {
-        self.record("denied", Some(kind), Some(message), None).await;
+        self.record(outcome::DENIED, Some(kind), Some(message), None)
+            .await;
     }
 
     pub(super) async fn err(&self, kind: &str, message: &str) {
-        self.record("error", Some(kind), Some(message), None).await;
+        self.record(outcome::ERROR, Some(kind), Some(message), None)
+            .await;
     }
 
     pub(super) async fn ok(&self, output: &ApiCallOutput) {
-        self.record("ok", None, None, Some(output)).await;
+        self.record(outcome::OK, None, None, Some(output)).await;
     }
 
     async fn record(
@@ -59,26 +60,17 @@ impl<'a> CallRecorder<'a> {
     ) {
         self.record_audit(outcome, error_kind, output).await;
         let credential = self.credential.as_ref();
+        let history = history_credential_fields(self.caller, credential, &self.input.alias);
         let params = ApiCallHistoryParams {
-            owner_user_id: credential
-                .map(|credential| credential.owner_user_id)
-                .or(Some(self.caller.user.id)),
-            actor_user_id: Some(self.caller.user.id),
-            channel: crate::audit::runtime::history_channel_str(self.caller.channel).to_owned(),
-            request_id: self.caller.request_id.clone(),
-            credential_id: credential.map(|credential| credential.id),
-            credential_alias: credential
-                .map(|credential| credential.alias.clone())
-                .unwrap_or_else(|| self.input.alias.clone()),
-            credential_category: credential
-                .map(|credential| credential.category.as_str().to_owned())
-                .unwrap_or_default(),
-            credential_provider: credential
-                .map(|credential| credential.provider.clone())
-                .unwrap_or_default(),
-            credential_env: credential
-                .map(|credential| credential.env.clone())
-                .unwrap_or_default(),
+            owner_user_id: history.owner_user_id,
+            actor_user_id: history.actor_user_id,
+            channel: history.channel,
+            request_id: history.request_id,
+            credential_id: history.credential_id,
+            credential_alias: history.credential_alias,
+            credential_category: history.credential_category,
+            credential_provider: history.credential_provider,
+            credential_env: history.credential_env,
             method: self.input.method.clone(),
             request_path: self.input.request_path.clone(),
             query_keys: serde_json::json!(self.input.query.keys().cloned().collect::<Vec<_>>()),
@@ -245,7 +237,7 @@ fn pre_input_denial_history_params(
         projection_keys: serde_json::json!([]),
         max_bytes: 0,
         purpose: None,
-        outcome: "denied".to_owned(),
+        outcome: outcome::DENIED.to_owned(),
         status_code: None,
         latency_ms: None,
         original_bytes: None,

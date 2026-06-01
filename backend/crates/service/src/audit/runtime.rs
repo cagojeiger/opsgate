@@ -2,6 +2,7 @@ use opsgate_db::AuditRepo;
 use opsgate_model::credential::{Credential, CredentialCategory};
 use opsgate_model::{Caller, Channel};
 use serde_json::Value;
+use uuid::Uuid;
 
 use super::actor::caller_actor;
 use super::event::channel_str;
@@ -9,8 +10,8 @@ use super::{AuditEvent, AuditOutcome, AuditTarget, append_event};
 
 #[derive(Debug, Clone)]
 pub(crate) struct CredentialSnapshot {
-    pub(crate) id: uuid::Uuid,
-    pub(crate) owner_user_id: uuid::Uuid,
+    pub(crate) id: Uuid,
+    pub(crate) owner_user_id: Uuid,
     pub(crate) alias: String,
     pub(crate) category: CredentialCategory,
     pub(crate) provider: String,
@@ -28,6 +29,12 @@ impl From<&Credential> for CredentialSnapshot {
             env: credential.env.clone(),
         }
     }
+}
+
+pub(crate) mod outcome {
+    pub const OK: &str = "ok";
+    pub const DENIED: &str = "denied";
+    pub const ERROR: &str = "error";
 }
 
 pub(crate) mod reason {
@@ -103,6 +110,47 @@ pub async fn append_tool_event(record: ToolEventRecord<'_>) {
     append_event(record.audit, event, record.failure_event).await;
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct HistoryCredentialFields {
+    pub(crate) owner_user_id: Option<Uuid>,
+    pub(crate) actor_user_id: Option<Uuid>,
+    pub(crate) channel: String,
+    pub(crate) request_id: Option<String>,
+    pub(crate) credential_id: Option<Uuid>,
+    pub(crate) credential_alias: String,
+    pub(crate) credential_category: String,
+    pub(crate) credential_provider: String,
+    pub(crate) credential_env: String,
+}
+
+pub(crate) fn history_credential_fields(
+    caller: &Caller,
+    credential: Option<&CredentialSnapshot>,
+    fallback_alias: &str,
+) -> HistoryCredentialFields {
+    HistoryCredentialFields {
+        owner_user_id: credential
+            .map(|credential| credential.owner_user_id)
+            .or(Some(caller.user.id)),
+        actor_user_id: Some(caller.user.id),
+        channel: history_channel_str(caller.channel).to_owned(),
+        request_id: caller.request_id.clone(),
+        credential_id: credential.map(|credential| credential.id),
+        credential_alias: credential
+            .map(|credential| credential.alias.clone())
+            .unwrap_or_else(|| fallback_alias.to_owned()),
+        credential_category: credential
+            .map(|credential| credential.category.as_str().to_owned())
+            .unwrap_or_default(),
+        credential_provider: credential
+            .map(|credential| credential.provider.clone())
+            .unwrap_or_default(),
+        credential_env: credential
+            .map(|credential| credential.env.clone())
+            .unwrap_or_default(),
+    }
+}
+
 pub fn history_channel_str(channel: Channel) -> &'static str {
     match channel {
         Channel::Api => "api",
@@ -133,7 +181,7 @@ pub fn insert_reason_detail(
     error_kind: Option<&str>,
 ) {
     if let Some(error_kind) = error_kind {
-        let key = if outcome == "denied" {
+        let key = if outcome == outcome::DENIED {
             "denial_reason"
         } else {
             "error_kind"
@@ -158,7 +206,7 @@ pub fn pre_input_denial_event(
     tool_event(
         caller,
         tool,
-        "denied",
+        outcome::DENIED,
         None,
         alias.to_owned(),
         None,
