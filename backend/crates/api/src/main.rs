@@ -15,6 +15,7 @@ mod config;
 mod error;
 mod identity;
 mod mcp;
+mod openapi;
 mod request_context;
 mod rest;
 mod routes;
@@ -24,6 +25,12 @@ use state::{AppState, AuthState, ToolState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if std::env::args().nth(1).as_deref() == Some("--print-openapi") {
+        crate::openapi::write_json(std::io::stdout())?;
+        println!();
+        return Ok(());
+    }
+
     // Load `.env` for local development; absence is fine in production.
     let _ = dotenvy::dotenv();
     init_tracing();

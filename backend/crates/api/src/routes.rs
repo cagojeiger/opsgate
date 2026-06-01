@@ -25,13 +25,14 @@ use crate::error::ApiError;
 use crate::mcp::server::{mcp_admin_handler, mcp_handler};
 use crate::state::{AppState, AuthRuntimeState};
 
-pub(crate) fn app(state: AppState) -> Router {
+pub fn app(state: AppState) -> Router {
     let x_request_id = HeaderName::from_static("x-request-id");
 
     Router::new()
         .merge(system_routes())
         .merge(auth_routes())
         .merge(metadata_routes(&state.config))
+        .merge(openapi_routes(&state.config))
         .nest("/api", rest_api_routes(state.clone()))
         .route("/mcp", any(mcp_handler))
         .route("/mcp/admin", any(mcp_admin_handler))
@@ -49,6 +50,14 @@ pub(crate) fn app(state: AppState) -> Router {
                 )
                 .layer(PropagateRequestIdLayer::new(x_request_id)),
         )
+}
+
+fn openapi_routes(config: &Config) -> Router<AppState> {
+    if config.openapi_enabled {
+        crate::openapi::routes()
+    } else {
+        Router::new()
+    }
 }
 
 fn system_routes() -> Router<AppState> {

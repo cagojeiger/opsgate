@@ -80,6 +80,8 @@ axum-extra = { version = "0.10", features = ["cookie"] }
 subtle = "2"
 rmcp = { version = "1.7.0", features = ["transport-streamable-http-server"] }
 schemars = { version = "1", features = ["derive"] }
+utoipa = { version = "5.5.0", features = ["axum_extras", "chrono", "uuid", "url"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 time = "0.3"
 sqlparser = { version = "0.62.0", features = ["visitor"] }
 

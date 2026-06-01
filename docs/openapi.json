@@ -1,0 +1,1051 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Opsgate API",
+    "description": "",
+    "license": {
+      "name": "Apache-2.0",
+      "identifier": "Apache-2.0"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/api/call": {
+      "post": {
+        "tags": [
+          "runtime"
+        ],
+        "operationId": "call_api",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiCallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Target JSON response shaped for LLM/FE consumption",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiCallResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, policy denial, or safe target error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Credential not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/credentials": {
+      "get": {
+        "tags": [
+          "credentials"
+        ],
+        "operationId": "list_credentials",
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "description": "Filter by category: http or sql",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Filter by provider",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "env",
+            "in": "query",
+            "description": "Filter by env",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "description": "Filter by tag",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Search alias/provider/description",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "description": "Repeatable projected fields",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Continuation cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Secret-free credential list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "credentials"
+        ],
+        "operationId": "register_credential",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Credential registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterCredentialResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid credential input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Alias conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/credentials/{alias}": {
+      "delete": {
+        "tags": [
+          "credentials"
+        ],
+        "operationId": "delete_credential",
+        "parameters": [
+          {
+            "name": "alias",
+            "in": "path",
+            "description": "Credential alias",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Credential deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteCredentialResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Credential not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "tags": [
+          "identity"
+        ],
+        "operationId": "get_me",
+        "responses": {
+          "200": {
+            "description": "Authenticated owner identity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Inactive user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/sql/query": {
+      "post": {
+        "tags": [
+          "runtime"
+        ],
+        "operationId": "query_sql",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SqlQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Read-only SQL result shaped as column arrays",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlQueryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, policy denial, or safe SQL error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Credential not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiCallRequest": {
+        "type": "object",
+        "required": [
+          "alias",
+          "purpose",
+          "request_path"
+        ],
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "body": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "jsonpath": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "method": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "query": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "request_path": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiCallResponse": {
+        "type": "object",
+        "required": [
+          "status_code",
+          "body",
+          "truncated",
+          "original_bytes",
+          "returned_bytes",
+          "latency_ms"
+        ],
+        "properties": {
+          "body": {
+            "type": "object"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "latency_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "more": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "original_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "returned_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status_code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CredentialListResponse": {
+        "type": "object",
+        "required": [
+          "credentials",
+          "page"
+        ],
+        "properties": {
+          "credentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CredentialResponse"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CredentialPageResponse"
+          }
+        }
+      },
+      "CredentialPageResponse": {
+        "type": "object",
+        "required": [
+          "limit",
+          "returned",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "returned": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "CredentialResponse": {
+        "type": "object",
+        "required": [
+          "alias"
+        ],
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "allow_insecure_transport": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "allow_private_network": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "category": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RestCredentialCategory"
+              }
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "env": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RestCredentialPolicy"
+              }
+            ]
+          },
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "DeleteCredentialRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteCredentialResponse": {
+        "type": "object",
+        "required": [
+          "alias",
+          "deleted"
+        ],
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error",
+          "message"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "MeResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "sub",
+          "email",
+          "name"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sub": {
+            "type": "string"
+          }
+        }
+      },
+      "RegisterCredentialRequest": {
+        "type": "object",
+        "required": [
+          "category",
+          "provider",
+          "alias"
+        ],
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "allow_insecure_transport": {
+            "type": "boolean"
+          },
+          "allow_private_network": {
+            "type": "boolean"
+          },
+          "base_path": {
+            "type": "string"
+          },
+          "category": {
+            "$ref": "#/components/schemas/RestCredentialCategory"
+          },
+          "database_url": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "env": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/RestCredentialPolicy"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "secret": {
+            "$ref": "#/components/schemas/RegisterSecretRequest"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tls_server_ca": {
+            "type": "string"
+          }
+        }
+      },
+      "RegisterCredentialResponse": {
+        "type": "object",
+        "required": [
+          "alias",
+          "category",
+          "provider",
+          "env",
+          "tags",
+          "description",
+          "created"
+        ],
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "category": {
+            "$ref": "#/components/schemas/RestCredentialCategory"
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "env": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RegisterSecretRequest": {
+        "type": "object",
+        "properties": {
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecretHeaderRequest"
+            }
+          },
+          "password": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "RestCredentialCategory": {
+        "type": "string",
+        "enum": [
+          "http",
+          "sql"
+        ]
+      },
+      "RestCredentialPolicy": {
+        "type": "object",
+        "properties": {
+          "allow_explain": {
+            "type": "boolean"
+          },
+          "allow_explain_analyze": {
+            "type": "boolean"
+          },
+          "allow_metadata": {
+            "type": "boolean"
+          },
+          "allowed_methods": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_request_headers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_request_path_prefixes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "denied_functions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "denied_query_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_bytes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "max_rows": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "SecretHeaderRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "SqlQueryRequest": {
+        "type": "object",
+        "required": [
+          "alias",
+          "purpose",
+          "query"
+        ],
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "jsonpath": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "max_rows": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "params": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "timeout_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "SqlQueryResponse": {
+        "type": "object",
+        "required": [
+          "body",
+          "row_count",
+          "truncated",
+          "original_bytes",
+          "returned_bytes",
+          "latency_ms"
+        ],
+        "properties": {
+          "body": {
+            "type": "object"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "more": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "original_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "returned_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "row_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearer_auth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "identity",
+      "description": "Authenticated owner identity"
+    },
+    {
+      "name": "credentials",
+      "description": "Secret-safe credential management"
+    },
+    {
+      "name": "runtime",
+      "description": "Policy-gated target execution"
+    }
+  ]
+}

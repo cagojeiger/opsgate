@@ -150,6 +150,7 @@ mod tests {
                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned(),
             ),
             jwks_cache_ttl: Duration::from_secs(300),
+            openapi_enabled: false,
             secure_cookies: false,
         }
     }

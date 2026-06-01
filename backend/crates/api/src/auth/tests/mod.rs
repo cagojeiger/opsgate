@@ -163,6 +163,7 @@ fn state_with_resource_url(
         resource_url: resource_url.to_owned(),
         master_key: SecretString::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
         jwks_cache_ttl: Duration::from_secs(300),
+        openapi_enabled: false,
         secure_cookies: false,
     });
     let jwt = crate::auth::jwt::JwtAuthority::from_jwks(&config, aliri_jwks()?);
@@ -241,6 +242,7 @@ fn test_config(resource_url: &str) -> crate::config::Config {
         resource_url: resource_url.to_owned(),
         master_key: SecretString::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
         jwks_cache_ttl: Duration::from_secs(300),
+        openapi_enabled: false,
         secure_cookies: false,
     }
 }

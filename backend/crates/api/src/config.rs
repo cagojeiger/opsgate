@@ -59,6 +59,9 @@ pub struct Config {
     )]
     #[validate(custom(function = "validate_jwks_cache_ttl"))]
     pub jwks_cache_ttl: Duration,
+    /// Expose /openapi.json and /swagger-ui. Disabled by default for production safety.
+    #[serde(default)]
+    pub openapi_enabled: bool,
     /// Whether login flow cookies must carry the Secure flag.
     #[serde(skip)]
     pub secure_cookies: bool,
@@ -198,6 +201,7 @@ mod tests {
                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned(),
             ),
             jwks_cache_ttl: Duration::from_secs(300),
+            openapi_enabled: false,
             secure_cookies: false,
         }
     }
@@ -243,6 +247,7 @@ mod tests {
             config.jwks_cache_ttl.as_secs(),
             super::DEFAULT_JWKS_CACHE_TTL_SECS
         );
+        assert!(!config.openapi_enabled);
         Ok(())
     }
 
@@ -254,6 +259,7 @@ mod tests {
         assert_eq!(config.bind_addr.to_string(), "127.0.0.1:9091");
         assert_eq!(config.db_max_connections, 10);
         assert_eq!(config.jwks_cache_ttl.as_secs(), 300);
+        assert!(!config.openapi_enabled);
         assert!(!config.secure_cookies);
         Ok(())
     }

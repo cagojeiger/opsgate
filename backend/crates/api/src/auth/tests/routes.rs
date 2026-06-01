@@ -440,6 +440,39 @@ async fn rest_parity_post_routes_do_not_require_content_type_header()
 }
 
 #[tokio::test]
+async fn openapi_routes_are_disabled_by_default() -> Result<(), Box<dyn std::error::Error>> {
+    let app = crate::routes::app(registered_state()?);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/openapi.json")
+                .body(Body::empty())?,
+        )
+        .await?;
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    Ok(())
+}
+
+#[tokio::test]
+async fn openapi_routes_can_be_enabled() -> Result<(), Box<dyn std::error::Error>> {
+    let mut state = registered_state()?;
+    Arc::make_mut(&mut state.config).openapi_enabled = true;
+    let response = request(
+        state,
+        Request::builder()
+            .uri("/openapi.json")
+            .body(Body::empty())?,
+    )
+    .await?;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let value = response_json(response).await?;
+    assert_eq!(value.get("openapi"), Some(&json!("3.1.0")));
+    Ok(())
+}
+
+#[tokio::test]
 async fn public_routes_do_not_require_bearer() -> Result<(), Box<dyn std::error::Error>> {
     let app = crate::routes::app(state(ResolverMode::Registered(true))?);
     let response = app
