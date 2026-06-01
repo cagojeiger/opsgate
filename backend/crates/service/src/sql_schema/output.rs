@@ -166,3 +166,159 @@ pub(super) fn join_cursor(namespace: &str, table: &str) -> String {
 fn is_false(value: &bool) -> bool {
     !*value
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn input(max_bytes: usize) -> NormalizedInput {
+        NormalizedInput {
+            alias: "analytics".to_owned(),
+            purpose: "Inspect schema safely".to_owned(),
+            mode: MODE_TABLES.to_owned(),
+            namespace: String::new(),
+            table: String::new(),
+            limit: 50,
+            cursor: String::new(),
+            max_bytes,
+            timeout_ms: 3000,
+            include_indexes: true,
+        }
+    }
+
+    #[test]
+    fn table_detail_trimming_drops_indexes_before_columns() -> Result<()> {
+        let mut output = SqlSchemaOutput {
+            mode: "table".to_owned(),
+            tables: Vec::new(),
+            table: Some(TableDetail {
+                namespace: "public".to_owned(),
+                name: "audit_logs".to_owned(),
+                kind: "table".to_owned(),
+                columns: vec![Column {
+                    name: "id".to_owned(),
+                    data_type: "bigint".to_owned(),
+                    nullable: false,
+                    has_default: true,
+                }],
+                primary_key: vec!["id".to_owned()],
+                indexes: vec![Index {
+                    name: "audit_logs_created_at_idx".repeat(8),
+                    columns: vec!["created_at".to_owned()],
+                    unique: false,
+                    primary: false,
+                }],
+            }),
+            page: None,
+            truncated: false,
+            returned_bytes: 0,
+            more: None,
+            latency_ms: 3,
+        };
+        let mut limit_input = input(1024);
+        output.returned_bytes = encoded_len(&output)?;
+        limit_input.max_bytes = output.returned_bytes - 1;
+
+        finalize_output(&mut output, &limit_input)?;
+
+        let table = output
+            .table
+            .as_ref()
+            .ok_or_else(|| Error::internal("missing table"))?;
+        assert!(output.truncated);
+        assert!(table.indexes.is_empty());
+        assert_eq!(table.columns.len(), 1);
+        assert_eq!(table.primary_key, vec!["id".to_owned()]);
+        assert!(output.returned_bytes <= limit_input.max_bytes);
+        Ok(())
+    }
+
+    #[test]
+    fn table_list_trimming_marks_page_has_more() -> Result<()> {
+        let mut output = SqlSchemaOutput {
+            mode: MODE_TABLES.to_owned(),
+            tables: vec![
+                TableSummary {
+                    namespace: "public".to_owned(),
+                    name: "short".to_owned(),
+                    kind: "table".to_owned(),
+                },
+                TableSummary {
+                    namespace: "public".to_owned(),
+                    name: "very_long_table_name_".repeat(10),
+                    kind: "table".to_owned(),
+                },
+            ],
+            table: None,
+            page: Some(Page {
+                limit: 50,
+                returned: 2,
+                has_more: false,
+                next_cursor: String::new(),
+            }),
+            truncated: false,
+            returned_bytes: 0,
+            more: None,
+            latency_ms: 2,
+        };
+        output.returned_bytes = encoded_len(&output)?;
+        let first_table = output
+            .tables
+            .first()
+            .cloned()
+            .ok_or_else(|| Error::internal("missing first table"))?;
+        let max_bytes = encoded_len(&SqlSchemaOutput {
+            tables: vec![first_table],
+            page: Some(Page {
+                limit: 50,
+                returned: 1,
+                has_more: true,
+                next_cursor: "public.short".to_owned(),
+            }),
+            ..output.clone()
+        })?;
+
+        trim_table_list(&mut output, max_bytes)?;
+
+        let page = output
+            .page
+            .as_ref()
+            .ok_or_else(|| Error::internal("missing page"))?;
+        assert_eq!(output.tables.len(), 1);
+        assert!(page.has_more);
+        assert_eq!(page.returned, 1);
+        assert_eq!(page.next_cursor, "public.short");
+        assert!(output.returned_bytes <= max_bytes);
+        Ok(())
+    }
+
+    #[test]
+    fn suggested_max_bytes_is_capped() -> Result<()> {
+        let mut output = SqlSchemaOutput {
+            mode: MODE_TABLES.to_owned(),
+            tables: vec![TableSummary {
+                namespace: "public".to_owned(),
+                name: "large_table_".repeat(120_000),
+                kind: "table".to_owned(),
+            }],
+            table: None,
+            page: Some(Page {
+                limit: 50,
+                returned: 1,
+                has_more: false,
+                next_cursor: String::new(),
+            }),
+            truncated: false,
+            returned_bytes: 0,
+            more: None,
+            latency_ms: 1,
+        };
+        let limit_input = input(MAX_MAX_BYTES - 1);
+
+        finalize_output(&mut output, &limit_input)?;
+
+        let more = output.more.ok_or_else(|| Error::internal("missing more"))?;
+        assert_eq!(more.options.suggested_max_bytes, Some(MAX_MAX_BYTES));
+        Ok(())
+    }
+}

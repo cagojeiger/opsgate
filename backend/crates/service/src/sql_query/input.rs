@@ -55,7 +55,7 @@ pub(super) struct NormalizedInput {
 pub(super) fn normalize_input(input: SqlQueryInput) -> Result<NormalizedInput> {
     let alias = trim_required("alias", &input.alias)?;
     let purpose = validate_purpose(&input.purpose)?;
-    let query = input.query.trim().to_owned();
+    let query = input.query.trim().trim_end_matches(';').trim().to_owned();
     if query.is_empty() || query.len() > MAX_QUERY_LEN || query.contains('\0') {
         return Err(Error::validation(format!(
             "query must be 1-{MAX_QUERY_LEN} characters without NUL"
@@ -124,6 +124,17 @@ mod tests {
         assert_eq!(input.max_bytes, DEFAULT_MAX_BYTES);
         assert_eq!(input.timeout_ms, DEFAULT_TIMEOUT_MS);
         assert_eq!(input.params.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn input_normalizes_trailing_statement_semicolon() -> Result<()> {
+        let input = normalize_input(SqlQueryInput {
+            query: " select 1; ".to_owned(),
+            ..base_input()
+        })?;
+
+        assert_eq!(input.query, "select 1");
         Ok(())
     }
 
