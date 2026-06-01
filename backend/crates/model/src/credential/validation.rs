@@ -13,6 +13,7 @@ use super::{
 };
 
 const DEFAULT_ENV: &str = "dev";
+const MAX_SECRET_HEADERS: usize = 16;
 const MAX_SECRET_HEADER_VALUE_LEN: usize = 8192;
 const MAX_TAGS: usize = 16;
 
@@ -279,6 +280,12 @@ fn validate_http_secret(headers: &[super::SecretHeader]) -> Result<()> {
     if headers.is_empty() {
         return Err(Error::validation("secret.headers is required"));
     }
+    if headers.len() > MAX_SECRET_HEADERS {
+        return Err(Error::validation(format!(
+            "secret.headers count must be <= {MAX_SECRET_HEADERS}"
+        )));
+    }
+    let mut seen = Vec::<String>::new();
     for header in headers {
         let name = header.name.trim();
         if name.is_empty() || name != header.name || !valid_header_name(name) {
@@ -292,6 +299,13 @@ fn validate_http_secret(headers: &[super::SecretHeader]) -> Result<()> {
                 "secret header {name:?} is blocked"
             )));
         }
+        let lower_name = name.to_ascii_lowercase();
+        if seen.iter().any(|existing| existing == &lower_name) {
+            return Err(Error::validation(format!(
+                "duplicate secret header {name:?}"
+            )));
+        }
+        seen.push(lower_name);
         let value = header.value.expose_secret();
         if value.trim().is_empty() {
             return Err(Error::validation(
@@ -464,6 +478,52 @@ mod tests {
     }
 
     #[test]
+    fn rejects_http_origin_path_fragment_and_credentials() {
+        for origin in [
+            "https://example.com/api",
+            "https://example.com#fragment",
+            "https://user@example.com",
+            "https://user:pass@example.com",
+        ] {
+            assert!(
+                validate_http_origin(origin, false, false).is_err(),
+                "{origin} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_http_base_path_boundaries() {
+        for base_path in [
+            "api",
+            "/api/../secret",
+            "/api//v1",
+            "/api?token=x",
+            "/api#frag",
+        ] {
+            assert!(
+                validate_http_base_path(base_path).is_err(),
+                "{base_path} should be rejected"
+            );
+        }
+        assert!(validate_http_base_path("/api/v1").is_ok());
+    }
+
+    #[test]
+    fn rejects_postgres_fragment_and_unsupported_query_parameters() {
+        for database_url in [
+            "postgres://db.example.com/app?connect_timeout=10",
+            "postgres://db.example.com/app?ssl-mode=require",
+            "postgres://db.example.com/app#fragment",
+        ] {
+            assert!(
+                validate_postgres_database_url(database_url, false, false).is_err(),
+                "{database_url} should be rejected"
+            );
+        }
+    }
+
+    #[test]
     fn allows_authorization_as_secret_header_but_not_caller_header_overlap() {
         let input = normalize_register_input(RegisterCredentialInput {
             category: CredentialCategory::Http,
@@ -520,6 +580,76 @@ mod tests {
                 "{name} should be rejected"
             );
         }
+    }
+
+    #[test]
+    fn rejects_duplicate_and_too_many_secret_headers() {
+        let duplicate = normalize_register_input(RegisterCredentialInput {
+            category: CredentialCategory::Http,
+            provider: "k8s".to_owned(),
+            alias: "prod".to_owned(),
+            target: CredentialTarget::Http {
+                origin: "https://example.com".to_owned(),
+                base_path: String::new(),
+            },
+            secret: CredentialSecret::Http {
+                headers: vec![
+                    SecretHeader {
+                        name: "X-Api-Key".to_owned(),
+                        value: secret("first-token"),
+                    },
+                    SecretHeader {
+                        name: "x-api-key".to_owned(),
+                        value: secret("second-token"),
+                    },
+                ],
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            allow_insecure_transport: false,
+            tls_server_ca: None,
+        });
+        let msg = validate_register_input(&duplicate)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(msg.contains("duplicate secret header"));
+        assert!(!msg.contains("first-token"));
+        assert!(!msg.contains("second-token"));
+
+        let too_many = normalize_register_input(RegisterCredentialInput {
+            category: CredentialCategory::Http,
+            provider: "k8s".to_owned(),
+            alias: "prod".to_owned(),
+            target: CredentialTarget::Http {
+                origin: "https://example.com".to_owned(),
+                base_path: String::new(),
+            },
+            secret: CredentialSecret::Http {
+                headers: (0..=MAX_SECRET_HEADERS)
+                    .map(|index| SecretHeader {
+                        name: format!("X-Secret-{index}"),
+                        value: secret("secret-token"),
+                    })
+                    .collect(),
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            allow_insecure_transport: false,
+            tls_server_ca: None,
+        });
+        let msg = validate_register_input(&too_many)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(msg.contains("secret.headers count"));
+        assert!(!msg.contains("secret-token"));
     }
 
     #[test]

@@ -63,7 +63,9 @@ mod tests {
     use opsgate_core::Result;
     use opsgate_model::credential::{CredentialPolicy, RegisterCredentialInput};
 
-    use super::super::input::{RegisterHttpCredentialInput, SecretHeaderInput};
+    use super::super::input::{
+        RegisterHttpCredentialInput, RegisterSqlCredentialInput, SecretHeaderInput,
+    };
     use super::*;
 
     fn http_input(allow_private_network: bool) -> RegisterCredentialInput {
@@ -83,6 +85,23 @@ mod tests {
             allow_private_network,
             allow_insecure_transport: false,
             tls_server_ca: String::new(),
+        }
+        .into_domain()
+    }
+
+    fn sql_input(allow_private_network: bool) -> RegisterCredentialInput {
+        RegisterSqlCredentialInput {
+            provider: "postgres".to_owned(),
+            alias: "prod-db".to_owned(),
+            database_url: "postgres://db.example.test/app?sslmode=require".to_owned(),
+            username: "readonly".to_owned(),
+            password: "secret-password".to_owned(),
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network,
+            allow_insecure_transport: false,
         }
         .into_domain()
     }
@@ -112,6 +131,31 @@ mod tests {
             .unwrap_or_default();
         assert!(err.contains("private/link-local/loopback"));
         assert!(!err.contains("::ffff"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejects_private_sql_register_target_ip() -> Result<()> {
+        let resolver = EndpointResolver::Fixed(vec![IpAddr::V4(Ipv4Addr::new(10, 0, 0, 10))]);
+        let err = validate_register_target_ips(&resolver, &sql_input(false))
+            .await
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("private/link-local/loopback"));
+        assert!(!err.contains("secret-password"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejects_empty_register_target_dns_result() -> Result<()> {
+        let resolver = EndpointResolver::Fixed(Vec::new());
+        let err = validate_register_target_ips(&resolver, &http_input(false))
+            .await
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("no IPs"));
         Ok(())
     }
 
