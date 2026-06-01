@@ -37,6 +37,7 @@ pub struct Credential {
     pub allow_private_network: bool,
     pub allow_insecure_transport: bool,
     pub has_tls_ca: bool,
+    pub has_client_cert: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -88,6 +89,8 @@ pub struct RegisterHttpCredentialInput {
     pub allow_private_network: bool,
     pub allow_insecure_transport: bool,
     pub tls_server_ca: String,
+    pub client_cert_pem: String,
+    pub client_key_pem: String,
 }
 
 #[derive(Debug, Clone)]
@@ -119,6 +122,8 @@ pub struct RegisterCredentialInput {
     pub allow_private_network: bool,
     pub allow_insecure_transport: bool,
     pub tls_server_ca: Option<String>,
+    pub client_cert_pem: Option<String>,
+    pub client_key_pem: Option<String>,
 }
 
 impl From<RegisterHttpCredentialInput> for RegisterCredentialInput {
@@ -141,6 +146,8 @@ impl From<RegisterHttpCredentialInput> for RegisterCredentialInput {
             allow_private_network: input.allow_private_network,
             allow_insecure_transport: input.allow_insecure_transport,
             tls_server_ca: Some(input.tls_server_ca),
+            client_cert_pem: Some(input.client_cert_pem),
+            client_key_pem: Some(input.client_key_pem),
         }
     }
 }
@@ -170,6 +177,8 @@ impl From<RegisterSqlCredentialInput> for RegisterCredentialInput {
             allow_private_network: input.allow_private_network,
             allow_insecure_transport: input.allow_insecure_transport,
             tls_server_ca: None,
+            client_cert_pem: None,
+            client_key_pem: None,
         }
     }
 }
@@ -190,6 +199,8 @@ pub struct InsertCredentialParams {
     pub allow_private_network: bool,
     pub allow_insecure_transport: bool,
     pub tls_ca: Option<Vec<u8>>,
+    pub client_cert: Option<Vec<u8>>,
+    pub client_key: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone)]

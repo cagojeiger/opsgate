@@ -45,6 +45,14 @@ pub fn normalize_register_input(mut input: RegisterCredentialInput) -> RegisterC
         .tls_server_ca
         .map(|ca| ca.trim().to_owned())
         .filter(|ca| !ca.is_empty());
+    input.client_cert_pem = input
+        .client_cert_pem
+        .map(|pem| pem.trim().to_owned())
+        .filter(|pem| !pem.is_empty());
+    input.client_key_pem = input
+        .client_key_pem
+        .map(|pem| pem.trim().to_owned())
+        .filter(|pem| !pem.is_empty());
     input
 }
 
@@ -72,6 +80,10 @@ pub fn validate_register_input(input: &RegisterCredentialInput) -> Result<()> {
             if let Some(ca) = &input.tls_server_ca {
                 opsgate_core::tls::parse_certificate_pem_bundle(ca)?;
             }
+            validate_client_certificate(
+                input.client_cert_pem.as_deref(),
+                input.client_key_pem.as_deref(),
+            )?;
         }
         (
             CredentialCategory::Sql,
@@ -276,6 +288,23 @@ pub fn validate_postgres_database_url(
     Ok(url)
 }
 
+fn validate_client_certificate(
+    client_cert_pem: Option<&str>,
+    client_key_pem: Option<&str>,
+) -> Result<()> {
+    match (client_cert_pem, client_key_pem) {
+        (None, None) => Ok(()),
+        (Some(cert), Some(key)) => {
+            opsgate_core::tls::parse_client_certificate_pem(cert)?;
+            opsgate_core::tls::parse_client_private_key_pem(key)?;
+            Ok(())
+        }
+        _ => Err(Error::validation(
+            "client_cert_pem and client_key_pem must both be provided together",
+        )),
+    }
+}
+
 fn validate_http_secret(headers: &[super::SecretHeader]) -> Result<()> {
     if headers.is_empty() {
         return Err(Error::validation("secret.headers is required"));
@@ -439,6 +468,8 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             tls_server_ca: Some("".to_owned()),
+            client_cert_pem: None,
+            client_key_pem: None,
         };
         let input = normalize_register_input(input);
         assert_eq!(input.env, "dev");
@@ -473,6 +504,8 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             tls_server_ca: None,
+            client_cert_pem: None,
+            client_key_pem: None,
         });
         assert!(validate_register_input(&input).is_err());
     }
@@ -546,6 +579,8 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             tls_server_ca: None,
+            client_cert_pem: None,
+            client_key_pem: None,
         });
         assert!(validate_register_input(&input).is_ok());
     }
@@ -574,6 +609,8 @@ mod tests {
                 allow_private_network: false,
                 allow_insecure_transport: false,
                 tls_server_ca: None,
+                client_cert_pem: None,
+                client_key_pem: None,
             });
             assert!(
                 validate_register_input(&input).is_err(),
@@ -611,6 +648,8 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             tls_server_ca: None,
+            client_cert_pem: None,
+            client_key_pem: None,
         });
         let msg = validate_register_input(&duplicate)
             .err()
@@ -643,6 +682,8 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             tls_server_ca: None,
+            client_cert_pem: None,
+            client_key_pem: None,
         });
         let msg = validate_register_input(&too_many)
             .err()
@@ -675,6 +716,8 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             tls_server_ca: None,
+            client_cert_pem: None,
+            client_key_pem: None,
         });
         let msg = validate_register_input(&input)
             .err()
@@ -682,6 +725,39 @@ mod tests {
             .unwrap_or_default();
         assert!(msg.contains("X-Api-Key"));
         assert!(!msg.contains("secret-token"));
+    }
+
+    #[test]
+    fn rejects_client_cert_without_key() {
+        let input = normalize_register_input(RegisterCredentialInput {
+            category: CredentialCategory::Http,
+            provider: "k8s".to_owned(),
+            alias: "prod".to_owned(),
+            target: CredentialTarget::Http {
+                origin: "https://example.com".to_owned(),
+                base_path: String::new(),
+            },
+            secret: CredentialSecret::Http {
+                headers: vec![SecretHeader {
+                    name: "Authorization".to_owned(),
+                    value: secret("Bearer token"),
+                }],
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            allow_insecure_transport: false,
+            tls_server_ca: None,
+            client_cert_pem: Some("-----BEGIN CERTIFICATE-----".to_owned()),
+            client_key_pem: None,
+        });
+        let msg = validate_register_input(&input)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(msg.contains("client_cert_pem and client_key_pem must both be provided"));
     }
 
     #[test]
@@ -706,6 +782,8 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             tls_server_ca: None,
+            client_cert_pem: None,
+            client_key_pem: None,
         });
         assert!(validate_register_input(&input).is_err());
     }
@@ -778,6 +856,8 @@ mod tests {
             allow_private_network: true,
             allow_insecure_transport: true,
             tls_server_ca: None,
+            client_cert_pem: None,
+            client_key_pem: None,
         };
         assert!(validate_register_input(&normalize_register_input(http.clone())).is_ok());
         let mut missing_transport = http.clone();
@@ -805,6 +885,8 @@ mod tests {
             allow_private_network: true,
             allow_insecure_transport: true,
             tls_server_ca: None,
+            client_cert_pem: None,
+            client_key_pem: None,
         };
         assert!(validate_register_input(&normalize_register_input(sql.clone())).is_ok());
         let mut missing_transport = sql.clone();
@@ -875,6 +957,8 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             tls_server_ca: None,
+            client_cert_pem: None,
+            client_key_pem: None,
         });
 
         assert!(validate_register_input(&input).is_err());

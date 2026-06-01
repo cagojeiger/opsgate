@@ -71,6 +71,8 @@ impl ApiCallService {
         let credential = material.credential;
         let secret_ciphertext = material.secret_ciphertext;
         let tls_ca = material.tls_ca;
+        let client_cert = material.client_cert;
+        let client_key_ciphertext = material.client_key;
         recorder.set_credential(&credential);
 
         if credential.category != CredentialCategory::Http {
@@ -115,10 +117,26 @@ impl ApiCallService {
             return Err(error);
         }
 
+        let client_identity = match build_client_identity(
+            &self.sealer,
+            &credential.alias,
+            client_cert.as_deref(),
+            client_key_ciphertext.as_deref(),
+        ) {
+            Ok(identity) => identity,
+            Err(error) => {
+                recorder
+                    .err(reason::SECRET_OPEN_FAILED, "client certificate open failed")
+                    .await;
+                return Err(error);
+            }
+        };
+
         let output = match execute_target_call(
             &self.target_clients,
             &credential,
             tls_ca.as_deref(),
+            client_identity.as_deref(),
             &input,
             &secret,
         )
@@ -133,4 +151,24 @@ impl ApiCallService {
         recorder.ok(&output).await;
         Ok(output)
     }
+}
+
+/// Combine the public client certificate chain with the unsealed private key
+/// into a single PEM blob accepted by `reqwest::Identity::from_pem`.
+fn build_client_identity(
+    sealer: &crate::crypto::Sealer,
+    alias: &str,
+    client_cert: Option<&[u8]>,
+    client_key_ciphertext: Option<&[u8]>,
+) -> Result<Option<Vec<u8>>> {
+    let (Some(cert), Some(key_ciphertext)) = (client_cert, client_key_ciphertext) else {
+        return Ok(None);
+    };
+    let mut identity = cert.to_vec();
+    if !identity.ends_with(b"\n") {
+        identity.push(b'\n');
+    }
+    let key = secret::open_client_key(sealer, alias, key_ciphertext)?;
+    identity.extend_from_slice(&key);
+    Ok(Some(identity))
 }

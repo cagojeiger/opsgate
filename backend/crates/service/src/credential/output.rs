@@ -187,6 +187,7 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             has_tls_ca: true,
+            has_client_cert: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

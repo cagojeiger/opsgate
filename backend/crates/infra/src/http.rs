@@ -25,8 +25,8 @@ pub struct TargetHttpClients {
 impl TargetHttpClients {
     pub fn new(timeout: Duration) -> Result<Self> {
         Ok(Self {
-            private_allowed: build_client(timeout, None, false)?,
-            guarded_no_ca: build_client(timeout, None, true)?,
+            private_allowed: build_client(timeout, TargetTls::default(), false)?,
+            guarded_no_ca: build_client(timeout, TargetTls::default(), true)?,
             timeout,
             cached_tls: Cache::builder().time_to_idle(CLIENT_CACHE_IDLE_TTL).build(),
         })
@@ -35,37 +35,37 @@ impl TargetHttpClients {
     pub fn request_for(
         &self,
         credential: &Credential,
-        tls_ca: Option<&[u8]>,
+        tls: TargetTls<'_>,
         method: reqwest::Method,
         url: &url::Url,
         guard_private_network: bool,
         allow_insecure_transport: bool,
     ) -> Result<reqwest::RequestBuilder> {
         ensure_url_allowed(url, guard_private_network, allow_insecure_transport)?;
-        let client = self.client_for(credential, tls_ca, guard_private_network)?;
+        let client = self.client_for(credential, tls, guard_private_network)?;
         Ok(client.request(method, url.clone()))
     }
 
     fn client_for(
         &self,
         credential: &Credential,
-        tls_ca: Option<&[u8]>,
+        tls: TargetTls<'_>,
         guard_private_network: bool,
     ) -> Result<reqwest::Client> {
-        let Some(tls_ca) = tls_ca else {
+        if tls.server_ca.is_none() && tls.client_identity.is_none() {
             return if guard_private_network {
                 Ok(self.guarded_no_ca.clone())
             } else {
                 Ok(self.private_allowed.clone())
             };
-        };
-        self.cached_tls_client(credential.id, tls_ca, guard_private_network)
+        }
+        self.cached_tls_client(credential.id, tls, guard_private_network)
     }
 
     fn cached_tls_client(
         &self,
         credential_id: Uuid,
-        tls_ca: &[u8],
+        tls: TargetTls<'_>,
         guard_private_network: bool,
     ) -> Result<reqwest::Client> {
         let key = TlsClientKey {
@@ -78,7 +78,7 @@ impl TargetHttpClients {
         // Credential updates intentionally cannot mutate target URL, secret, or
         // TLS material. A credential id plus guard mode is therefore a stable
         // cache key for the lifetime of the registered target.
-        let client = build_client(self.timeout, Some(tls_ca), guard_private_network)?;
+        let client = build_client(self.timeout, tls, guard_private_network)?;
         self.cached_tls.insert(key, client.clone());
         Ok(client)
     }
@@ -97,9 +97,19 @@ struct TlsClientKey {
     guard_private_network: bool,
 }
 
+/// Per-credential TLS material applied when building a target client.
+/// `server_ca` is the PEM CA bundle for verifying the target. `client_identity`
+/// is the combined client certificate chain plus unsealed private key PEM used
+/// for mutual-TLS client authentication.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TargetTls<'a> {
+    pub server_ca: Option<&'a [u8]>,
+    pub client_identity: Option<&'a [u8]>,
+}
+
 fn build_client(
     timeout: Duration,
-    tls_ca: Option<&[u8]>,
+    tls: TargetTls<'_>,
     guard_private_network: bool,
 ) -> Result<reqwest::Client> {
     let mut builder = reqwest::Client::builder()
@@ -109,7 +119,7 @@ fn build_client(
     if guard_private_network {
         builder = builder.dns_resolver(Arc::new(GuardedResolver));
     }
-    if let Some(tls_ca) = tls_ca {
+    if let Some(tls_ca) = tls.server_ca {
         let pem = std::str::from_utf8(tls_ca)
             .map_err(|error| Error::validation(format!("invalid TLS server CA PEM: {error}")))?;
         opsgate_core::tls::parse_certificate_pem_bundle(pem)?;
@@ -118,6 +128,12 @@ fn build_client(
         {
             builder = builder.add_root_certificate(cert);
         }
+    }
+    if let Some(client_identity) = tls.client_identity {
+        let identity = reqwest::Identity::from_pem(client_identity).map_err(|error| {
+            Error::validation(format!("invalid client certificate identity: {error}"))
+        })?;
+        builder = builder.identity(identity);
     }
     builder
         .build()
@@ -232,7 +248,21 @@ mod tests {
 
     #[test]
     fn target_client_rejects_bad_tls_ca() -> Result<()> {
-        assert!(build_client(Duration::from_secs(1), Some(b"not pem"), false).is_err());
+        let tls = TargetTls {
+            server_ca: Some(b"not pem"),
+            client_identity: None,
+        };
+        assert!(build_client(Duration::from_secs(1), tls, false).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn target_client_rejects_bad_client_identity() -> Result<()> {
+        let tls = TargetTls {
+            server_ca: None,
+            client_identity: Some(b"not a client identity"),
+        };
+        assert!(build_client(Duration::from_secs(1), tls, false).is_err());
         Ok(())
     }
 
@@ -240,8 +270,8 @@ mod tests {
     fn no_ca_clients_do_not_enter_tls_cache() -> Result<()> {
         let clients = TargetHttpClients::new(Duration::from_secs(1))?;
         let credential = credential(Uuid::nil(), false);
-        let _client = clients.client_for(&credential, None, false)?;
-        let _guarded_client = clients.client_for(&credential, None, true)?;
+        let _client = clients.client_for(&credential, TargetTls::default(), false)?;
+        let _guarded_client = clients.client_for(&credential, TargetTls::default(), true)?;
         assert_eq!(clients.cached_tls_len()?, 0);
         Ok(())
     }
@@ -250,18 +280,41 @@ mod tests {
     fn tls_ca_client_cache_is_per_credential_and_guard_mode() -> Result<()> {
         let clients = TargetHttpClients::new(Duration::from_secs(1))?;
         let ca = valid_ca_pem();
+        let tls = TargetTls {
+            server_ca: Some(ca.as_bytes()),
+            client_identity: None,
+        };
         let first = credential(Uuid::from_u128(1), true);
         let second = credential(Uuid::from_u128(2), true);
 
-        let _client = clients.client_for(&first, Some(ca.as_bytes()), true)?;
-        let _same = clients.client_for(&first, Some(ca.as_bytes()), true)?;
+        let _client = clients.client_for(&first, tls, true)?;
+        let _same = clients.client_for(&first, tls, true)?;
         assert_eq!(clients.cached_tls_len()?, 1);
 
-        let _unguarded = clients.client_for(&first, Some(ca.as_bytes()), false)?;
+        let _unguarded = clients.client_for(&first, tls, false)?;
         assert_eq!(clients.cached_tls_len()?, 2);
 
-        let _other = clients.client_for(&second, Some(ca.as_bytes()), true)?;
+        let _other = clients.client_for(&second, tls, true)?;
         assert_eq!(clients.cached_tls_len()?, 3);
+        Ok(())
+    }
+
+    #[test]
+    fn client_identity_enters_per_credential_tls_cache() -> Result<()> {
+        let clients = TargetHttpClients::new(Duration::from_secs(1))?;
+        let identity = valid_client_identity_pem();
+        let tls = TargetTls {
+            server_ca: None,
+            client_identity: Some(identity.as_bytes()),
+        };
+        let credential = credential(Uuid::from_u128(7), false);
+
+        let _client = clients.client_for(&credential, tls, true)?;
+        let _same = clients.client_for(&credential, tls, true)?;
+        assert_eq!(clients.cached_tls_len()?, 1);
+
+        let _unguarded = clients.client_for(&credential, tls, false)?;
+        assert_eq!(clients.cached_tls_len()?, 2);
         Ok(())
     }
 
@@ -437,9 +490,17 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             has_tls_ca,
+            has_client_cert: false,
             created_at: now,
             updated_at: now,
         }
+    }
+
+    fn valid_client_identity_pem() -> &'static str {
+        concat!(
+            "-----BEGIN CERTIFICATE-----\nMIIDHTCCAgWgAwIBAgIUeHo/5+8sjg/PpHE9InlaPTbT/gEwDQYJKoZIhvcNAQEL\nBQAwHjEcMBoGA1UEAwwTb3BzZ2F0ZS10ZXN0LWNsaWVudDAeFw0yNjA2MDExMjU5\nMDlaFw0zNjA1MjkxMjU5MDlaMB4xHDAaBgNVBAMME29wc2dhdGUtdGVzdC1jbGll\nbnQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCgRERa2kSLK798wN8b\nExvfwxOJowMy+CXRwdLRzXmkY72pEpE2fQFD26epr7QtoBg5Zh06o6yYFPB9DExo\nvW6X9vx02yD8gwQIVzX/jfif2KlqTmIjBDZ4SQcdvmIkzgKkDLz0+52vLFj4pXnw\nogHHwk8R9XmH/DCaFBocvooxVPJBQ55RHiXZe29bUw70+82V5QVZzzSqVeou7XhF\nj+as3CU04QXtjaDbWkOUV43vYouEEpo9nROLMOXXgIPlu/War3EVPApdepgBRYVg\nRV02twZ8XrYykS8Lkstug/Z428NMAsPn119B2eipWiMGSQzi7iCn6Fld9ZTifSO5\n6wS3AgMBAAGjUzBRMB0GA1UdDgQWBBQ/Xl2M8H9mqD1VSWWI9eWswWbV4zAfBgNV\nHSMEGDAWgBQ/Xl2M8H9mqD1VSWWI9eWswWbV4zAPBgNVHRMBAf8EBTADAQH/MA0G\nCSqGSIb3DQEBCwUAA4IBAQAJoHc0RiDYRrpq7AfCEHifZymX9pcDiVzH0qHND+Um\n8BuhnLlSj7gtJpzRs8bBHnSHRtvG/+FtzA0pUbiNUy0OAqqGRg9PQ8dzmspVrZ4Y\nmxRx+jnBf98C8c5rzM5+qhUed6/RVUs+SmKmwc5sqZN3niE6ZQKEcnCNnCz5grh8\nYWxQzH2eBRhLBqbUeeH9AFO4k9SmFdyZX1HPulZQIe4JOKlqaBJ2tBmM9fwi/4Ff\npsjSET+mFZCBbvbWoXeGQB5tOFXCwv5aUMZuJHBk94q0k8KMYb665v+sEdbpmU69\nsS2tHfA1kgZmZ6uVaLaUqTmr8VAx60+z7YZQwxHJI/44\n-----END CERTIFICATE-----\n",
+            "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCgRERa2kSLK798\nwN8bExvfwxOJowMy+CXRwdLRzXmkY72pEpE2fQFD26epr7QtoBg5Zh06o6yYFPB9\nDExovW6X9vx02yD8gwQIVzX/jfif2KlqTmIjBDZ4SQcdvmIkzgKkDLz0+52vLFj4\npXnwogHHwk8R9XmH/DCaFBocvooxVPJBQ55RHiXZe29bUw70+82V5QVZzzSqVeou\n7XhFj+as3CU04QXtjaDbWkOUV43vYouEEpo9nROLMOXXgIPlu/War3EVPApdepgB\nRYVgRV02twZ8XrYykS8Lkstug/Z428NMAsPn119B2eipWiMGSQzi7iCn6Fld9ZTi\nfSO56wS3AgMBAAECggEAT9NA4qm1m0YKhfZBCei+KPkuqY7eoIv1tmDegy5faLBf\nPq+nUWb48tYc0AlaaqFDf49rfpIYfNVtJTOzeTXlOF7GRuQALZWKNCdQF34cuG0/\nkNoCymMmSEpDd56knqVXrmND2Jfc5evmUs6FCoR+84LGRHEqe79ya8QYb3m+NixJ\n6dtHqcxmqCKip0IePQXYXp9roNVJdggJn3t30PGqlpkP873YKdRW1yZpKG9r1UG1\nV75b6tDhW7J9xo/ZKGyxuXv1wWQDrC+uhpwjKAEY414v8bdaT0S/pMPgVUkyInjc\nfa0Nw8SbmNV3DhRqtWvzXmquum7Rbud3Q161k3MOmQKBgQDRn/FQDj1mVx2CyU+w\nci5MKz1OAlyvH/LmuR3D0lYMoorQ9tEOnD7Bz//D+7ttZGbmGMO56gjkDuR/Vl5k\nSfRvzuf+HG+7U15QQveaqCmmp2369ux7S+1k4D1aFNo7H1szTZGcSleLWAs1em7M\npCoqgbAAS1hpn/UxaJCAW99cSQKBgQDDuPAS6IcIov5UQ+U7+KfjwCHxriOwqQcO\n/hQg8MX7XneImcpPNiM56XfFrqKQUTftUueLsT9uCXkeZ1WUnvXwAY7O9UlTfRJJ\nhXbcVLfBxVjmcUjeS5mpajEIdH36nDD1BGrsoASNULR2roJ+AkucpySPAM/itceH\nZHenxw1Y/wKBgGWjRz2pqduVIZnoQdsrgYcs7+yC+K1wsDVuTCBGO7KknOn0wihz\nWXpff4Nm6tl/dOTb3QqnjugE0IVtOxclRH9xsspiv0n0giYoUiWKo6dKRukIEGE3\nz0K59wVWVvmTmoSld5Rv90J4zfaABnjyn/88IjoCTjvoctoh+O5DnWkBAoGAGT3M\nmGOspox+yFdJRQa4gELTHdwbdjkWU/Som+bxYY25VMCgur58pIdbjv8KsBoJYG4E\ntptRVtuZ5zXkb5pglWdeB4rSvhWvOhQgVCII4NCWuoF5qFGPq62qTTDY3m0uUysS\nrxmj/KWf4H55Dc81+SoFKPwt00smRGvMkrK1IfkCgYEAhzRFR0qadgVT3qJHF9xQ\nxRKOd0rJbv3CACVVUQ/qXx3Uei/4pKdVMpecWE3Y2mAs6Thh9rPwjjXj1BAOQXnm\nqF+NE0+7QiEcE2p+H83VBfvecSkPpNGMSTQmTNQZwmCRQJ1knTHzc5+e89dZTsUK\nJhwM1YsTOoRWQJapergyhTw=\n-----END PRIVATE KEY-----\n",
+        )
     }
 
     fn valid_ca_pem() -> &'static str {

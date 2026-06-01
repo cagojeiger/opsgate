@@ -5,6 +5,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
 const SECRET_DOMAIN: &str = "credentials";
+const CLIENT_KEY_DOMAIN: &str = "credentials.client_key";
 
 #[derive(Debug, Deserialize)]
 pub struct SqlSecret {
@@ -15,6 +16,14 @@ pub struct SqlSecret {
 pub fn seal(sealer: &Sealer, alias: &str, secret: &CredentialSecret) -> Result<Vec<u8>> {
     let plaintext = secret_json(secret)?;
     sealer.seal(SECRET_DOMAIN, alias, &plaintext)
+}
+
+pub fn seal_client_key(sealer: &Sealer, alias: &str, key_pem: &str) -> Result<Vec<u8>> {
+    sealer.seal(CLIENT_KEY_DOMAIN, alias, key_pem.as_bytes())
+}
+
+pub fn open_client_key(sealer: &Sealer, alias: &str, ciphertext: &[u8]) -> Result<Vec<u8>> {
+    sealer.open(CLIENT_KEY_DOMAIN, alias, ciphertext)
 }
 
 pub fn open_http_headers(
@@ -134,6 +143,21 @@ mod tests {
         let names = open_http_header_names(&sealer, "prod", &ciphertext)?;
 
         assert_eq!(names, ["X-Api-Key"]);
+        Ok(())
+    }
+
+    #[test]
+    fn client_key_seal_roundtrip_hides_key_and_binds_alias() -> Result<()> {
+        let sealer = sealer()?;
+        let key_pem = "-----BEGIN PRIVATE KEY-----\nsecret-key-material\n-----END PRIVATE KEY-----";
+        let ciphertext = seal_client_key(&sealer, "prod", key_pem)?;
+        assert!(!String::from_utf8_lossy(&ciphertext).contains("secret-key-material"));
+
+        let opened = open_client_key(&sealer, "prod", &ciphertext)?;
+        assert_eq!(opened, key_pem.as_bytes());
+
+        assert!(open_client_key(&sealer, "other", &ciphertext).is_err());
+        assert!(sealer.open(SECRET_DOMAIN, "prod", &ciphertext).is_err());
         Ok(())
     }
 }

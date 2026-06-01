@@ -164,6 +164,10 @@ struct RegisterCredentialInput {
     allow_insecure_transport: bool,
     #[serde(default)]
     tls_server_ca: String,
+    #[serde(default)]
+    client_cert_pem: String,
+    #[serde(default)]
+    client_key_pem: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -203,6 +207,8 @@ impl RegisterCredentialInput {
                     allow_private_network: self.allow_private_network,
                     allow_insecure_transport: self.allow_insecure_transport,
                     tls_server_ca: self.tls_server_ca,
+                    client_cert_pem: self.client_cert_pem,
+                    client_key_pem: self.client_key_pem,
                 }))
             }
             CredentialCategory::Sql => {
@@ -263,6 +269,8 @@ mod tests {
             allow_private_network: true,
             allow_insecure_transport: false,
             tls_server_ca: "-----BEGIN CERTIFICATE-----".to_owned(),
+            client_cert_pem: String::new(),
+            client_key_pem: String::new(),
         };
 
         let input = match input
@@ -305,6 +313,8 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             tls_server_ca: "ignored".to_owned(),
+            client_cert_pem: String::new(),
+            client_key_pem: String::new(),
         };
 
         let input = match input
@@ -344,6 +354,8 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             tls_server_ca: String::new(),
+            client_cert_pem: String::new(),
+            client_key_pem: String::new(),
         };
         assert!(http_with_sql_secret.into_service_input().is_err());
 
@@ -369,6 +381,8 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             tls_server_ca: String::new(),
+            client_cert_pem: String::new(),
+            client_key_pem: String::new(),
         };
         assert!(sql_with_http_secret.into_service_input().is_err());
     }

@@ -46,10 +46,12 @@ impl CredentialRepo {
                 allow_private_network,
                 allow_insecure_transport,
                 tls_ca,
+                client_cert,
+                client_key,
                 created_by,
                 updated_by
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18)
             RETURNING
                 id,
                 owner_user_id,
@@ -66,6 +68,7 @@ impl CredentialRepo {
                 allow_private_network,
                 allow_insecure_transport,
                 tls_ca IS NOT NULL AS has_tls_ca,
+                client_cert IS NOT NULL AS has_client_cert,
                 created_at,
                 updated_at
             "#,
@@ -85,6 +88,8 @@ impl CredentialRepo {
         .bind(params.allow_private_network)
         .bind(params.allow_insecure_transport)
         .bind(params.tls_ca)
+        .bind(params.client_cert)
+        .bind(params.client_key)
         .bind(params.actor_user_id)
         .fetch_one(&mut *tx)
         .await
@@ -118,6 +123,7 @@ impl CredentialRepo {
                 allow_private_network,
                 allow_insecure_transport,
                 tls_ca IS NOT NULL AS has_tls_ca,
+                client_cert IS NOT NULL AS has_client_cert,
                 created_at,
                 updated_at
             FROM credentials
@@ -157,10 +163,13 @@ impl CredentialRepo {
                 allow_private_network,
                 allow_insecure_transport,
                 tls_ca IS NOT NULL AS has_tls_ca,
+                client_cert IS NOT NULL AS has_client_cert,
                 created_at,
                 updated_at,
                 secret_ciphertext,
-                tls_ca
+                tls_ca,
+                client_cert,
+                client_key
             FROM credentials
             WHERE owner_user_id = $1
               AND alias = $2
@@ -217,6 +226,7 @@ impl CredentialRepo {
                 allow_private_network,
                 allow_insecure_transport,
                 tls_ca IS NOT NULL AS has_tls_ca,
+                client_cert IS NOT NULL AS has_client_cert,
                 created_at,
                 updated_at
             "#,
@@ -274,6 +284,7 @@ impl CredentialRepo {
                 allow_private_network,
                 allow_insecure_transport,
                 tls_ca IS NOT NULL AS has_tls_ca,
+                client_cert IS NOT NULL AS has_client_cert,
                 created_at,
                 updated_at
             "#,
@@ -321,6 +332,7 @@ impl CredentialRepo {
                 allow_private_network,
                 allow_insecure_transport,
                 tls_ca IS NOT NULL AS has_tls_ca,
+                client_cert IS NOT NULL AS has_client_cert,
                 created_at,
                 updated_at
             FROM credentials
@@ -580,6 +592,7 @@ struct CredentialRow {
     allow_private_network: bool,
     allow_insecure_transport: bool,
     has_tls_ca: bool,
+    has_client_cert: bool,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -601,16 +614,21 @@ pub struct CredentialSecretRow {
     allow_private_network: bool,
     allow_insecure_transport: bool,
     has_tls_ca: bool,
+    has_client_cert: bool,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     pub secret_ciphertext: Option<Vec<u8>>,
     pub tls_ca: Option<Vec<u8>>,
+    pub client_cert: Option<Vec<u8>>,
+    pub client_key: Option<Vec<u8>>,
 }
 
 pub struct CredentialSecretMaterial {
     pub credential: Credential,
     pub secret_ciphertext: Option<Vec<u8>>,
     pub tls_ca: Option<Vec<u8>>,
+    pub client_cert: Option<Vec<u8>>,
+    pub client_key: Option<Vec<u8>>,
 }
 
 impl CredentialSecretRow {
@@ -631,6 +649,7 @@ impl CredentialSecretRow {
             allow_private_network: self.allow_private_network,
             allow_insecure_transport: self.allow_insecure_transport,
             has_tls_ca: self.has_tls_ca,
+            has_client_cert: self.has_client_cert,
             created_at: self.created_at,
             updated_at: self.updated_at,
         }
@@ -639,6 +658,8 @@ impl CredentialSecretRow {
             credential,
             secret_ciphertext: self.secret_ciphertext,
             tls_ca: self.tls_ca,
+            client_cert: self.client_cert,
+            client_key: self.client_key,
         })
     }
 }
@@ -676,6 +697,7 @@ impl CredentialRow {
             allow_private_network: self.allow_private_network,
             allow_insecure_transport: self.allow_insecure_transport,
             has_tls_ca: self.has_tls_ca,
+            has_client_cert: self.has_client_cert,
             created_at: self.created_at,
             updated_at: self.updated_at,
         })

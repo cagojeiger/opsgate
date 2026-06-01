@@ -106,6 +106,7 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             has_tls_ca: false,
+            has_client_cert: false,
             created_at: now,
             updated_at: now,
         }

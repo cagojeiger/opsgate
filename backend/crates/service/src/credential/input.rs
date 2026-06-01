@@ -59,6 +59,16 @@ pub struct RegisterHttpCredentialInput {
     /// PEM CA bundle for private HTTPS servers. Leave empty for public WebPKI.
     #[serde(default)]
     pub tls_server_ca: String,
+    /// PEM client certificate chain for mutual-TLS targets (e.g. Kubernetes API
+    /// servers using client-certificate auth). Requires client_key_pem. Sealed
+    /// at rest and never returned. Leave empty when not using client certs.
+    #[serde(default)]
+    pub client_cert_pem: String,
+    /// PEM private key matching client_cert_pem. Requires client_cert_pem.
+    /// Sealed at rest with the master key and never returned. Leave empty when
+    /// not using client certs.
+    #[serde(default)]
+    pub client_key_pem: String,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -153,6 +163,8 @@ impl RegisterHttpCredentialInput {
             allow_private_network: self.allow_private_network,
             allow_insecure_transport: self.allow_insecure_transport,
             tls_server_ca: Some(self.tls_server_ca),
+            client_cert_pem: Some(self.client_cert_pem),
+            client_key_pem: Some(self.client_key_pem),
         }
     }
 }
@@ -177,6 +189,8 @@ impl RegisterSqlCredentialInput {
             allow_private_network: self.allow_private_network,
             allow_insecure_transport: self.allow_insecure_transport,
             tls_server_ca: None,
+            client_cert_pem: None,
+            client_key_pem: None,
         }
     }
 }

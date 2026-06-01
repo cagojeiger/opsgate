@@ -101,6 +101,8 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             tls_server_ca: String::new(),
+            client_cert_pem: String::new(),
+            client_key_pem: String::new(),
         }
         .into_domain()
     }

@@ -72,6 +72,15 @@ impl CredentialService {
             .tls_server_ca
             .as_ref()
             .map(|ca| ca.as_bytes().to_vec());
+        let client_cert = input
+            .client_cert_pem
+            .as_ref()
+            .map(|pem| pem.as_bytes().to_vec());
+        let client_key = input
+            .client_key_pem
+            .as_ref()
+            .map(|pem| secret::seal_client_key(&self.sealer, &input.alias, pem))
+            .transpose()?;
         let audit = register_audit(caller, &input);
         self.repo
             .insert_credential(
@@ -90,6 +99,8 @@ impl CredentialService {
                     allow_private_network: input.allow_private_network,
                     allow_insecure_transport: input.allow_insecure_transport,
                     tls_ca,
+                    client_cert,
+                    client_key,
                 },
                 audit,
             )

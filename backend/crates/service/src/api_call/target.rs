@@ -8,7 +8,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret;
 
 use crate::audit::runtime::reason;
-use opsgate_infra::http::TargetHttpClients;
+use opsgate_infra::http::{TargetHttpClients, TargetTls};
 
 use super::input::{MAX_MAX_BYTES, NormalizedApiCallInput};
 use super::output::ApiCallOutput;
@@ -44,14 +44,19 @@ pub(super) async fn execute_target_call(
     target_clients: &TargetHttpClients,
     credential: &Credential,
     tls_ca: Option<&[u8]>,
+    client_identity: Option<&[u8]>,
     input: &NormalizedApiCallInput,
     secret: &[SecretHeader],
 ) -> std::result::Result<ApiCallOutput, CallExecutionError> {
     let url = build_target_url(&credential.target, input).map_err(|error| {
         CallExecutionError::new(reason::TARGET_URL_FAILED, "target URL build failed", error)
     })?;
+    let tls = TargetTls {
+        server_ca: tls_ca,
+        client_identity,
+    };
     let started = Instant::now();
-    let mut response = send_target(target_clients, credential, tls_ca, &url, input, secret)
+    let mut response = send_target(target_clients, credential, tls, &url, input, secret)
         .await
         .map_err(CallExecutionError::target_request)?;
     let status_code = i32::from(response.status.as_u16());
@@ -102,7 +107,7 @@ pub(super) async fn execute_target_call(
 async fn send_target(
     target_clients: &TargetHttpClients,
     credential: &Credential,
-    tls_ca: Option<&[u8]>,
+    tls: TargetTls<'_>,
     url: &url::Url,
     input: &NormalizedApiCallInput,
     secret: &[SecretHeader],
@@ -111,7 +116,7 @@ async fn send_target(
         .map_err(|error| Error::validation(format!("invalid method: {error}")))?;
     let mut request = target_clients.request_for(
         credential,
-        tls_ca,
+        tls,
         method,
         url,
         !credential.allow_private_network,

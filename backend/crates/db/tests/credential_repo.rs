@@ -10,9 +10,10 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Connection, PgPool, Row};
 use uuid::Uuid;
 
-const MIGRATIONS: [&str; 2] = [
+const MIGRATIONS: [&str; 3] = [
     include_str!("../migrations/0001_schema.sql"),
     include_str!("../migrations/0002_runtime_least_privilege.sql"),
+    include_str!("../migrations/0003_http_client_cert.sql"),
 ];
 
 struct TestDb {
@@ -274,6 +275,49 @@ async fn credential_persists_insecure_transport_opt_in() -> Result<(), Box<dyn s
 }
 
 #[tokio::test]
+async fn credential_persists_client_cert_material() -> Result<(), Box<dyn std::error::Error>> {
+    let Some(db) = TestDb::setup().await? else {
+        return Ok(());
+    };
+
+    let owner = insert_user(&db.pool, "owner@example.test").await?;
+    let repo = CredentialRepo::new(db.pool.clone());
+    let mut params = insert_params(owner, "mtls-api");
+    params.client_cert = Some(b"-----BEGIN CERTIFICATE-----cert-----END CERTIFICATE-----".to_vec());
+    params.client_key = Some(b"sealed-client-key-ciphertext".to_vec());
+
+    let inserted = repo
+        .insert_credential(params, audit(owner, CredentialAuditAction::Register))
+        .await?;
+    assert!(inserted.has_client_cert);
+    assert!(!inserted.has_tls_ca);
+
+    let found = repo
+        .find_credential_by_alias(owner, "mtls-api")
+        .await?
+        .ok_or("credential not found")?;
+    assert!(found.has_client_cert);
+
+    let material = repo
+        .find_credential_secret_by_alias(owner, "mtls-api")
+        .await?
+        .ok_or("credential secret not found")?
+        .into_credential()?;
+    assert!(material.credential.has_client_cert);
+    assert_eq!(
+        material.client_cert.as_deref(),
+        Some(&b"-----BEGIN CERTIFICATE-----cert-----END CERTIFICATE-----"[..])
+    );
+    assert_eq!(
+        material.client_key.as_deref(),
+        Some(&b"sealed-client-key-ciphertext"[..])
+    );
+
+    db.cleanup().await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn duplicate_alias_maps_to_validation_error() -> Result<(), Box<dyn std::error::Error>> {
     let Some(db) = TestDb::setup().await? else {
         return Ok(());
@@ -456,6 +500,8 @@ fn insert_params(owner: Uuid, alias: &str) -> InsertCredentialParams {
         allow_private_network: false,
         allow_insecure_transport: false,
         tls_ca: None,
+        client_cert: None,
+        client_key: None,
     }
 }
 

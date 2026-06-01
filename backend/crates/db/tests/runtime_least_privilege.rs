@@ -14,9 +14,10 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Connection, PgConnection, PgPool};
 use uuid::Uuid;
 
-const MIGRATIONS: [&str; 2] = [
+const MIGRATIONS: [&str; 3] = [
     include_str!("../migrations/0001_schema.sql"),
     include_str!("../migrations/0002_runtime_least_privilege.sql"),
+    include_str!("../migrations/0003_http_client_cert.sql"),
 ];
 
 struct TestDb {
@@ -255,6 +256,8 @@ fn insert_params(owner_user_id: Uuid, alias: &str) -> InsertCredentialParams {
         allow_private_network: false,
         allow_insecure_transport: false,
         tls_ca: None,
+        client_cert: None,
+        client_key: None,
     }
 }
 
