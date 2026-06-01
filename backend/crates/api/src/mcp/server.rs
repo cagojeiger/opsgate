@@ -85,7 +85,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "api.call",
-        description = "Call an HTTP alias from credential.list. Send only request_path under its hidden origin/base_path. JSON responses only; use jsonpath projections for large lists, including .length()/.count() for counts."
+        description = "Required: alias, purpose, request_path. Call an HTTP alias from credential.list. Send only request_path under hidden origin/base_path. For counts: length() returns array/string/object length; count() returns matched node count."
     )]
     pub async fn api_call(
         &self,
@@ -103,7 +103,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "sql.query",
-        description = "Run read-only SELECT/WITH on a SQL alias from credential.list. Prefer explicit columns, WHERE, count/group, and keyset pagination; avoid SELECT *. Use jsonpath only to trim returned JSON; .length()/.count() can return small counts."
+        description = "Required: alias, purpose, query. Run read-only SELECT/WITH on a SQL alias. Prefer explicit columns/WHERE/count/group; avoid SELECT *. For SQL column arrays, use row_count or $.column.length() for row count."
     )]
     pub async fn sql_query(
         &self,
@@ -121,7 +121,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "sql.schema",
-        description = "Inspect SQL schema before writing unknown queries. mode=tables lists tables; mode=table with namespace/table shows columns and indexes. Never returns row data."
+        description = "Required: alias, purpose. Inspect SQL schema before unknown queries. mode=tables lists tables; mode=table with namespace/table shows columns/indexes. Never returns row data."
     )]
     pub async fn sql_schema(
         &self,

@@ -107,8 +107,9 @@ $.items.length()                    # 배열/문자열/object 길이
 $.items[*].metadata.name.count()    # 매칭 node 개수
 ```
 
-`.length()`는 매칭된 값이 하나면 숫자를 반환하고, 여러 값이면 각 값의 길이 배열을
-반환합니다. `.count()`는 base JSONPath가 매칭한 node 개수를 숫자로 반환합니다.
+`.length()`는 매칭된 값이 하나면 배열/문자열/object 길이를 숫자로 반환하고, 여러 값이면 각 값의 길이 배열을 반환합니다. `.count()`는 base JSONPath가 매칭한 node 개수를 숫자로 반환합니다. 매칭이 없으면 일반 selection과 `.length()`는 `[]`, `.count()`는 `0`을 반환합니다.
+
+SQL의 column-oriented body에서 `$.column.count()`는 보통 배열 node 1개를 세므로 행 수가 아닙니다. SQL 행 수는 응답의 `row_count` 또는 `$.column.length()`를 사용합니다.
 의도는 무제한 recursive traversal을 막으면서도 LLM이 필요한 값이나 개수만 작게
 가져올 수 있게 하는 것입니다.
 

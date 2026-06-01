@@ -266,14 +266,11 @@ fn project_json_paths(value: &Value, paths: &[String]) -> Result<Value> {
         })?;
         let nodes = path.query(value).all();
         let projected = match operator {
-            Some(JsonPathOperator::Count) => Some(count_projection(nodes.len())),
+            Some(JsonPathOperator::Count) => count_projection(nodes.len()),
             Some(JsonPathOperator::Length) => length_projection(&nodes),
-            None if !nodes.is_empty() => Some(Value::Array(nodes.into_iter().cloned().collect())),
-            None => None,
+            None => Value::Array(nodes.into_iter().cloned().collect()),
         };
-        if let Some(projected) = projected {
-            out.insert(path_key.to_owned(), projected);
-        }
+        out.insert(path_key.to_owned(), projected);
     }
     if out.is_empty() {
         Ok(Value::Null)
@@ -308,21 +305,21 @@ fn count_projection(count: usize) -> Value {
     serde_json::json!(count)
 }
 
-fn length_projection(nodes: &[&Value]) -> Option<Value> {
+fn length_projection(nodes: &[&Value]) -> Value {
     let lengths = nodes
         .iter()
         .map(|node| value_length(node))
         .collect::<Vec<_>>();
     match lengths.as_slice() {
-        [] => None,
-        [Some(length)] => Some(serde_json::json!(length)),
-        [_one] => Some(Value::Null),
-        _ => Some(Value::Array(
+        [] => Value::Array(Vec::new()),
+        [Some(length)] => serde_json::json!(length),
+        [_one] => Value::Null,
+        _ => Value::Array(
             lengths
                 .into_iter()
                 .map(|length| length.map_or(Value::Null, |length| serde_json::json!(length)))
                 .collect(),
-        )),
+        ),
     }
 }
 
@@ -774,18 +771,33 @@ mod tests {
     }
 
     #[test]
-    fn jsonpath_no_match_returns_null_body() -> Result<()> {
+    fn jsonpath_no_match_returns_empty_array_for_requested_key() -> Result<()> {
         let out = build_json_output(
             br#"{"items":[{"name":"api"}]}"#,
             JsonOutputOptions {
                 max_bytes: 4096,
-                json_paths: paths(&["$.items[*].missing"]),
+                json_paths: paths(&[
+                    "$.items[*].missing",
+                    "$.items[*].missing.length()",
+                    "$.items[*].missing.count()",
+                ]),
                 ..JsonOutputOptions::default()
             },
         )?;
 
         assert!(!out.truncated);
-        assert_eq!(out.body, Value::Null);
+        assert_eq!(
+            out.body.get("$.items[*].missing"),
+            Some(&serde_json::json!([]))
+        );
+        assert_eq!(
+            out.body.get("$.items[*].missing.length()"),
+            Some(&serde_json::json!([]))
+        );
+        assert_eq!(
+            out.body.get("$.items[*].missing.count()"),
+            Some(&serde_json::json!(0))
+        );
         assert!(out.more.is_none());
         Ok(())
     }
