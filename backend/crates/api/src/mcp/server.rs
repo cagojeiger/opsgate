@@ -85,7 +85,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "api.call",
-        description = "Call an HTTP alias from credential.list. Send only request_path under its hidden origin/base_path. JSON responses only; use 1-3 jsonpath projections for large lists."
+        description = "Call an HTTP alias from credential.list. Send only request_path under its hidden origin/base_path. JSON responses only; use jsonpath projections for large lists, including .length()/.count() for counts."
     )]
     pub async fn api_call(
         &self,
@@ -103,7 +103,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "sql.query",
-        description = "Run read-only SELECT/WITH on a SQL alias from credential.list. Prefer explicit columns, WHERE, count/group, and keyset pagination; avoid SELECT *. Use jsonpath only to trim returned JSON."
+        description = "Run read-only SELECT/WITH on a SQL alias from credential.list. Prefer explicit columns, WHERE, count/group, and keyset pagination; avoid SELECT *. Use jsonpath only to trim returned JSON; .length()/.count() can return small counts."
     )]
     pub async fn sql_query(
         &self,

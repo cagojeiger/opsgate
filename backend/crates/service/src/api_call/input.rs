@@ -48,7 +48,7 @@ pub struct ApiCallInput {
     /// Content-Type for body. Defaults to application/json when body is present.
     #[serde(default)]
     pub content_type: String,
-    /// 1-3 JSONPath projections to shrink large JSON responses, e.g. $.items[*].metadata.name.
+    /// JSONPath projections to shrink large JSON responses. Use .length() or .count() for counts.
     #[serde(default)]
     pub jsonpath: Vec<String>,
     /// Response byte budget after JSONPath projection. Lower values force concise output.

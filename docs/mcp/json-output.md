@@ -78,9 +78,9 @@ JSON number는 `UseNumber`로 decode합니다. 큰 숫자 ID가 `float64`로 강
 
 ## JSONPath 검증 규칙
 
-`api.call`과 `sql.query`는 같은 JSONPath 검증을 사용합니다. 현재 구현은
-표현식을 직접 실행하는 확장 언어를 두지 않고, `serde_json_path` parser가
-받아들이는 JSONPath 중 아래 안전 조건을 만족하는 표현식만 허용합니다.
+`api.call`과 `sql.query`는 같은 JSONPath 검증을 사용합니다. 기본은
+`serde_json_path` parser가 받아들이는 JSONPath이며, 토큰 절감을 위해 끝에 붙이는
+작은 집계 suffix `.length()`/`.count()`를 추가로 지원합니다.
 
 허용 조건:
 
@@ -90,6 +90,7 @@ JSON number는 `UseNumber`로 decode합니다. 큰 숫자 ID가 `float64`로 강
 표현식은 $ 로 시작
 recursive descent(`..`) 금지
 parser가 유효한 JSONPath로 인정해야 함
+끝에 `.length()`/`.length` 또는 `.count()`/`.count` 집계 suffix 허용
 ```
 
 자주 쓰는 예시는 다음과 같습니다.
@@ -102,10 +103,14 @@ $.items[0]
 $.items[0:10]
 $.items['name','namespace']
 $.items[?(@.status.phase == 'Running')]
+$.items.length()                    # 배열/문자열/object 길이
+$.items[*].metadata.name.count()    # 매칭 node 개수
 ```
 
-의도는 무제한 recursive traversal을 막으면서도 LLM이 표준 JSONPath로 필요한
-값을 좁힐 수 있게 하는 것입니다.
+`.length()`는 매칭된 값이 하나면 숫자를 반환하고, 여러 값이면 각 값의 길이 배열을
+반환합니다. `.count()`는 base JSONPath가 매칭한 node 개수를 숫자로 반환합니다.
+의도는 무제한 recursive traversal을 막으면서도 LLM이 필요한 값이나 개수만 작게
+가져올 수 있게 하는 것입니다.
 
 ## 큰 응답 처리 규칙
 
@@ -348,6 +353,7 @@ max_bytes truncation 시 body=null
 hard read cap 보호
 jsonpath 입력
 JSONPath safe subset 검증
+jsonpath `.length()`/`.count()` 집계 suffix
 top-level scalar JSON 출력 지원
 UseNumber decode
 more.preview path catalog

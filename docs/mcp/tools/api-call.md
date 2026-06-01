@@ -87,11 +87,13 @@
   저장합니다.
 - `truncated`는 top-level 필드로도 반환됩니다.
 - `original_bytes`는 일반 응답에서는 compact 전 원본 body 크기이고, hard cap 초과 시에는 전체 크기 또는 확인된 최소 크기입니다.
-- `jsonpath`는 표준 JSONPath 형식의 표현식을 사용하며 flat-keyed object를
-  반환합니다.
+- `jsonpath`는 JSONPath 표현식을 사용하며 flat-keyed object를 반환합니다.
+  개수만 필요하면 `.length()` 또는 `.count()` suffix를 사용합니다.
 - `jsonpath`는 공통 JSONPath 검증 규칙을 따릅니다. 표현식은 `$`로 시작해야
   하며, 최대 16개/각 512자까지 허용됩니다.
 - recursive descent(`..`)는 허용되지 않습니다.
+- 예: pod 수만 필요하면 `$.items.length()`, 매칭된 이름 개수만 필요하면
+  `$.items[*].metadata.name.count()`를 사용합니다.
 
 Truncation:
 
@@ -129,7 +131,8 @@ Truncation:
 LLM 가이드:
 
 - 먼저 `credential.list`를 호출해 policy를 확인하세요.
-- 구조를 아는 API라면 곧바로 `jsonpath`를 사용하세요.
+- 구조를 아는 API라면 곧바로 `jsonpath`를 사용하세요. 개수 질문에는 전체 배열을
+  받지 말고 `.length()`/`.count()`를 먼저 사용하세요.
 - 구조를 모르는 API라면 낮은 `max_bytes`로 시작한 뒤
   `more.options.preferred_next`를 따르세요.
 - `max_bytes`를 올리기 전에 `suggested_jsonpath`/`more.preview.paths`를

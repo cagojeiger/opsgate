@@ -239,7 +239,7 @@ JSON parse must succeed
 multiple top-level JSON values denied
 top-level scalar JSON allowed
 UseNumber preserves large JSON numbers
-jsonpath projection returns flat-keyed object
+jsonpath projection returns flat-keyed object; `.length()`/`.count()` suffix may return small scalar counts
 transport hard cap truncation is not parsed as JSON
 top-level truncated mirrors the output truncation state
 max_bytes truncation returns body=null

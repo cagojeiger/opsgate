@@ -85,7 +85,7 @@ query required
 query length 1-16000
 query NUL denied
 params max count 64
-jsonpath uses the shared safe subset
+jsonpath uses the shared safe subset, including `.length()`/`.count()` count suffixes
 max_rows range 1..1000
 max_bytes range 1024..1MiB
 timeout_ms range 1..30000
@@ -248,7 +248,7 @@ DB 결과 행렬을 LLM이 소비하기 쉬운 작은 column-oriented JSON으로
 
 ```text
 SQL rows -> column-oriented body
-jsonpath -> projection over the column-oriented body
+jsonpath -> projection over the column-oriented body, with `.length()`/`.count()` for count-only answers
 max_bytes overrun -> body=null + more hints
 ```
 

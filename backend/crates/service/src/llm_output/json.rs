@@ -238,7 +238,8 @@ pub fn validate_json_paths(paths: &[String]) -> Result<()> {
                 "jsonpath recursive descent is outside the safe subset",
             ));
         }
-        JsonPath::parse(trimmed).map_err(|error| {
+        let (base_path, _operator) = split_jsonpath_operator(trimmed);
+        JsonPath::parse(base_path).map_err(|error| {
             Error::validation(format!("invalid jsonpath expression {trimmed:?}: {error}"))
         })?;
     }
@@ -259,21 +260,78 @@ fn project_json_paths(value: &Value, paths: &[String]) -> Result<Value> {
     let mut out = Map::new();
     for raw_path in paths {
         let path_key = raw_path.trim();
-        let path = JsonPath::parse(path_key).map_err(|error| {
+        let (base_path, operator) = split_jsonpath_operator(path_key);
+        let path = JsonPath::parse(base_path).map_err(|error| {
             Error::validation(format!("invalid jsonpath expression {path_key:?}: {error}"))
         })?;
         let nodes = path.query(value).all();
-        if !nodes.is_empty() {
-            out.insert(
-                path_key.to_owned(),
-                Value::Array(nodes.into_iter().cloned().collect()),
-            );
+        let projected = match operator {
+            Some(JsonPathOperator::Count) => Some(count_projection(nodes.len())),
+            Some(JsonPathOperator::Length) => length_projection(&nodes),
+            None if !nodes.is_empty() => Some(Value::Array(nodes.into_iter().cloned().collect())),
+            None => None,
+        };
+        if let Some(projected) = projected {
+            out.insert(path_key.to_owned(), projected);
         }
     }
     if out.is_empty() {
         Ok(Value::Null)
     } else {
         Ok(Value::Object(out))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JsonPathOperator {
+    Count,
+    Length,
+}
+
+fn split_jsonpath_operator(path: &str) -> (&str, Option<JsonPathOperator>) {
+    for (suffix, operator) in [
+        (".count()", JsonPathOperator::Count),
+        (".count", JsonPathOperator::Count),
+        (".length()", JsonPathOperator::Length),
+        (".length", JsonPathOperator::Length),
+    ] {
+        if let Some(base) = path.strip_suffix(suffix)
+            && !base.is_empty()
+        {
+            return (base, Some(operator));
+        }
+    }
+    (path, None)
+}
+
+fn count_projection(count: usize) -> Value {
+    serde_json::json!(count)
+}
+
+fn length_projection(nodes: &[&Value]) -> Option<Value> {
+    let lengths = nodes
+        .iter()
+        .map(|node| value_length(node))
+        .collect::<Vec<_>>();
+    match lengths.as_slice() {
+        [] => None,
+        [Some(length)] => Some(serde_json::json!(length)),
+        [_one] => Some(Value::Null),
+        _ => Some(Value::Array(
+            lengths
+                .into_iter()
+                .map(|length| length.map_or(Value::Null, |length| serde_json::json!(length)))
+                .collect(),
+        )),
+    }
+}
+
+fn value_length(value: &Value) -> Option<usize> {
+    match value {
+        Value::Array(items) => Some(items.len()),
+        Value::Object(object) => Some(object.len()),
+        Value::String(value) => Some(value.chars().count()),
+        Value::Null | Value::Bool(_) | Value::Number(_) => None,
     }
 }
 
@@ -612,6 +670,52 @@ mod tests {
             .body
             .get("$.items[?@.status.phase == 'Running'].metadata.name");
         assert_eq!(value, Some(&serde_json::json!(["api"])));
+        Ok(())
+    }
+
+    #[test]
+    fn jsonpath_count_and_length_project_small_scalars() -> Result<()> {
+        let out = build_json_output(
+            br#"{"items":[{"metadata":{"name":"api"},"status":{"phase":"Running"}},{"metadata":{"name":"worker"},"status":{"phase":"Pending"}}],"name":"abcd"}"#,
+            JsonOutputOptions {
+                max_bytes: 4096,
+                json_paths: paths(&[
+                    "$.items.length()",
+                    "$.items[*].metadata.name.count()",
+                    "$.name.length",
+                ]),
+                ..JsonOutputOptions::default()
+            },
+        )?;
+
+        assert_eq!(
+            out.body.get("$.items.length()"),
+            Some(&serde_json::json!(2))
+        );
+        assert_eq!(
+            out.body.get("$.items[*].metadata.name.count()"),
+            Some(&serde_json::json!(2))
+        );
+        assert_eq!(out.body.get("$.name.length"), Some(&serde_json::json!(4)));
+        assert_eq!(out.returned_bytes, compact_json_bytes(&out.body)?.len());
+        Ok(())
+    }
+
+    #[test]
+    fn jsonpath_length_projects_multiple_node_lengths() -> Result<()> {
+        let out = build_json_output(
+            br#"{"items":[{"containers":[1,2]},{"containers":[3]}]}"#,
+            JsonOutputOptions {
+                max_bytes: 4096,
+                json_paths: paths(&["$.items[*].containers.length()"]),
+                ..JsonOutputOptions::default()
+            },
+        )?;
+
+        assert_eq!(
+            out.body.get("$.items[*].containers.length()"),
+            Some(&serde_json::json!([2, 1]))
+        );
         Ok(())
     }
 

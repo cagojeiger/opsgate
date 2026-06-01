@@ -107,7 +107,9 @@ paid   | 900
 ```
 
 JSONPath projection 결과는 `api.call`과 같은 공통 JSON 출력 규칙을 따른다.
-각 path는 결과 객체의 key가 되고, 매칭된 node 목록이 배열로 들어간다.
+각 path는 결과 객체의 key가 되고, 일반 selection은 매칭된 node 목록이 배열로
+들어간다. 개수만 필요하면 `.length()` 또는 `.count()` suffix를 사용해 작은 숫자만
+반환할 수 있다. 예: `$.status.length()` 또는 `$.status.count()`.
 
 ## Truncation
 
@@ -177,6 +179,7 @@ LLM 가이드:
 - 테이블이 작다고 확신하지 않는 한 `select *`는 피한다.
 - 결과는 컬럼별 배열이므로, 행 단위 객체가 필요하면 필요한 컬럼을 명시하고 같은
   인덱스의 값들을 하나의 행으로 해석한다.
-- 특정 컬럼이나 큰 결과의 일부만 필요하면 `jsonpath`를 사용한다.
+- 특정 컬럼이나 큰 결과의 일부만 필요하면 `jsonpath`를 사용한다. 개수만 필요하면
+  전체 배열을 받지 말고 `.length()`/`.count()`를 사용한다.
 - `body=null`이고 `more.options.preferred_next=jsonpath`이면 `max_bytes`부터
   올리지 말고 `suggested_jsonpath` 또는 `more.preview.paths`로 먼저 좁힌다.
