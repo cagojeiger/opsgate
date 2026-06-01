@@ -186,6 +186,7 @@ fn state_with_resource_url(
     )?);
     let audit_repo = opsgate_db::AuditRepo::new(pool.clone());
     let audit = Arc::new(audit_repo.clone());
+    let reads = Arc::new(opsgate_db::ReadRepo::new(pool.clone()));
     let target_pg_pools = opsgate_service::TargetPgPools::new();
     let sql_schema = Arc::new(opsgate_service::sql_schema::SqlSchemaService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
@@ -215,6 +216,7 @@ fn state_with_resource_url(
             sql_query,
         },
         audit,
+        reads,
     })
 }
 

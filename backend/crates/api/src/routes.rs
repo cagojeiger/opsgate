@@ -99,8 +99,11 @@ fn rest_api_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .merge(crate::rest::api_call::routes())
         .merge(crate::rest::credentials::routes())
+        .merge(crate::rest::mcp_connect::routes())
         .merge(crate::rest::me::routes())
+        .merge(crate::rest::observability::routes())
         .merge(crate::rest::sql_query::routes())
+        .merge(crate::rest::sql_schema::routes())
         .fallback(api_not_found)
         .layer(from_fn_with_state(auth_state, require_api_bearer))
 }

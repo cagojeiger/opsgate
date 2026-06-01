@@ -10,6 +10,108 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/activity": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "operationId": "get_activity",
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "query",
+            "description": "Filter by channel: api, mcp, browser, system",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tool",
+            "in": "query",
+            "description": "Alias for action filter",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "description": "Filter by outcome: ok, denied, error",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "credential",
+            "in": "query",
+            "description": "Filter by target credential alias",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size 1-100",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Continuation cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent activity timeline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/v1/api/call": {
       "post": {
         "tags": [
@@ -59,6 +161,117 @@
           },
           "404": {
             "description": "Credential not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/audit/events": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "operationId": "get_audit_events",
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "query",
+            "description": "Filter by channel",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Filter by audit action",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "description": "Filter by outcome",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_type",
+            "in": "query",
+            "description": "Filter by target type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "credential",
+            "in": "query",
+            "description": "Filter by target credential alias",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size 1-100",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Continuation cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detailed audit events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEventsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
             "content": {
               "application/json": {
                 "schema": {
@@ -334,6 +547,338 @@
         ]
       }
     },
+    "/api/v1/history/api-calls": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "operationId": "get_api_call_history",
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "query",
+            "description": "Filter by channel",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "credential",
+            "in": "query",
+            "description": "Filter by credential alias",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "description": "Filter by outcome",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error_kind",
+            "in": "query",
+            "description": "Filter by safe error kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size 1-100",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Continuation cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API call history rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiCallHistoryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/history/credentials": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "operationId": "get_credential_history",
+        "parameters": [
+          {
+            "name": "credential",
+            "in": "query",
+            "description": "Filter by credential alias",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "register, update, or delete",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "description": "Filter by channel",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size 1-100",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Continuation cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Credential mutation history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialHistoryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/history/sql-queries": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "operationId": "get_sql_query_history",
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "query",
+            "description": "Filter by channel",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "credential",
+            "in": "query",
+            "description": "Filter by credential alias",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "description": "Filter by outcome",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error_kind",
+            "in": "query",
+            "description": "Filter by safe error kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size 1-100",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Continuation cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SQL query history rows without raw SQL text",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlQueryHistoryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/mcp/connect": {
+      "get": {
+        "tags": [
+          "mcp"
+        ],
+        "operationId": "get_mcp_connect",
+        "responses": {
+          "200": {
+            "description": "MCP URLs and tool lists for onboarding",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpConnectResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/v1/me": {
       "get": {
         "tags": [
@@ -443,10 +988,372 @@
           }
         ]
       }
+    },
+    "/api/v1/sql/schema": {
+      "post": {
+        "tags": [
+          "runtime"
+        ],
+        "operationId": "schema_sql",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SqlSchemaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Postgres schema metadata without row values",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlSchemaResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, policy denial, or safe SQL error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Credential not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/summary": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "operationId": "get_summary",
+        "responses": {
+          "200": {
+            "description": "Credential and activity summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SummaryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "ActivityItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "action",
+          "channel",
+          "outcome",
+          "severity"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "severity": {
+            "type": "string"
+          },
+          "target_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ActivityResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "page"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityItem"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageResponse"
+          }
+        }
+      },
+      "ActivitySummaryResponse": {
+        "type": "object",
+        "required": [
+          "api_calls",
+          "sql_queries",
+          "audit_events",
+          "errors",
+          "denied"
+        ],
+        "properties": {
+          "api_calls": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "audit_events": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "denied": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "errors": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sql_queries": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiCallHistoryItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "channel",
+          "credential_alias",
+          "credential_category",
+          "credential_provider",
+          "credential_env",
+          "method",
+          "request_path",
+          "query_keys",
+          "request_header_keys",
+          "projection_keys",
+          "max_bytes",
+          "outcome",
+          "truncated",
+          "created_at"
+        ],
+        "properties": {
+          "actor_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "credential_alias": {
+            "type": "string"
+          },
+          "credential_category": {
+            "type": "string"
+          },
+          "credential_env": {
+            "type": "string"
+          },
+          "credential_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "credential_provider": {
+            "type": "string"
+          },
+          "error_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_message_safe": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "latency_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "max_bytes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "method": {
+            "type": "string"
+          },
+          "original_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "owner_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "projection_keys": {
+            "type": "object"
+          },
+          "purpose": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "query_keys": {
+            "type": "object"
+          },
+          "request_header_keys": {
+            "type": "object"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_path": {
+            "type": "string"
+          },
+          "returned_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "status_code": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ApiCallHistoryResponse": {
+        "type": "object",
+        "required": [
+          "calls",
+          "page"
+        ],
+        "properties": {
+          "calls": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiCallHistoryItem"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageResponse"
+          }
+        }
+      },
       "ApiCallRequest": {
         "type": "object",
         "required": [
@@ -556,6 +1463,204 @@
           },
           "truncated": {
             "type": "boolean"
+          }
+        }
+      },
+      "AuditEventResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "action",
+          "channel",
+          "outcome",
+          "severity",
+          "detail",
+          "created_at"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "detail": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "severity": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AuditEventsResponse": {
+        "type": "object",
+        "required": [
+          "events",
+          "page"
+        ],
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEventResponse"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageResponse"
+          }
+        }
+      },
+      "CredentialHistoryItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "owner_user_id",
+          "alias",
+          "action",
+          "actor_user_id",
+          "changed_fields",
+          "version",
+          "detail",
+          "created_at"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor_ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor_user_agent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "alias": {
+            "type": "string"
+          },
+          "changed_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "credential_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "detail": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "owner_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CredentialHistoryResponse": {
+        "type": "object",
+        "required": [
+          "events",
+          "page"
+        ],
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CredentialHistoryItem"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageResponse"
           }
         }
       },
@@ -674,6 +1779,28 @@
           }
         }
       },
+      "CredentialSummaryResponse": {
+        "type": "object",
+        "required": [
+          "total",
+          "http",
+          "sql"
+        ],
+        "properties": {
+          "http": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sql": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "DeleteCredentialRequest": {
         "type": "object",
         "properties": {
@@ -718,6 +1845,46 @@
           }
         }
       },
+      "McpConnectResponse": {
+        "type": "object",
+        "required": [
+          "runtime_url",
+          "admin_url",
+          "recommended_url",
+          "runtime_tools",
+          "admin_tools",
+          "notes"
+        ],
+        "properties": {
+          "admin_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "admin_url": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recommended_url": {
+            "type": "string"
+          },
+          "runtime_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "runtime_url": {
+            "type": "string"
+          }
+        }
+      },
       "MeResponse": {
         "type": "object",
         "required": [
@@ -738,6 +1905,33 @@
           },
           "sub": {
             "type": "string"
+          }
+        }
+      },
+      "PageResponse": {
+        "type": "object",
+        "required": [
+          "limit",
+          "returned",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "returned": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
@@ -932,6 +2126,163 @@
           }
         }
       },
+      "SqlQueryHistoryItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "channel",
+          "credential_alias",
+          "credential_category",
+          "credential_provider",
+          "credential_env",
+          "query_sha256",
+          "params_count",
+          "max_rows",
+          "max_bytes",
+          "timeout_ms",
+          "outcome",
+          "truncated",
+          "result_columns",
+          "created_at"
+        ],
+        "properties": {
+          "actor_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "credential_alias": {
+            "type": "string"
+          },
+          "credential_category": {
+            "type": "string"
+          },
+          "credential_env": {
+            "type": "string"
+          },
+          "credential_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "credential_provider": {
+            "type": "string"
+          },
+          "error_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_message_safe": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "latency_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "max_bytes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "max_rows": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "owner_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "params_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "purpose": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "query_sha256": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result_columns": {
+            "type": "object"
+          },
+          "returned_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "row_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SqlQueryHistoryResponse": {
+        "type": "object",
+        "required": [
+          "queries",
+          "page"
+        ],
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/PageResponse"
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SqlQueryHistoryItem"
+            }
+          }
+        }
+      },
       "SqlQueryRequest": {
         "type": "object",
         "required": [
@@ -1025,6 +2376,119 @@
             "type": "boolean"
           }
         }
+      },
+      "SqlSchemaRequest": {
+        "type": "object",
+        "required": [
+          "alias",
+          "purpose"
+        ],
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "include_indexes": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "max_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "mode": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "table": {
+            "type": "string"
+          },
+          "timeout_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "SqlSchemaResponse": {
+        "type": "object",
+        "required": [
+          "mode",
+          "truncated",
+          "returned_bytes",
+          "latency_ms"
+        ],
+        "properties": {
+          "latency_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "more": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "page": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "returned_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "table": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "tables": {
+            "type": "object"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SummaryResponse": {
+        "type": "object",
+        "required": [
+          "credentials",
+          "activity_24h"
+        ],
+        "properties": {
+          "activity_24h": {
+            "$ref": "#/components/schemas/ActivitySummaryResponse"
+          },
+          "credentials": {
+            "$ref": "#/components/schemas/CredentialSummaryResponse"
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -1042,6 +2506,14 @@
     {
       "name": "credentials",
       "description": "Secret-safe credential management"
+    },
+    {
+      "name": "mcp",
+      "description": "MCP connection guidance"
+    },
+    {
+      "name": "observability",
+      "description": "Read-only activity, audit, and history views"
     },
     {
       "name": "runtime",

@@ -63,6 +63,7 @@ async fn main() -> anyhow::Result<()> {
     let api_call_history = opsgate_db::ApiCallHistoryRepo::new(pool.clone());
     let sql_query_history = opsgate_db::SqlQueryHistoryRepo::new(pool.clone());
     let audit_repo = opsgate_db::AuditRepo::new(pool.clone());
+    let reads = std::sync::Arc::new(opsgate_db::ReadRepo::new(pool.clone()));
     let audit = std::sync::Arc::new(audit_repo.clone());
     let sql_schema_audit_repo = audit_repo.clone();
     let sql_query_audit_repo = audit_repo.clone();
@@ -110,6 +111,7 @@ async fn main() -> anyhow::Result<()> {
             sql_query: sql_query_service,
         },
         audit,
+        reads,
     };
 
     let listener = TcpListener::bind(bind_addr).await?;
