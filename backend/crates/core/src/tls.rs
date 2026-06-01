@@ -22,7 +22,9 @@ pub fn parse_client_certificate_pem(pem: &str) -> Result<()> {
     let mut reader = Cursor::new(pem.as_bytes());
     let certs = rustls_pemfile::certs(&mut reader)
         .map(|cert| {
-            cert.map_err(|error| Error::validation(format!("invalid client certificate PEM: {error}")))
+            cert.map_err(|error| {
+                Error::validation(format!("invalid client certificate PEM: {error}"))
+            })
         })
         .collect::<Result<Vec<_>>>()?;
     if certs.is_empty() {

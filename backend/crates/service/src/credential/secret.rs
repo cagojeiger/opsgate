@@ -26,6 +26,15 @@ pub fn open_client_key(sealer: &Sealer, alias: &str, ciphertext: &[u8]) -> Resul
     sealer.open(CLIENT_KEY_DOMAIN, alias, ciphertext)
 }
 
+pub(crate) fn client_identity_pem(client_cert: &[u8], client_key: &[u8]) -> Vec<u8> {
+    let mut identity = client_cert.to_vec();
+    if !identity.ends_with(b"\n") {
+        identity.push(b'\n');
+    }
+    identity.extend_from_slice(client_key);
+    identity
+}
+
 pub fn open_http_headers(
     sealer: &Sealer,
     alias: &str,
@@ -159,5 +168,14 @@ mod tests {
         assert!(open_client_key(&sealer, "other", &ciphertext).is_err());
         assert!(sealer.open(SECRET_DOMAIN, "prod", &ciphertext).is_err());
         Ok(())
+    }
+
+    #[test]
+    fn client_identity_pem_adds_separator_when_needed() {
+        let identity = client_identity_pem(b"cert", b"key");
+        assert_eq!(identity, b"cert\nkey");
+
+        let identity = client_identity_pem(b"cert\n", b"key");
+        assert_eq!(identity, b"cert\nkey");
     }
 }

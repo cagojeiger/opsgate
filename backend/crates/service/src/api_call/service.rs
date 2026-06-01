@@ -164,11 +164,6 @@ fn build_client_identity(
     let (Some(cert), Some(key_ciphertext)) = (client_cert, client_key_ciphertext) else {
         return Ok(None);
     };
-    let mut identity = cert.to_vec();
-    if !identity.ends_with(b"\n") {
-        identity.push(b'\n');
-    }
     let key = secret::open_client_key(sealer, alias, key_ciphertext)?;
-    identity.extend_from_slice(&key);
-    Ok(Some(identity))
+    Ok(Some(secret::client_identity_pem(cert, &key)))
 }

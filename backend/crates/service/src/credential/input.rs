@@ -60,8 +60,9 @@ pub struct RegisterHttpCredentialInput {
     #[serde(default)]
     pub tls_server_ca: String,
     /// PEM client certificate chain for mutual-TLS targets (e.g. Kubernetes API
-    /// servers using client-certificate auth). Requires client_key_pem. Sealed
-    /// at rest and never returned. Leave empty when not using client certs.
+    /// servers using client-certificate auth). Requires client_key_pem. Stored
+    /// as certificate material and never returned. Leave empty when not using
+    /// client certs.
     #[serde(default)]
     pub client_cert_pem: String,
     /// PEM private key matching client_cert_pem. Requires client_cert_pem.

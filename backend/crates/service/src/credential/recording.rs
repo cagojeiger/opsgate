@@ -18,6 +18,7 @@ pub(super) fn register_audit(
             "allow_private_network": input.allow_private_network,
             "allow_insecure_transport": input.allow_insecure_transport,
             "has_tls_ca": input.tls_server_ca.is_some(),
+            "has_client_cert": input.client_cert_pem.is_some(),
         }),
     )
 }
@@ -109,7 +110,9 @@ mod tests {
 
     #[test]
     fn register_audit_detail_excludes_target_and_secret_material() {
-        let input = http_input();
+        let mut input = http_input();
+        input.client_cert_pem = Some("client-cert-material".to_owned());
+        input.client_key_pem = Some("client-key-material".to_owned());
         let audit = register_audit(&caller(), &input);
         let detail = audit.detail.to_string();
 
@@ -119,9 +122,12 @@ mod tests {
         assert_eq!(audit.actor_ip.as_deref(), Some("203.0.113.30"));
         assert_eq!(audit.actor_user_agent.as_deref(), Some("opsgate-test"));
         assert!(detail.contains("k8s"));
+        assert!(detail.contains("has_client_cert"));
         assert!(!detail.contains("service.example.test"));
         assert!(!detail.contains("secret-token"));
         assert!(!detail.contains("Authorization"));
+        assert!(!detail.contains("client-cert-material"));
+        assert!(!detail.contains("client-key-material"));
     }
 
     #[test]

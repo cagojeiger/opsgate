@@ -76,6 +76,10 @@ impl CredentialService {
             .client_cert_pem
             .as_ref()
             .map(|pem| pem.as_bytes().to_vec());
+        if let (Some(cert), Some(key)) = (&client_cert, input.client_key_pem.as_ref()) {
+            let identity = secret::client_identity_pem(cert, key.as_bytes());
+            opsgate_infra::http::validate_client_identity_pem(&identity)?;
+        }
         let client_key = input
             .client_key_pem
             .as_ref()

@@ -14,10 +14,11 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Connection, PgConnection, PgPool};
 use uuid::Uuid;
 
-const MIGRATIONS: [&str; 3] = [
+const MIGRATIONS: [&str; 4] = [
     include_str!("../migrations/0001_schema.sql"),
     include_str!("../migrations/0002_runtime_least_privilege.sql"),
     include_str!("../migrations/0003_http_client_cert.sql"),
+    include_str!("../migrations/0004_http_client_cert_update_grant.sql"),
 ];
 
 struct TestDb {

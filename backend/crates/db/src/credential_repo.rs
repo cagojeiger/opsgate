@@ -260,6 +260,8 @@ impl CredentialRepo {
             r#"
             UPDATE credentials
             SET secret_ciphertext = NULL,
+                client_cert = NULL,
+                client_key = NULL,
                 secret_destroyed_at = now(),
                 deleted_at = now(),
                 deleted_by = $3,

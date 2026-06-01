@@ -101,10 +101,15 @@ struct TlsClientKey {
 /// `server_ca` is the PEM CA bundle for verifying the target. `client_identity`
 /// is the combined client certificate chain plus unsealed private key PEM used
 /// for mutual-TLS client authentication.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Clone, Copy, Default)]
 pub struct TargetTls<'a> {
     pub server_ca: Option<&'a [u8]>,
     pub client_identity: Option<&'a [u8]>,
+}
+
+pub fn validate_client_identity_pem(identity: &[u8]) -> Result<()> {
+    let _identity = client_identity_from_pem(identity)?;
+    Ok(())
 }
 
 fn build_client(
@@ -130,14 +135,17 @@ fn build_client(
         }
     }
     if let Some(client_identity) = tls.client_identity {
-        let identity = reqwest::Identity::from_pem(client_identity).map_err(|error| {
-            Error::validation(format!("invalid client certificate identity: {error}"))
-        })?;
+        let identity = client_identity_from_pem(client_identity)?;
         builder = builder.identity(identity);
     }
     builder
         .build()
         .map_err(|error| Error::internal(format!("build target HTTP client: {error}")))
+}
+
+fn client_identity_from_pem(identity: &[u8]) -> Result<reqwest::Identity> {
+    reqwest::Identity::from_pem(identity)
+        .map_err(|error| Error::validation(format!("invalid client certificate identity: {error}")))
 }
 
 #[derive(Debug)]

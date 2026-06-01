@@ -10,10 +10,11 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Connection, PgPool, Row};
 use uuid::Uuid;
 
-const MIGRATIONS: [&str; 3] = [
+const MIGRATIONS: [&str; 4] = [
     include_str!("../migrations/0001_schema.sql"),
     include_str!("../migrations/0002_runtime_least_privilege.sql"),
     include_str!("../migrations/0003_http_client_cert.sql"),
+    include_str!("../migrations/0004_http_client_cert_update_grant.sql"),
 ];
 
 struct TestDb {
@@ -312,6 +313,29 @@ async fn credential_persists_client_cert_material() -> Result<(), Box<dyn std::e
         material.client_key.as_deref(),
         Some(&b"sealed-client-key-ciphertext"[..])
     );
+
+    repo.soft_delete_credential(
+        owner,
+        "mtls-api",
+        owner,
+        audit(owner, CredentialAuditAction::Delete),
+    )
+    .await?;
+    let destroyed = sqlx::query(
+        "SELECT secret_ciphertext, client_cert, client_key, \
+                secret_destroyed_at IS NOT NULL AS secret_destroyed \
+         FROM credentials WHERE owner_user_id = $1 AND alias = 'mtls-api'",
+    )
+    .bind(owner)
+    .fetch_one(&db.pool)
+    .await?;
+    assert_eq!(
+        destroyed.get::<Option<Vec<u8>>, _>("secret_ciphertext"),
+        None
+    );
+    assert_eq!(destroyed.get::<Option<Vec<u8>>, _>("client_cert"), None);
+    assert_eq!(destroyed.get::<Option<Vec<u8>>, _>("client_key"), None);
+    assert!(destroyed.get::<bool, _>("secret_destroyed"));
 
     db.cleanup().await;
     Ok(())
