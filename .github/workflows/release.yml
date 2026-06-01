@@ -73,6 +73,8 @@ jobs:
           file: backend/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          cache-from: type=gha,scope=opsgate-release
+          cache-to: type=gha,mode=max,scope=opsgate-release
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ steps.ver.outputs.version }}
             ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
