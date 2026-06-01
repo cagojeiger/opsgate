@@ -44,6 +44,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn internal_core_error_is_redacted_for_mcp_clients() {
+        let error = map_core_error(
+            "api.call",
+            opsgate_core::Error::internal("target returned Authorization: Bearer secret-token"),
+        );
+
+        assert_eq!(error.message, "internal server error");
+        assert!(error.data.is_none());
+        assert!(!error.message.contains("secret-token"));
+    }
+
+    #[test]
+    fn validation_core_error_stays_actionable_for_mcp_clients() {
+        let error = map_core_error(
+            "api.call",
+            opsgate_core::Error::validation("target response is not JSON"),
+        );
+
+        assert_eq!(error.message, "target response is not JSON");
+        assert!(error.data.is_none());
+    }
+
+    #[test]
     fn user_safe_core_error_maps_to_invalid_params_with_data() -> Result<(), String> {
         let error = map_core_error(
             "sql.query",

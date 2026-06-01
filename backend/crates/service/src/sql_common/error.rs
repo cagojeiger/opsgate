@@ -115,6 +115,54 @@ mod tests {
     }
 
     #[test]
+    fn sqlstate_mapping_covers_retry_guidance_cases() -> Result<(), String> {
+        for (code, expected_kind, expected_hint) in [
+            ("42601", "sql_syntax_error", "read-only SELECT/WITH"),
+            ("42703", "sql_undefined_column", "sql.schema"),
+            ("42P01", "sql_undefined_table", "mode=\"tables\""),
+            ("42702", "sql_ambiguous_column", "Qualify"),
+            ("42883", "sql_undefined_function", "function name"),
+            ("42P02", "sql_undefined_parameter", "positional params"),
+            ("22P02", "sql_invalid_parameter", "params array"),
+            ("42804", "sql_datatype_mismatch", "Cast explicitly"),
+            ("42501", "sql_permission_denied", "read grants"),
+            ("57014", "sql_timeout_or_canceled", "WHERE"),
+        ] {
+            let error = error_from_sqlstate(code)
+                .ok_or_else(|| format!("{code} should map to a user-safe error"))?;
+            let Error::UserSafe {
+                kind,
+                message,
+                hint,
+            } = error
+            else {
+                return Err(format!("{code} should map to Error::UserSafe"));
+            };
+            assert_eq!(kind, expected_kind, "{code}");
+            assert!(!message.contains("secret"), "{code}: {message}");
+            assert!(
+                hint.as_deref()
+                    .is_some_and(|hint| hint.contains(expected_hint)),
+                "{code}: hint={hint:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn safe_error_record_keeps_user_safe_errors_actionable() {
+        let error = Error::user_safe(
+            "sql_undefined_table",
+            "SQL references a table that does not exist.",
+            Some("Use sql.schema first."),
+        );
+        let (kind, message) = safe_error_record(&error, "query_failed", "sql query failed");
+        assert_eq!(kind, "sql_undefined_table");
+        assert!(message.contains("table"));
+        assert!(!message.contains("secret"));
+    }
+
+    #[test]
     fn sqlstate_mapping_rejects_unknown_codes() {
         assert!(error_from_sqlstate("99999").is_none());
     }

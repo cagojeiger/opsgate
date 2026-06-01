@@ -96,6 +96,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn internal_core_error_is_redacted_for_http_clients() {
+        let error = ApiError::from(opsgate_core::Error::internal(
+            "target returned password=secret-token",
+        ));
+
+        assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(error.code, "internal_error");
+        assert_eq!(error.message, "internal server error");
+        assert!(!error.message.contains("secret-token"));
+    }
+
+    #[test]
+    fn validation_core_error_stays_actionable_for_http_clients() {
+        let error = ApiError::from(opsgate_core::Error::validation(
+            "request_path not allowed by credential policy",
+        ));
+
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+        assert_eq!(error.code, "invalid_field");
+        assert!(error.message.contains("request_path"));
+    }
+
+    #[test]
     fn user_safe_core_error_maps_to_public_http_error() {
         let error = ApiError::from(opsgate_core::Error::user_safe(
             "sql_undefined_column",
