@@ -4,9 +4,9 @@ use rmcp::{ErrorData, Json};
 
 use crate::state::AppState;
 use opsgate_service::credential::{
-    CredentialListOutput, CredentialOutput, DeleteCredentialInput, DeleteCredentialOutput,
-    ListCredentialsInput, PageOutput, RegisterCredentialOutput, RegisterHttpCredentialInput,
-    RegisterSqlCredentialInput, UpdateCredentialInput, UpdateCredentialOutput, normalize_fields,
+    CredentialListOutput, DeleteCredentialInput, DeleteCredentialOutput, ListCredentialsInput,
+    RegisterCredentialOutput, RegisterHttpCredentialInput, RegisterSqlCredentialInput,
+    UpdateCredentialInput, UpdateCredentialOutput,
 };
 
 pub async fn list(
@@ -15,27 +15,13 @@ pub async fn list(
     Parameters(input): Parameters<ListCredentialsInput>,
 ) -> Result<Json<CredentialListOutput>, ErrorData> {
     let caller = crate::mcp::tools::caller(parts)?;
-    let fields = input.fields.clone().and_then(normalize_fields);
-    let page = state
+    state
         .tools
         .credentials
         .list(caller.user.id, input)
         .await
-        .map_err(|error| crate::mcp::tools::map_core_error("credential", error))?;
-    let returned = page.credentials.len();
-    Ok(Json(CredentialListOutput {
-        credentials: page
-            .credentials
-            .into_iter()
-            .map(|credential| CredentialOutput::from_with_fields(credential, fields.as_ref()))
-            .collect(),
-        page: PageOutput {
-            limit: page.limit,
-            returned,
-            has_more: page.has_more,
-            next_cursor: page.next_cursor,
-        },
-    }))
+        .map(Json)
+        .map_err(|error| crate::mcp::tools::map_core_error("credential", error))
 }
 
 pub async fn register_http(

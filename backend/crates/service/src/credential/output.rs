@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::CredentialUpdate;
+use super::listing::CredentialListPage;
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct CredentialListOutput {
@@ -70,6 +71,26 @@ pub struct UpdateCredentialOutput {
 pub struct DeleteCredentialOutput {
     pub alias: String,
     pub deleted: bool,
+}
+
+impl CredentialListOutput {
+    pub fn from_page(page: CredentialListPage, fields: Option<Vec<String>>) -> Self {
+        let fields = fields.and_then(normalize_fields);
+        let returned = page.credentials.len();
+        Self {
+            credentials: page
+                .credentials
+                .into_iter()
+                .map(|credential| CredentialOutput::from_with_fields(credential, fields.as_ref()))
+                .collect(),
+            page: PageOutput {
+                limit: page.limit,
+                returned,
+                has_more: page.has_more,
+                next_cursor: page.next_cursor,
+            },
+        }
+    }
 }
 
 impl CredentialOutput {
@@ -192,6 +213,32 @@ mod tests {
         assert!(json.contains("k8s"));
         assert!(output.category.is_none());
         assert!(output.policy.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn list_output_from_page_applies_projection_and_page_metadata() -> Result<(), String> {
+        let output = CredentialListOutput::from_page(
+            CredentialListPage {
+                credentials: vec![credential()],
+                limit: 50,
+                has_more: true,
+                next_cursor: Some("prod-api".to_owned()),
+            },
+            Some(vec!["provider".to_owned()]),
+        );
+
+        assert_eq!(output.page.limit, 50);
+        assert_eq!(output.page.returned, 1);
+        assert!(output.page.has_more);
+        assert_eq!(output.page.next_cursor.as_deref(), Some("prod-api"));
+        let credential = output
+            .credentials
+            .first()
+            .ok_or("expected one credential")?;
+        assert_eq!(credential.alias, "prod-api");
+        assert_eq!(credential.provider.as_deref(), Some("k8s"));
+        assert!(credential.category.is_none());
         Ok(())
     }
 

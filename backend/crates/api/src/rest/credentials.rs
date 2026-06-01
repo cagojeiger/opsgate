@@ -9,9 +9,9 @@ use serde::Deserialize;
 use crate::error::ApiError;
 use crate::state::AppState;
 use opsgate_service::credential::{
-    CredentialListOutput, CredentialOutput, DeleteCredentialInput, DeleteCredentialOutput,
-    ListCredentialsInput, PageOutput, RegisterCredentialOutput, RegisterHttpCredentialInput,
-    RegisterSqlCredentialInput, SecretHeaderInput, normalize_fields,
+    CredentialListOutput, DeleteCredentialInput, DeleteCredentialOutput, ListCredentialsInput,
+    RegisterCredentialOutput, RegisterHttpCredentialInput, RegisterSqlCredentialInput,
+    SecretHeaderInput,
 };
 
 pub(crate) fn routes() -> Router<AppState> {
@@ -48,22 +48,13 @@ async fn list(
     RawQuery(query): RawQuery,
 ) -> Result<Json<CredentialListOutput>, ApiError> {
     let input = parse_list_query(query.as_deref())?;
-    let fields = input.fields.clone().and_then(normalize_fields);
-    let page = state.tools.credentials.list(caller.user.id, input).await?;
-    let returned = page.credentials.len();
-    Ok(Json(CredentialListOutput {
-        credentials: page
-            .credentials
-            .into_iter()
-            .map(|credential| CredentialOutput::from_with_fields(credential, fields.as_ref()))
-            .collect(),
-        page: PageOutput {
-            limit: page.limit,
-            returned,
-            has_more: page.has_more,
-            next_cursor: page.next_cursor,
-        },
-    }))
+    state
+        .tools
+        .credentials
+        .list(caller.user.id, input)
+        .await
+        .map(Json)
+        .map_err(ApiError::from)
 }
 
 fn parse_list_query(query: Option<&str>) -> Result<ListCredentialsInput, ApiError> {

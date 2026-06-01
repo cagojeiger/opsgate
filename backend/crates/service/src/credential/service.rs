@@ -17,6 +17,7 @@ use super::input::{
 use super::listing::{
     CredentialListPage, CredentialSummary, normalize_list_input, validate_list_input,
 };
+use super::output::CredentialListOutput;
 use super::recording::{delete_audit, register_audit, update_audit};
 use super::secret;
 use super::target::{EndpointResolver, validate_register_target_ips};
@@ -96,6 +97,16 @@ impl CredentialService {
     }
 
     pub async fn list(
+        &self,
+        owner_user_id: Uuid,
+        input: ListCredentialsInput,
+    ) -> Result<CredentialListOutput> {
+        let fields = input.fields.clone();
+        let page = self.list_page(owner_user_id, input).await?;
+        Ok(CredentialListOutput::from_page(page, fields))
+    }
+
+    async fn list_page(
         &self,
         owner_user_id: Uuid,
         input: ListCredentialsInput,
