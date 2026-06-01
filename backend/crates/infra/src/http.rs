@@ -155,7 +155,27 @@ pub fn ensure_url_allowed(
 
 pub fn map_send_error(error: reqwest::Error) -> Error {
     if has_blocked_target_source(&error) {
-        return Error::validation(BLOCKED_TARGET_IP_MESSAGE);
+        return Error::user_safe(
+            "target_private_network_blocked",
+            "Target resolved to a private, loopback, or link-local address.",
+            Some("Use allow_private_network only for trusted internal targets."),
+        );
+    }
+    if error.is_timeout() {
+        return Error::user_safe(
+            "target_timeout",
+            "Target request timed out before receiving a response.",
+            Some("Check target availability, reduce the request scope, or retry later."),
+        );
+    }
+    if error.is_connect() {
+        return Error::user_safe(
+            "target_unreachable",
+            "Target could not be reached before receiving a response.",
+            Some(
+                "Check credential target, network reachability, TLS CA, and private/insecure transport settings.",
+            ),
+        );
     }
     Error::internal("target request failed")
 }
@@ -319,7 +339,62 @@ mod tests {
             .err()
             .ok_or_else(|| Error::internal("test request unexpectedly succeeded"))?;
         let mapped = map_send_error(error);
-        assert!(mapped.to_string().contains("private/link-local/loopback"));
+        let Error::UserSafe {
+            kind,
+            message,
+            hint,
+        } = mapped
+        else {
+            return Err(Error::internal("expected user-safe blocked target error"));
+        };
+        assert_eq!(kind, "target_private_network_blocked");
+        assert!(message.contains("private"));
+        assert!(
+            hint.as_deref()
+                .is_some_and(|hint| hint.contains("allow_private_network"))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn send_timeout_maps_to_user_safe_retry_guidance() -> Result<()> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|error| Error::internal(format!("bind test listener: {error}")))?;
+        let addr = listener
+            .local_addr()
+            .map_err(|error| Error::internal(format!("read listener addr: {error}")))?;
+        let _server = tokio::spawn(async move {
+            if let Ok((_stream, _peer)) = listener.accept().await {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        });
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(50))
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy()
+            .build()
+            .map_err(|error| Error::internal(format!("build test client: {error}")))?;
+        let error = client
+            .get(format!("http://{addr}/"))
+            .send()
+            .await
+            .err()
+            .ok_or_else(|| Error::internal("test request unexpectedly succeeded"))?;
+
+        let mapped = map_send_error(error);
+
+        let Error::UserSafe {
+            kind,
+            message,
+            hint,
+        } = mapped
+        else {
+            return Err(Error::internal("expected user-safe timeout error"));
+        };
+        assert_eq!(kind, "target_timeout");
+        assert!(message.contains("timed out"));
+        assert!(hint.as_deref().is_some_and(|hint| hint.contains("retry")));
         Ok(())
     }
 
