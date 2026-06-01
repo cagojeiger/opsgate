@@ -28,7 +28,7 @@ pub struct SqlQueryInput {
     #[serde(default)]
     #[schemars(schema_with = "opsgate_core::schema::json_value_array_schema")]
     pub params: Vec<Value>,
-    /// JSONPath projections to shrink returned JSON after SQL execution. Use .length() or .count() for counts.
+    /// JSONPath projections over column arrays. For row counts, use row_count or $.column.length().
     #[serde(default)]
     pub jsonpath: Vec<String>,
     /// Maximum rows to fetch before JSONPath/byte trimming. Prefer narrowing the SQL when possible.
