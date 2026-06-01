@@ -182,3 +182,50 @@ JWT 검증은 auth::jwt::JwtAuthority가 API/MCP 공통으로 수행합니다.
 preview pagination/cache는 0.1.0 범위 밖입니다.
 실제 target API side effect와 live Postgres query 실행은 환경 스모크 검증입니다.
 ```
+
+## GitHub 릴리스 절차
+
+Opsgate는 llmgate/authgate와 같은 VERSION 기반 릴리스 방식을 사용합니다.
+릴리스 workflow는 `VERSION` 파일이 `main`에 들어올 때만 실행됩니다.
+
+안전한 2단계 절차:
+
+```text
+1. release workflow PR merge
+   - .github/workflows/release.yml만 추가
+   - VERSION 파일 없음
+   - 릴리스 트리거 없음
+
+2. 실제 릴리스 PR merge
+   - PR 제목: chore(release): prepare v0.1.0
+   - VERSION 파일 내용: 0.1.0
+   - main merge 시 v0.1.0 tag, GitHub Release, GHCR image 생성
+```
+
+릴리스 workflow가 생성하는 산출물:
+
+```text
+git tag: v0.1.0
+GitHub Release: v0.1.0
+GHCR image:
+  ghcr.io/cagojeiger/opsgate:0.1.0
+  ghcr.io/cagojeiger/opsgate:latest
+```
+
+필요 권한/시크릿:
+
+```text
+별도 secret 등록 없음
+GITHUB_TOKEN 사용
+workflow permissions:
+  contents: write   # git tag + GitHub Release
+  packages: write   # GHCR push
+```
+
+주의:
+
+```text
+VERSION을 추가하거나 변경한 PR이 main에 merge되면 즉시 릴리스가 시작됩니다.
+이미 vX.Y.Z tag가 있으면 workflow는 중복 tag guard에서 실패해야 합니다.
+Docker build context는 저장소 루트이고 Dockerfile은 backend/Dockerfile입니다.
+```
