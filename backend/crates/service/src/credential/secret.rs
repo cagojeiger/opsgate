@@ -139,6 +139,20 @@ mod tests {
     }
 
     #[test]
+    fn http_secret_allows_empty_headers_for_mtls_only_credentials() -> Result<()> {
+        let sealer = sealer()?;
+        let secret = CredentialSecret::Http {
+            headers: Vec::new(),
+        };
+        let ciphertext = seal(&sealer, "mtls", &secret)?;
+
+        let headers = open_http_headers(&sealer, "mtls", &ciphertext)?;
+
+        assert!(headers.is_empty());
+        Ok(())
+    }
+
+    #[test]
     fn open_http_header_names_excludes_secret_values() -> Result<()> {
         let sealer = sealer()?;
         let secret = CredentialSecret::Http {

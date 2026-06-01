@@ -1,7 +1,7 @@
 use opsgate_core::{Error, Result};
 use opsgate_db::{ApiCallHistoryRepo, AuditRepo, CredentialRepo};
 use opsgate_model::Caller;
-use opsgate_model::credential::CredentialCategory;
+use opsgate_model::credential::{CredentialCategory, SecretHeader};
 
 use crate::audit::runtime::reason;
 use crate::credential::secret;
@@ -100,45 +100,35 @@ impl ApiCallService {
                 return Err(Error::validation("credential secret is destroyed"));
             }
         };
-        let secret =
-            match secret::open_http_headers(&self.sealer, &credential.alias, &secret_ciphertext) {
-                Ok(secret) => secret,
-                Err(error) => {
-                    recorder
-                        .err(reason::SECRET_OPEN_FAILED, "credential secret open failed")
-                        .await;
-                    return Err(error);
-                }
-            };
-        if let Err(error) = validate_no_secret_header_override(&secret, &input) {
+        let target_auth = match open_http_target_auth(
+            &self.sealer,
+            &credential.alias,
+            &secret_ciphertext,
+            client_cert.as_deref(),
+            client_key_ciphertext.as_deref(),
+        ) {
+            Ok(target_auth) => target_auth,
+            Err(error) => {
+                recorder
+                    .err(reason::SECRET_OPEN_FAILED, "HTTP target auth open failed")
+                    .await;
+                return Err(error);
+            }
+        };
+        if let Err(error) = validate_no_secret_header_override(&target_auth.headers, &input) {
             recorder
                 .denied(reason::POLICY_DENIED, &error.to_string())
                 .await;
             return Err(error);
         }
 
-        let client_identity = match build_client_identity(
-            &self.sealer,
-            &credential.alias,
-            client_cert.as_deref(),
-            client_key_ciphertext.as_deref(),
-        ) {
-            Ok(identity) => identity,
-            Err(error) => {
-                recorder
-                    .err(reason::SECRET_OPEN_FAILED, "client certificate open failed")
-                    .await;
-                return Err(error);
-            }
-        };
-
         let output = match execute_target_call(
             &self.target_clients,
             &credential,
             tls_ca.as_deref(),
-            client_identity.as_deref(),
+            target_auth.client_identity.as_deref(),
             &input,
-            &secret,
+            &target_auth.headers,
         )
         .await
         {
@@ -151,6 +141,24 @@ impl ApiCallService {
         recorder.ok(&output).await;
         Ok(output)
     }
+}
+
+struct HttpTargetAuthMaterial {
+    headers: Vec<SecretHeader>,
+    client_identity: Option<Vec<u8>>,
+}
+
+fn open_http_target_auth(
+    sealer: &crate::crypto::Sealer,
+    alias: &str,
+    secret_ciphertext: &[u8],
+    client_cert: Option<&[u8]>,
+    client_key_ciphertext: Option<&[u8]>,
+) -> Result<HttpTargetAuthMaterial> {
+    Ok(HttpTargetAuthMaterial {
+        headers: secret::open_http_headers(sealer, alias, secret_ciphertext)?,
+        client_identity: build_client_identity(sealer, alias, client_cert, client_key_ciphertext)?,
+    })
 }
 
 /// Combine the public client certificate chain with the unsealed private key

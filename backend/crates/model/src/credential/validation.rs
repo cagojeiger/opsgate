@@ -71,7 +71,11 @@ pub fn validate_register_input(input: &RegisterCredentialInput) -> Result<()> {
                 input.allow_insecure_transport,
             )?;
             validate_http_base_path(base_path)?;
-            validate_http_secret(headers)?;
+            validate_http_target_auth(
+                headers,
+                input.client_cert_pem.as_deref(),
+                input.client_key_pem.as_deref(),
+            )?;
             let names = headers
                 .iter()
                 .map(|header| header.name.clone())
@@ -80,10 +84,6 @@ pub fn validate_register_input(input: &RegisterCredentialInput) -> Result<()> {
             if let Some(ca) = &input.tls_server_ca {
                 opsgate_core::tls::parse_certificate_pem_bundle(ca)?;
             }
-            validate_client_certificate(
-                input.client_cert_pem.as_deref(),
-                input.client_key_pem.as_deref(),
-            )?;
         }
         (
             CredentialCategory::Sql,
@@ -288,16 +288,25 @@ pub fn validate_postgres_database_url(
     Ok(url)
 }
 
-fn validate_client_certificate(
+fn validate_http_target_auth(
+    headers: &[super::SecretHeader],
     client_cert_pem: Option<&str>,
     client_key_pem: Option<&str>,
 ) -> Result<()> {
+    let has_client_certificate = validate_client_certificate(client_cert_pem, client_key_pem)?;
+    validate_http_secret(headers, has_client_certificate)
+}
+
+fn validate_client_certificate(
+    client_cert_pem: Option<&str>,
+    client_key_pem: Option<&str>,
+) -> Result<bool> {
     match (client_cert_pem, client_key_pem) {
-        (None, None) => Ok(()),
+        (None, None) => Ok(false),
         (Some(cert), Some(key)) => {
             opsgate_core::tls::parse_client_certificate_pem(cert)?;
             opsgate_core::tls::parse_client_private_key_pem(key)?;
-            Ok(())
+            Ok(true)
         }
         _ => Err(Error::validation(
             "client_cert_pem and client_key_pem must both be provided together",
@@ -305,9 +314,17 @@ fn validate_client_certificate(
     }
 }
 
-fn validate_http_secret(headers: &[super::SecretHeader]) -> Result<()> {
+fn validate_http_secret(
+    headers: &[super::SecretHeader],
+    has_client_certificate: bool,
+) -> Result<()> {
     if headers.is_empty() {
-        return Err(Error::validation("secret.headers is required"));
+        if has_client_certificate {
+            return Ok(());
+        }
+        return Err(Error::validation(
+            "secret.headers is required unless client_cert_pem and client_key_pem are provided",
+        ));
     }
     if headers.len() > MAX_SECRET_HEADERS {
         return Err(Error::validation(format!(
@@ -725,6 +742,21 @@ mod tests {
             .unwrap_or_default();
         assert!(msg.contains("X-Api-Key"));
         assert!(!msg.contains("secret-token"));
+    }
+
+    #[test]
+    fn http_target_auth_requires_header_or_client_certificate() {
+        let msg = validate_http_target_auth(&[], None, None)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+
+        assert!(msg.contains("secret.headers is required unless client_cert_pem"));
+    }
+
+    #[test]
+    fn http_secret_allows_empty_headers_when_mtls_is_present() {
+        assert!(validate_http_secret(&[], true).is_ok());
     }
 
     #[test]

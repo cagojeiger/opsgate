@@ -36,7 +36,8 @@ pub struct RegisterHttpCredentialInput {
     /// Optional fixed path prefix hidden from api.call, e.g. /cluster-a.
     #[serde(default)]
     pub base_path: String,
-    /// Secret headers attached to every api.call. Values are sealed and never returned.
+    /// HTTP header target auth attached to every api.call. Values are sealed and never returned.
+    /// May be empty when client_cert_pem/client_key_pem provide mTLS auth.
     pub secret_headers: Vec<SecretHeaderInput>,
     /// Human description shown by credential.list.
     #[serde(default)]
@@ -53,7 +54,8 @@ pub struct RegisterHttpCredentialInput {
     /// Opt in only for trusted private-network targets.
     #[serde(default)]
     pub allow_private_network: bool,
-    /// Opt in only when plain HTTP or invalid TLS is intentionally needed.
+    /// Opt in only when plain HTTP is intentionally needed. HTTPS certificate
+    /// verification is not disabled; provide tls_server_ca for self-signed/private CAs.
     #[serde(default)]
     pub allow_insecure_transport: bool,
     /// PEM CA bundle for private HTTPS servers. Leave empty for public WebPKI.
@@ -100,7 +102,7 @@ pub struct RegisterSqlCredentialInput {
     /// Opt in only for trusted private-network databases.
     #[serde(default)]
     pub allow_private_network: bool,
-    /// Opt in only when non-TLS or invalid TLS is intentionally needed.
+    /// Opt in only when non-TLS Postgres is intentionally needed on trusted private networks.
     #[serde(default)]
     pub allow_insecure_transport: bool,
 }
