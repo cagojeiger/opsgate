@@ -5,6 +5,7 @@ use std::time::Duration;
 use crate::config::Config;
 use axum::extract::{FromRef, MatchedPath, State};
 use axum::http::Request;
+use axum::http::StatusCode;
 use axum::http::header::HeaderName;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{any, get};
@@ -118,12 +119,25 @@ async fn api_not_found() -> axum::http::StatusCode {
     axum::http::StatusCode::NOT_FOUND
 }
 
-fn log_request_end<B>(response: &axum::http::Response<B>, latency: Duration, _span: &Span) {
+fn log_request_end<B>(response: &axum::http::Response<B>, latency: Duration, span: &Span) {
+    let status = response.status();
+    if successful_probe(span, status) {
+        return;
+    }
     info!(
         event = "request.end",
-        status = response.status().as_u16(),
+        status = status.as_u16(),
         latency_ms = latency.as_millis() as u64,
     );
+}
+
+fn successful_probe(span: &Span, status: StatusCode) -> bool {
+    if !status.is_success() {
+        return false;
+    }
+    span.metadata()
+        .map(|metadata| metadata.name() == "health-check")
+        .unwrap_or(false)
 }
 
 fn make_request_span<B>(req: &Request<B>) -> Span {
@@ -137,15 +151,43 @@ fn make_request_span<B>(req: &Request<B>) -> Span {
         .get("x-request-id")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    info_span!(
-        "request",
-        method = %req.method(),
-        route,
-        request_id,
-    )
+    let request_path = req.uri().path();
+    if matches!(request_path, "/health" | "/ready") {
+        info_span!(
+            "health-check",
+            method = %req.method(),
+            route,
+            request_id,
+        )
+    } else {
+        info_span!(
+            "request",
+            method = %req.method(),
+            route,
+            request_id,
+        )
+    }
 }
 
 #[derive(Debug, Serialize)]
 struct HealthResponse {
     status: &'static str,
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::StatusCode;
+    use tracing::info_span;
+
+    use super::successful_probe;
+
+    #[test]
+    fn successful_probe_suppresses_only_successful_health_spans() {
+        let probe = info_span!("health-check");
+        assert!(successful_probe(&probe, StatusCode::OK));
+        assert!(!successful_probe(&probe, StatusCode::INTERNAL_SERVER_ERROR));
+
+        let request = info_span!("request");
+        assert!(!successful_probe(&request, StatusCode::OK));
+    }
 }
