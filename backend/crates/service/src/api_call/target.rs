@@ -308,6 +308,102 @@ mod tests {
     }
 
     #[test]
+    fn target_url_discards_origin_path_and_query() -> Result<()> {
+        let input = normalize_input(ApiCallInput {
+            request_path: "/v1/pods".to_owned(),
+            query: BTreeMap::from([
+                ("labelSelector".to_owned(), "app=web".to_owned()),
+                ("limit".to_owned(), "10".to_owned()),
+            ]),
+            ..base_input()
+        })?;
+        let target = CredentialTarget::Http {
+            origin: "https://api.example.test/leaked/path?token=must-not-survive".to_owned(),
+            base_path: "/cluster-a/".to_owned(),
+        };
+
+        let url = build_target_url(&target, &input)?;
+
+        assert_eq!(url.scheme(), "https");
+        assert_eq!(url.host_str(), Some("api.example.test"));
+        assert_eq!(url.path(), "/cluster-a/v1/pods");
+        assert_eq!(url.query(), Some("labelSelector=app%3Dweb&limit=10"));
+        assert!(!url.as_str().contains("must-not-survive"));
+        Ok(())
+    }
+
+    #[test]
+    fn target_url_allows_empty_hidden_base_path() -> Result<()> {
+        let input = normalize_input(ApiCallInput {
+            request_path: "/readyz".to_owned(),
+            ..base_input()
+        })?;
+        let target = CredentialTarget::Http {
+            origin: "https://api.example.test".to_owned(),
+            base_path: String::new(),
+        };
+
+        let url = build_target_url(&target, &input)?;
+
+        assert_eq!(url.as_str(), "https://api.example.test/readyz");
+        Ok(())
+    }
+
+    #[test]
+    fn response_content_type_accepts_only_json_media_types() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        assert!(!response_content_type_is_json(&headers));
+
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("text/plain"),
+        );
+        assert!(!response_content_type_is_json(&headers));
+
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("application/problem+json"),
+        );
+        assert!(response_content_type_is_json(&headers));
+    }
+
+    #[test]
+    fn filtered_response_headers_keeps_only_safe_target_metadata() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("application/json"),
+        );
+        headers.insert(
+            reqwest::header::CACHE_CONTROL,
+            reqwest::header::HeaderValue::from_static("no-cache"),
+        );
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            reqwest::header::HeaderValue::from_static("Bearer secret"),
+        );
+        headers.insert(
+            reqwest::header::SET_COOKIE,
+            reqwest::header::HeaderValue::from_static("sid=secret"),
+        );
+        headers.insert(
+            reqwest::header::HeaderName::from_static("resourceversion"),
+            reqwest::header::HeaderValue::from_static("123"),
+        );
+
+        let filtered = filtered_response_headers(&headers);
+
+        assert_eq!(
+            filtered.get("content-type"),
+            Some(&"application/json".to_owned())
+        );
+        assert_eq!(filtered.get("cache-control"), Some(&"no-cache".to_owned()));
+        assert_eq!(filtered.get("resourceversion"), Some(&"123".to_owned()));
+        assert!(!filtered.contains_key("authorization"));
+        assert!(!filtered.contains_key("set-cookie"));
+    }
+
+    #[test]
     fn target_url_joins_hidden_base_path() -> Result<()> {
         let input = normalize_input(ApiCallInput {
             request_path: "/v1/pods".to_owned(),
