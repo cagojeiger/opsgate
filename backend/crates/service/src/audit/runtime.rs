@@ -213,3 +213,69 @@ pub fn pre_input_denial_event(
         Value::Object(detail),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use opsgate_model::{Caller, Channel, User};
+
+    use super::*;
+
+    fn caller(channel: Channel) -> Caller {
+        let now = Utc::now();
+        Caller {
+            user: User {
+                id: Uuid::from_u128(7),
+                sub: "sub".to_owned(),
+                email: "user@example.test".to_owned(),
+                display_name: "User".to_owned(),
+                is_active: true,
+                created_at: now,
+                updated_at: now,
+            },
+            channel,
+            request_id: Some("req-runtime".to_owned()),
+            remote_ip: Some("203.0.113.10".to_owned()),
+            user_agent: Some("opsgate-test".to_owned()),
+        }
+    }
+
+    #[test]
+    fn reason_detail_uses_outcome_specific_keys() {
+        let mut denied = serde_json::Map::new();
+        insert_reason_detail(&mut denied, outcome::DENIED, Some(reason::POLICY_DENIED));
+        assert_eq!(
+            denied.get("denial_reason"),
+            Some(&serde_json::json!(reason::POLICY_DENIED))
+        );
+        assert!(denied.get("error_kind").is_none());
+
+        let mut error = serde_json::Map::new();
+        insert_reason_detail(
+            &mut error,
+            outcome::ERROR,
+            Some(reason::TARGET_REQUEST_FAILED),
+        );
+        assert_eq!(
+            error.get("error_kind"),
+            Some(&serde_json::json!(reason::TARGET_REQUEST_FAILED))
+        );
+        assert!(error.get("denial_reason").is_none());
+    }
+
+    #[test]
+    fn history_fields_fallback_without_credential_are_secret_free() {
+        let caller = caller(Channel::Browser);
+        let fields = history_credential_fields(&caller, None, "raw-alias");
+
+        assert_eq!(fields.owner_user_id, Some(caller.user.id));
+        assert_eq!(fields.actor_user_id, Some(caller.user.id));
+        assert_eq!(fields.channel, "mcp");
+        assert_eq!(fields.request_id.as_deref(), Some("req-runtime"));
+        assert_eq!(fields.credential_id, None);
+        assert_eq!(fields.credential_alias, "raw-alias");
+        assert!(fields.credential_category.is_empty());
+        assert!(fields.credential_provider.is_empty());
+        assert!(fields.credential_env.is_empty());
+    }
+}
