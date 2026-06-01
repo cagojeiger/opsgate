@@ -37,7 +37,8 @@ pub struct RegisterHttpCredentialInput {
     #[serde(default)]
     pub base_path: String,
     /// HTTP header target auth attached to every api.call. Values are sealed and never returned.
-    /// May be empty when client_cert_pem/client_key_pem provide mTLS auth.
+    /// May be omitted or empty when client_cert_pem/client_key_pem provide mTLS auth.
+    #[serde(default)]
     pub secret_headers: Vec<SecretHeaderInput>,
     /// Human description shown by credential.list.
     #[serde(default)]

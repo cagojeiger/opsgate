@@ -63,6 +63,8 @@
 - `base_path`
 - 봉인된 시크릿 헤더
 - `tls_server_ca`
+- `client_cert_pem`
+- `client_key_pem`
 - `allow_private_network`
 - `allow_insecure_transport`
 

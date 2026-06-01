@@ -50,7 +50,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "me",
-        description = "Identify the authenticated owner and show which tools this surface exposes. Does not reveal credentials or targets."
+        description = "Use first for infrastructure investigation. Identifies the owner and exposed tools; does not reveal credentials or targets."
     )]
     pub async fn me_tool(
         &self,
@@ -67,7 +67,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "credential.list",
-        description = "Start here. Lists aliases, category/provider/env/tags, and policy only. Never returns secrets, origin/base_path, or database_url."
+        description = "Start here for infrastructure investigation. Lists safe aliases for HTTP/API and SQL targets such as Kubernetes, internal APIs, Postgres, audit/history. Never returns secrets or target URLs."
     )]
     pub async fn credential_list(
         &self,
@@ -85,7 +85,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "api.call",
-        description = "Required: alias, purpose, request_path. Call an HTTP alias from credential.list. Send only request_path under hidden origin/base_path. For counts: length() returns array/string/object length; count() returns matched node count."
+        description = "Required: alias, purpose, request_path. Use for registered HTTP/API infrastructure targets, especially Kubernetes and internal JSON APIs. Call credential.list first if alias is unknown. Send only request_path under hidden origin/base_path. For counts: length() returns array/string/object length; count() returns matched node count."
     )]
     pub async fn api_call(
         &self,
@@ -103,7 +103,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "sql.query",
-        description = "Required: alias, purpose, query. Run read-only SELECT/WITH on a SQL alias. Prefer explicit columns/WHERE/count/group; avoid SELECT *. For SQL column arrays, use row_count or $.column.length() for row count."
+        description = "Required: alias, purpose, query. Use for read-only investigation of registered Postgres targets, including opsgate audit/history when registered. Call sql.schema first when tables or columns are unknown. Prefer explicit columns/WHERE/count/group; avoid SELECT *. For SQL column arrays, use row_count or $.column.length() for row count."
     )]
     pub async fn sql_query(
         &self,
@@ -121,7 +121,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "sql.schema",
-        description = "Required: alias, purpose. Inspect SQL schema before unknown queries. mode=tables lists tables; mode=table with namespace/table shows columns/indexes. Never returns row data."
+        description = "Required: alias, purpose. Inspect registered Postgres schemas before unknown infra/audit queries. mode=tables lists tables; mode=table with namespace/table shows columns/indexes. Never returns row data."
     )]
     pub async fn sql_schema(
         &self,
@@ -146,7 +146,7 @@ impl ServerHandler for RuntimeMcpServer {
             .with_server_info(
                 Implementation::new("opsgate", env!("CARGO_PKG_VERSION")).with_title("opsgate"),
             )
-            .with_instructions("Use credential.list first to choose an alias. For HTTP, call api.call with request_path only; target URLs stay hidden. For SQL, run sql.schema before unknown tables, then sql.query with explicit columns/WHERE/count/group and avoid SELECT *. Use 1-3 jsonpath paths to shrink large JSON outputs.")
+            .with_instructions("For infrastructure investigation, start with me or credential.list, then choose an alias from safe metadata. For HTTP/Kubernetes/internal APIs, call api.call with request_path only; target URLs stay hidden. For Postgres/audit/history, run sql.schema before unknown tables, then sql.query with explicit columns/WHERE/count/group and avoid SELECT *. Use 1-3 jsonpath paths to shrink large JSON outputs.")
     }
 }
 
@@ -198,7 +198,7 @@ impl AdminMcpServer {
 
     #[tool(
         name = "credential.register_http",
-        description = "Register an HTTP target for api.call. Put scheme+host in origin, optional fixed prefix in base_path, and per-call paths in api.call.request_path. Secrets are sealed and never returned."
+        description = "Register an HTTP/API infrastructure target for api.call, e.g. Kubernetes or internal JSON APIs. Use secret_headers for header auth and/or client_cert_pem/client_key_pem for mTLS auth. Put scheme+host in origin, optional fixed prefix in base_path, and per-call paths in api.call.request_path. Secrets are sealed and never returned."
     )]
     pub async fn credential_register_http(
         &self,
@@ -234,7 +234,7 @@ impl AdminMcpServer {
 
     #[tool(
         name = "credential.update_http",
-        description = "Update metadata and policy for an HTTP alias. origin/base_path and secret headers are immutable; rotate by delete + register."
+        description = "Update metadata and policy for an HTTP alias. origin/base_path, secret headers, TLS CA, and mTLS client certificate/key are immutable; rotate by delete + register."
     )]
     pub async fn credential_update_http(
         &self,

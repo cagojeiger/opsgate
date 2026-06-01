@@ -760,6 +760,33 @@ mod tests {
     }
 
     #[test]
+    fn allows_mtls_only_http_register_input() {
+        let input = normalize_register_input(RegisterCredentialInput {
+            category: CredentialCategory::Http,
+            provider: "k8s".to_owned(),
+            alias: "prod".to_owned(),
+            target: CredentialTarget::Http {
+                origin: "https://example.com".to_owned(),
+                base_path: String::new(),
+            },
+            secret: CredentialSecret::Http {
+                headers: Vec::new(),
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            allow_insecure_transport: false,
+            tls_server_ca: None,
+            client_cert_pem: Some(valid_client_cert_pem().to_owned()),
+            client_key_pem: Some(valid_client_key_pem().to_owned()),
+        });
+
+        assert!(validate_register_input(&input).is_ok());
+    }
+
+    #[test]
     fn rejects_client_cert_without_key() {
         let input = normalize_register_input(RegisterCredentialInput {
             category: CredentialCategory::Http,
@@ -994,5 +1021,12 @@ mod tests {
         });
 
         assert!(validate_register_input(&input).is_err());
+    }
+    fn valid_client_cert_pem() -> &'static str {
+        "-----BEGIN CERTIFICATE-----\nMIIDHTCCAgWgAwIBAgIUeHo/5+8sjg/PpHE9InlaPTbT/gEwDQYJKoZIhvcNAQEL\nBQAwHjEcMBoGA1UEAwwTb3BzZ2F0ZS10ZXN0LWNsaWVudDAeFw0yNjA2MDExMjU5\nMDlaFw0zNjA1MjkxMjU5MDlaMB4xHDAaBgNVBAMME29wc2dhdGUtdGVzdC1jbGll\nbnQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCgRERa2kSLK798wN8b\nExvfwxOJowMy+CXRwdLRzXmkY72pEpE2fQFD26epr7QtoBg5Zh06o6yYFPB9DExo\nvW6X9vx02yD8gwQIVzX/jfif2KlqTmIjBDZ4SQcdvmIkzgKkDLz0+52vLFj4pXnw\nogHHwk8R9XmH/DCaFBocvooxVPJBQ55RHiXZe29bUw70+82V5QVZzzSqVeou7XhF\nj+as3CU04QXtjaDbWkOUV43vYouEEpo9nROLMOXXgIPlu/War3EVPApdepgBRYVg\nRV02twZ8XrYykS8Lkstug/Z428NMAsPn119B2eipWiMGSQzi7iCn6Fld9ZTifSO5\n6wS3AgMBAAGjUzBRMB0GA1UdDgQWBBQ/Xl2M8H9mqD1VSWWI9eWswWbV4zAfBgNV\nHSMEGDAWgBQ/Xl2M8H9mqD1VSWWI9eWswWbV4zAPBgNVHRMBAf8EBTADAQH/MA0G\nCSqGSIb3DQEBCwUAA4IBAQAJoHc0RiDYRrpq7AfCEHifZymX9pcDiVzH0qHND+Um\n8BuhnLlSj7gtJpzRs8bBHnSHRtvG/+FtzA0pUbiNUy0OAqqGRg9PQ8dzmspVrZ4Y\nmxRx+jnBf98C8c5rzM5+qhUed6/RVUs+SmKmwc5sqZN3niE6ZQKEcnCNnCz5grh8\nYWxQzH2eBRhLBqbUeeH9AFO4k9SmFdyZX1HPulZQIe4JOKlqaBJ2tBmM9fwi/4Ff\npsjSET+mFZCBbvbWoXeGQB5tOFXCwv5aUMZuJHBk94q0k8KMYb665v+sEdbpmU69\nsS2tHfA1kgZmZ6uVaLaUqTmr8VAx60+z7YZQwxHJI/44\n-----END CERTIFICATE-----\n"
+    }
+
+    fn valid_client_key_pem() -> &'static str {
+        "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCgRERa2kSLK798\nwN8bExvfwxOJowMy+CXRwdLRzXmkY72pEpE2fQFD26epr7QtoBg5Zh06o6yYFPB9\nDExovW6X9vx02yD8gwQIVzX/jfif2KlqTmIjBDZ4SQcdvmIkzgKkDLz0+52vLFj4\npXnwogHHwk8R9XmH/DCaFBocvooxVPJBQ55RHiXZe29bUw70+82V5QVZzzSqVeou\n7XhFj+as3CU04QXtjaDbWkOUV43vYouEEpo9nROLMOXXgIPlu/War3EVPApdepgB\nRYVgRV02twZ8XrYykS8Lkstug/Z428NMAsPn119B2eipWiMGSQzi7iCn6Fld9ZTi\nfSO56wS3AgMBAAECggEAT9NA4qm1m0YKhfZBCei+KPkuqY7eoIv1tmDegy5faLBf\nPq+nUWb48tYc0AlaaqFDf49rfpIYfNVtJTOzeTXlOF7GRuQALZWKNCdQF34cuG0/\nkNoCymMmSEpDd56knqVXrmND2Jfc5evmUs6FCoR+84LGRHEqe79ya8QYb3m+NixJ\n6dtHqcxmqCKip0IePQXYXp9roNVJdggJn3t30PGqlpkP873YKdRW1yZpKG9r1UG1\nV75b6tDhW7J9xo/ZKGyxuXv1wWQDrC+uhpwjKAEY414v8bdaT0S/pMPgVUkyInjc\nfa0Nw8SbmNV3DhRqtWvzXmquum7Rbud3Q161k3MOmQKBgQDRn/FQDj1mVx2CyU+w\nci5MKz1OAlyvH/LmuR3D0lYMoorQ9tEOnD7Bz//D+7ttZGbmGMO56gjkDuR/Vl5k\nSfRvzuf+HG+7U15QQveaqCmmp2369ux7S+1k4D1aFNo7H1szTZGcSleLWAs1em7M\npCoqgbAAS1hpn/UxaJCAW99cSQKBgQDDuPAS6IcIov5UQ+U7+KfjwCHxriOwqQcO\n/hQg8MX7XneImcpPNiM56XfFrqKQUTftUueLsT9uCXkeZ1WUnvXwAY7O9UlTfRJJ\nhXbcVLfBxVjmcUjeS5mpajEIdH36nDD1BGrsoASNULR2roJ+AkucpySPAM/itceH\nZHenxw1Y/wKBgGWjRz2pqduVIZnoQdsrgYcs7+yC+K1wsDVuTCBGO7KknOn0wihz\nWXpff4Nm6tl/dOTb3QqnjugE0IVtOxclRH9xsspiv0n0giYoUiWKo6dKRukIEGE3\nz0K59wVWVvmTmoSld5Rv90J4zfaABnjyn/88IjoCTjvoctoh+O5DnWkBAoGAGT3M\nmGOspox+yFdJRQa4gELTHdwbdjkWU/Som+bxYY25VMCgur58pIdbjv8KsBoJYG4E\ntptRVtuZ5zXkb5pglWdeB4rSvhWvOhQgVCII4NCWuoF5qFGPq62qTTDY3m0uUysS\nrxmj/KWf4H55Dc81+SoFKPwt00smRGvMkrK1IfkCgYEAhzRFR0qadgVT3qJHF9xQ\nxRKOd0rJbv3CACVVUQ/qXx3Uei/4pKdVMpecWE3Y2mAs6Thh9rPwjjXj1BAOQXnm\nqF+NE0+7QiEcE2p+H83VBfvecSkPpNGMSTQmTNQZwmCRQJ1knTHzc5+e89dZTsUK\nJhwM1YsTOoRWQJapergyhTw=\n-----END PRIVATE KEY-----\n"
     }
 }
