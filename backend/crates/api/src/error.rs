@@ -28,11 +28,10 @@ impl ApiError {
         message: impl Into<String>,
         hint: Option<String>,
     ) -> Self {
-        let message = message_with_hint(message.into(), hint.as_deref());
         Self {
             status: StatusCode::BAD_REQUEST,
             code,
-            message,
+            message: message.into(),
             hint,
         }
     }
@@ -72,13 +71,6 @@ impl From<CoreError> for ApiError {
                 Self::internal("internal server error")
             }
         }
-    }
-}
-
-fn message_with_hint(message: String, hint: Option<&str>) -> String {
-    match hint {
-        Some(hint) if !hint.is_empty() => format!("{message} Hint: {hint}"),
-        _ => message,
     }
 }
 
@@ -136,8 +128,10 @@ mod tests {
 
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
         assert_eq!(error.code, "sql_undefined_column");
-        assert!(error.message.contains("column"));
-        assert!(error.message.contains("Hint: Use sql.schema first."));
+        assert_eq!(
+            error.message,
+            "SQL references a column that does not exist."
+        );
         assert_eq!(error.hint.as_deref(), Some("Use sql.schema first."));
     }
 }

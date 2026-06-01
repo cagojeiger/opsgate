@@ -16,13 +16,6 @@ pub(crate) fn caller(parts: &Parts) -> Result<&Caller, ErrorData> {
         .ok_or_else(|| ErrorData::invalid_params("authenticated caller extension missing", None))
 }
 
-fn message_with_hint(message: String, hint: Option<&str>) -> String {
-    match hint {
-        Some(hint) if !hint.is_empty() => format!("{message} Hint: {hint}"),
-        _ => message,
-    }
-}
-
 pub(crate) fn map_core_error(tool: &'static str, error: opsgate_core::Error) -> ErrorData {
     match error {
         opsgate_core::Error::Forbidden(message)
@@ -33,7 +26,7 @@ pub(crate) fn map_core_error(tool: &'static str, error: opsgate_core::Error) -> 
             message,
             hint,
         } => ErrorData::invalid_params(
-            message_with_hint(message, hint.as_deref()),
+            message,
             Some(json!({
                 "kind": kind,
                 "hint": hint,
@@ -87,7 +80,7 @@ mod tests {
         let data = error.data.ok_or_else(|| "expected error data".to_owned())?;
         assert_eq!(
             error.message,
-            "SQL references a column that does not exist. Hint: Use sql.schema first."
+            "SQL references a column that does not exist."
         );
         assert_eq!(
             data.get("kind").and_then(serde_json::Value::as_str),
