@@ -1,4 +1,4 @@
-# `credential.update_sql`
+# `credential_update_sql`
 
 서피스:
 

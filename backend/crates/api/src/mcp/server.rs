@@ -66,7 +66,7 @@ impl RuntimeMcpServer {
     }
 
     #[tool(
-        name = "credential.list",
+        name = "credential_list",
         description = "Start here. Lists aliases, category/provider/env/tags, and policy only. Never returns secrets, origin/base_path, or database_url."
     )]
     pub async fn credential_list(
@@ -77,15 +77,15 @@ impl RuntimeMcpServer {
         crate::audit::mcp::record_tool(
             self.state.audit.as_ref(),
             &parts,
-            "credential.list",
+            "credential_list",
             crate::mcp::tools::credentials::list(&self.state, &parts, input),
         )
         .await
     }
 
     #[tool(
-        name = "api.call",
-        description = "Required: alias, purpose, request_path. Call an HTTP alias from credential.list. Send only request_path under hidden origin/base_path. For counts: length() returns array/string/object length; count() returns matched node count."
+        name = "api_call",
+        description = "Required: alias, purpose, request_path. Call an HTTP alias from credential_list. Send only request_path under hidden origin/base_path. For counts: length() returns array/string/object length; count() returns matched node count."
     )]
     pub async fn api_call(
         &self,
@@ -95,14 +95,14 @@ impl RuntimeMcpServer {
         crate::audit::mcp::record_tool(
             self.state.audit.as_ref(),
             &parts,
-            "api.call",
+            "api_call",
             crate::mcp::tools::api_call::call(&self.state, &parts, input),
         )
         .await
     }
 
     #[tool(
-        name = "sql.query",
+        name = "sql_query",
         description = "Required: alias, purpose, query. Optional database selects another DB on the same registered Postgres server. Run read-only SELECT/WITH on a SQL alias. Prefer explicit columns/WHERE/count/group; avoid SELECT *. For SQL column arrays, use row_count or $.column.length() for row count."
     )]
     pub async fn sql_query(
@@ -113,14 +113,14 @@ impl RuntimeMcpServer {
         crate::audit::mcp::record_tool(
             self.state.audit.as_ref(),
             &parts,
-            "sql.query",
+            "sql_query",
             crate::mcp::tools::sql_query::call(&self.state, &parts, input),
         )
         .await
     }
 
     #[tool(
-        name = "sql.schema",
+        name = "sql_schema",
         description = "Required: alias, purpose. Optional database selects another DB on the same registered Postgres server. Inspect SQL schema before unknown queries. mode=tables lists tables; mode=table with namespace/table shows columns/indexes. Never returns row data."
     )]
     pub async fn sql_schema(
@@ -131,7 +131,7 @@ impl RuntimeMcpServer {
         crate::audit::mcp::record_tool(
             self.state.audit.as_ref(),
             &parts,
-            "sql.schema",
+            "sql_schema",
             crate::mcp::tools::sql_schema::call(&self.state, &parts, input),
         )
         .await
@@ -146,7 +146,7 @@ impl ServerHandler for RuntimeMcpServer {
             .with_server_info(
                 Implementation::new("opsgate", env!("CARGO_PKG_VERSION")).with_title("opsgate"),
             )
-            .with_instructions("Use credential.list first to choose an alias. For HTTP, call api.call with request_path only; target URLs stay hidden. For SQL, optional database selects another DB on the same registered Postgres server; run sql.schema before unknown tables, then sql.query with explicit columns/WHERE/count/group and avoid SELECT *. Use 1-3 jsonpath paths to shrink large JSON outputs.")
+            .with_instructions("Use credential_list first to choose an alias. For HTTP, call api_call with request_path only; target URLs stay hidden. For SQL, optional database selects another DB on the same registered Postgres server; run sql_schema before unknown tables, then sql_query with explicit columns/WHERE/count/group and avoid SELECT *. Use 1-3 jsonpath paths to shrink large JSON outputs.")
     }
 }
 
@@ -179,7 +179,7 @@ impl AdminMcpServer {
     }
 
     #[tool(
-        name = "credential.list",
+        name = "credential_list",
         description = "List existing credential aliases, metadata, and policy before update/delete. Never returns secrets, origin/base_path, or database_url."
     )]
     pub async fn credential_list(
@@ -190,15 +190,15 @@ impl AdminMcpServer {
         crate::audit::mcp::record_tool(
             self.state.audit.as_ref(),
             &parts,
-            "credential.list",
+            "credential_list",
             crate::mcp::tools::credentials::list(&self.state, &parts, input),
         )
         .await
     }
 
     #[tool(
-        name = "credential.register_http",
-        description = "Register an HTTP target for api.call. Put scheme+host in origin, optional fixed prefix in base_path, and per-call paths in api.call.request_path. Secrets are sealed and never returned."
+        name = "credential_register_http",
+        description = "Register an HTTP target for api_call. Put scheme+host in origin, optional fixed prefix in base_path, and per-call paths in api_call.request_path. Secrets are sealed and never returned."
     )]
     pub async fn credential_register_http(
         &self,
@@ -208,15 +208,15 @@ impl AdminMcpServer {
         crate::audit::mcp::record_tool(
             self.state.audit.as_ref(),
             &parts,
-            "credential.register_http",
+            "credential_register_http",
             crate::mcp::tools::credentials::register_http(&self.state, &parts, input),
         )
         .await
     }
 
     #[tool(
-        name = "credential.register_sql",
-        description = "Register a Postgres target for sql.schema/sql.query. database_url identifies host/db/options; username/password are separate secrets and are never returned."
+        name = "credential_register_sql",
+        description = "Register a Postgres target for sql_schema/sql_query. database_url identifies host/db/options; username/password are separate secrets and are never returned."
     )]
     pub async fn credential_register_sql(
         &self,
@@ -226,14 +226,14 @@ impl AdminMcpServer {
         crate::audit::mcp::record_tool(
             self.state.audit.as_ref(),
             &parts,
-            "credential.register_sql",
+            "credential_register_sql",
             crate::mcp::tools::credentials::register_sql(&self.state, &parts, input),
         )
         .await
     }
 
     #[tool(
-        name = "credential.update_http",
+        name = "credential_update_http",
         description = "Update metadata and policy for an HTTP alias. origin/base_path and secret headers are immutable; rotate by delete + register."
     )]
     pub async fn credential_update_http(
@@ -244,14 +244,14 @@ impl AdminMcpServer {
         crate::audit::mcp::record_tool(
             self.state.audit.as_ref(),
             &parts,
-            "credential.update_http",
+            "credential_update_http",
             crate::mcp::tools::credentials::update_http(&self.state, &parts, input),
         )
         .await
     }
 
     #[tool(
-        name = "credential.update_sql",
+        name = "credential_update_sql",
         description = "Update metadata and policy for a SQL alias. database_url and username/password are immutable; rotate by delete + register."
     )]
     pub async fn credential_update_sql(
@@ -262,14 +262,14 @@ impl AdminMcpServer {
         crate::audit::mcp::record_tool(
             self.state.audit.as_ref(),
             &parts,
-            "credential.update_sql",
+            "credential_update_sql",
             crate::mcp::tools::credentials::update_sql(&self.state, &parts, input),
         )
         .await
     }
 
     #[tool(
-        name = "credential.delete",
+        name = "credential_delete",
         description = "Delete an alias and destroy its sealed secret material. Use only when the credential should no longer be callable."
     )]
     pub async fn credential_delete(
@@ -280,7 +280,7 @@ impl AdminMcpServer {
         crate::audit::mcp::record_tool(
             self.state.audit.as_ref(),
             &parts,
-            "credential.delete",
+            "credential_delete",
             crate::mcp::tools::credentials::delete(&self.state, &parts, input),
         )
         .await
@@ -295,7 +295,7 @@ impl ServerHandler for AdminMcpServer {
             .with_server_info(
                 Implementation::new("opsgate", env!("CARGO_PKG_VERSION")).with_title("opsgate"),
             )
-            .with_instructions("Admin surface manages credentials. Use origin/base_path/request_path for HTTP target boundaries: origin is scheme+host, base_path is a fixed hidden prefix, api.call.request_path is supplied later. For SQL, database_url is the target and username/password are separate secrets. Secrets and target URLs are never returned; rotate immutable target/secret fields by delete + register.")
+            .with_instructions("Admin surface manages credentials. Use origin/base_path/request_path for HTTP target boundaries: origin is scheme+host, base_path is a fixed hidden prefix, api_call.request_path is supplied later. For SQL, database_url is the target and username/password are separate secrets. Secrets and target URLs are never returned; rotate immutable target/secret fields by delete + register.")
     }
 }
 
@@ -413,11 +413,11 @@ mod tests {
         assert_eq!(
             runtime_names,
             [
-                "api.call",
-                "credential.list",
+                "api_call",
+                "credential_list",
                 "me",
-                "sql.query",
-                "sql.schema"
+                "sql_query",
+                "sql_schema"
             ]
         );
 
@@ -430,15 +430,39 @@ mod tests {
         assert_eq!(
             admin_names,
             [
-                "credential.delete",
-                "credential.list",
-                "credential.register_http",
-                "credential.register_sql",
-                "credential.update_http",
-                "credential.update_sql",
+                "credential_delete",
+                "credential_list",
+                "credential_register_http",
+                "credential_register_sql",
+                "credential_update_http",
+                "credential_update_sql",
                 "me",
             ]
         );
+    }
+
+    #[test]
+    fn tool_names_match_frontend_remote_mcp_pattern() -> Result<(), String> {
+        let tools = RuntimeMcpServer::tool_router()
+            .list_all()
+            .into_iter()
+            .chain(AdminMcpServer::tool_router().list_all());
+
+        for tool in tools {
+            let name = tool.name.as_ref();
+            if name.is_empty() || name.len() > 64 {
+                return Err(format!("tool name length out of range: {name}"));
+            }
+            if !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+            {
+                return Err(format!(
+                    "tool name must match ^[a-zA-Z0-9_-]{{1,64}}$: {name}"
+                ));
+            }
+        }
+        Ok(())
     }
 
     #[test]

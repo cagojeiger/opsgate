@@ -16,7 +16,7 @@
 ## 설계 원칙
 
 1. `api`는 외부 노출 계층만 담당합니다.
-2. `service`는 credential, api.call, sql.query, sql.schema 유스케이스 흐름을 담당합니다.
+2. `service`는 credential, api_call, sql_query, sql_schema 유스케이스 흐름을 담당합니다.
 3. `infra`는 credential로 등록된 외부 HTTP/Postgres 대상에 연결하는 코드만 담당합니다.
 4. `db`는 opsgate 내부 Postgres 저장소만 담당합니다.
 5. `model`은 공통 타입과 순수 정책/검증만 담당합니다.
@@ -77,10 +77,10 @@ JWT 검증은 `auth::jwt::JwtAuthority` 하나로 통일하고, API/MCP/Login은
 
 역할:
 
-- `credential.register/list/update/delete`
-- `api.call`
-- `sql.query`
-- `sql.schema`
+- `credential_register/list/update/delete`
+- `api_call`
+- `sql_query`
+- `sql_schema`
 - secret seal/open 흐름
 - policy 검증 흐름
 - audit/history 기록 순서 조립

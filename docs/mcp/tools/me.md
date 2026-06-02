@@ -27,7 +27,7 @@
     "workflow": ["..."]
   },
   "capabilities": [
-    {"tool": "credential.list", "description": "..."}
+    {"tool": "credential_list", "description": "..."}
   ],
   "credential_summary": {
     "total": 3,
@@ -52,6 +52,6 @@
 - target URL 구성값(`origin`, `base_path`, `database_url`)은 반환하지 않습니다.
 - secret은 반환하지 않습니다.
 - `credential_summary`는 catalog의 대략적인 규모를 가늠하는 용도로만 사용하세요.
-- 구체적인 alias와 policy는 `credential.list`로 확인하세요.
-- runtime SQL 흐름은 `credential.list(category="sql")`로 시작하고, 테이블/컬럼
-  이름을 모를 때 `sql.schema`를 거친 뒤 `sql.query`를 호출하는 순서입니다.
+- 구체적인 alias와 policy는 `credential_list`로 확인하세요.
+- runtime SQL 흐름은 `credential_list(category="sql")`로 시작하고, 테이블/컬럼
+  이름을 모를 때 `sql_schema`를 거친 뒤 `sql_query`를 호출하는 순서입니다.

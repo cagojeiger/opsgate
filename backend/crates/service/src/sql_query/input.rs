@@ -18,7 +18,7 @@ const MAX_PARAMS: usize = 64;
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct SqlQueryInput {
-    /// Alias from credential.list with category=sql and provider=postgres.
+    /// Alias from credential_list with category=sql and provider=postgres.
     pub alias: String,
     /// Short human reason for the query; stored in audit/history.
     pub purpose: String,

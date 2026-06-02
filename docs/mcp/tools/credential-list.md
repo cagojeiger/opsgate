@@ -1,4 +1,4 @@
-# `credential.list`
+# `credential_list`
 
 서피스:
 

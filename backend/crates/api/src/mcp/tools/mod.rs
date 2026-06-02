@@ -46,7 +46,7 @@ mod tests {
     #[test]
     fn internal_core_error_is_redacted_for_mcp_clients() {
         let error = map_core_error(
-            "api.call",
+            "api_call",
             opsgate_core::Error::internal("target returned Authorization: Bearer secret-token"),
         );
 
@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn validation_core_error_stays_actionable_for_mcp_clients() {
         let error = map_core_error(
-            "api.call",
+            "api_call",
             opsgate_core::Error::validation("target response is not JSON"),
         );
 
@@ -69,11 +69,11 @@ mod tests {
     #[test]
     fn user_safe_core_error_maps_to_invalid_params_with_data() -> Result<(), String> {
         let error = map_core_error(
-            "sql.query",
+            "sql_query",
             opsgate_core::Error::user_safe(
                 "sql_undefined_column",
                 "SQL references a column that does not exist.",
-                Some("Use sql.schema first."),
+                Some("Use sql_schema first."),
             ),
         );
 
@@ -88,7 +88,7 @@ mod tests {
         );
         assert_eq!(
             data.get("hint").and_then(serde_json::Value::as_str),
-            Some("Use sql.schema first.")
+            Some("Use sql_schema first.")
         );
         Ok(())
     }

@@ -1,4 +1,4 @@
-# `sql.query`
+# `sql_query`
 
 서피스:
 
@@ -9,8 +9,8 @@
 목적: `category=sql`, `provider=postgres` 자격 증명을 통해 읽기 전용 SQL
 쿼리를 실행하고, 결과를 LLM이 읽기 쉬운 column-oriented JSON으로 반환한다.
 
-테이블이나 컬럼 이름을 모를 때는 먼저 [`sql.schema`](sql-schema.md)를 사용한다.
-`sql.schema`는 구조만 반환하고, `sql.query`는 실제 행 값을 반환한다.
+테이블이나 컬럼 이름을 모를 때는 먼저 [`sql_schema`](sql-schema.md)를 사용한다.
+`sql_schema`는 구조만 반환하고, `sql_query`는 실제 행 값을 반환한다.
 
 입력:
 
@@ -45,7 +45,7 @@
 
 ## 출력 형태
 
-`sql.query`는 행 배열을 그대로 반환하지 않고, 기본적으로 컬럼별 배열로
+`sql_query`는 행 배열을 그대로 반환하지 않고, 기본적으로 컬럼별 배열로
 전치(transpose)해서 `body`에 담는다.
 
 예를 들어 DB 결과가 다음과 같다면:
@@ -108,7 +108,7 @@ paid   | 900
 }
 ```
 
-JSONPath projection 결과는 `api.call`과 같은 공통 JSON 출력 규칙을 따른다.
+JSONPath projection 결과는 `api_call`과 같은 공통 JSON 출력 규칙을 따른다.
 각 path는 결과 객체의 key가 되고, 일반 selection은 매칭된 node 목록이 배열로
 들어간다. `length()`는 배열/문자열/object 길이, `count()`는 매칭 node 개수를 반환한다.
 SQL의 column-oriented body에서 `$.status.count()`는 보통 컬럼 배열 node 1개를 세므로 행 수가 아니다. 행 수는 응답의 `row_count` 또는 `$.status.length()`를 사용한다.

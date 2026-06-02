@@ -48,7 +48,7 @@ pub(super) fn build_column_output(
 }
 
 /// SQL-specific narrowing hint appended to byte-overflow guidance: unlike
-/// api.call (where jsonpath is the only lever), sql.query can also rewrite the
+/// api_call (where jsonpath is the only lever), sql_query can also rewrite the
 /// query itself to shrink the result.
 const SQL_NARROW_HINT: &str = "sql: you can also narrow the query (fewer columns / WHERE / aggregate) instead of only jsonpath";
 

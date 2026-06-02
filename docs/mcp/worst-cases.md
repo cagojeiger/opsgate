@@ -62,10 +62,10 @@ target 재호출이 필요한 경우 LLM이 더 좁은 요청을 만들 수 있�
 
 - 깨진 JSON이나 partial JSON 문자열을 반환하지 않습니다.
 - 큰 JSON은 `body=null`, `truncated=true`, `more` 힌트로 반환합니다.
-- `api.call`과 `sql.query`는 JSONPath projection을 지원합니다.
+- `api_call`과 `sql_query`는 JSONPath projection을 지원합니다.
 - 개수 질문은 전체 배열을 반환하지 않고 `.length()`/`.count()` suffix로 작게 답할 수 있습니다.
-- `sql.query`는 행 배열을 그대로 반환하지 않고 column-oriented JSON으로 반환합니다.
-- `sql.schema`는 row 값을 반환하지 않고 schema metadata만 반환합니다.
+- `sql_query`는 행 배열을 그대로 반환하지 않고 column-oriented JSON으로 반환합니다.
+- `sql_schema`는 row 값을 반환하지 않고 schema metadata만 반환합니다.
 
 ### audit/history
 
@@ -108,28 +108,28 @@ raw dependency error 중 URL/secret이 섞일 수 있는 값
 
 | 영역 | 제한 |
 |---|---:|
-| `api.call.max_bytes` 기본값 | 4096 |
-| `api.call.max_bytes` 최소/최대 | 256 / 1 MiB |
-| `api.call` hard read cap | 1 MiB |
-| `api.call.jsonpath` 최대 개수 | 16 |
-| `api.call.jsonpath` 최대 길이 | 512 |
-| `api.call.headers` 최대 개수 | 16 |
-| `api.call.header value` 최대 길이 | 1024 |
+| `api_call.max_bytes` 기본값 | 4096 |
+| `api_call.max_bytes` 최소/최대 | 256 / 1 MiB |
+| `api_call` hard read cap | 1 MiB |
+| `api_call.jsonpath` 최대 개수 | 16 |
+| `api_call.jsonpath` 최대 길이 | 512 |
+| `api_call.headers` 최대 개수 | 16 |
+| `api_call.header value` 최대 길이 | 1024 |
 | `purpose` 길이 | 8-512, CR/LF 금지 |
-| `sql.query.max_rows` 기본/최대 | 100 / 1000 |
-| `sql.query.max_bytes` 기본/최대 | 64 KiB / 1 MiB |
-| `sql.query.timeout_ms` 기본/최대 | 3000 / 30000 |
-| `sql.query` query 최대 길이 | 16000 |
-| `sql.query.params` 최대 개수 | 64 |
-| `sql.schema.limit` 기본/최대 | 50 / 100 |
-| `credential.list.limit` 기본/최대 | 50 / 100 |
-| `credential.list.fields` 최대 개수 | 8 |
+| `sql_query.max_rows` 기본/최대 | 100 / 1000 |
+| `sql_query.max_bytes` 기본/최대 | 64 KiB / 1 MiB |
+| `sql_query.timeout_ms` 기본/최대 | 3000 / 30000 |
+| `sql_query` query 최대 길이 | 16000 |
+| `sql_query.params` 최대 개수 | 64 |
+| `sql_schema.limit` 기본/최대 | 50 / 100 |
+| `credential_list.limit` 기본/최대 | 50 / 100 |
+| `credential_list.fields` 최대 개수 | 8 |
 | `credential.tags` 최대 개수 | 16 |
 | HTTP secret header value 최대 길이 | 8192 |
 
 ## 도구별 최악 상황 동작
 
-### `api.call`
+### `api_call`
 
 큰 JSON 응답:
 
@@ -156,7 +156,7 @@ target call 없음
 secret header override 불가
 ```
 
-### `sql.query`
+### `sql_query`
 
 위험 SQL:
 
@@ -174,7 +174,7 @@ byte limit에 걸리면 body=null + jsonpath/query narrowing hint
 query text, params 값, result 값 저장 없음
 ```
 
-### `sql.schema`
+### `sql_schema`
 
 큰 schema 출력:
 

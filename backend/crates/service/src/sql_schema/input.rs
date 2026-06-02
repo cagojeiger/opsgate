@@ -18,7 +18,7 @@ const MAX_IDENT_LEN: usize = 128;
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct SqlSchemaInput {
-    /// Alias from credential.list with category=sql and provider=postgres.
+    /// Alias from credential_list with category=sql and provider=postgres.
     pub alias: String,
     /// Short human reason for inspecting schema; stored in audit/history.
     pub purpose: String,

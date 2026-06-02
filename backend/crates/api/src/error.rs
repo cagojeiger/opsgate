@@ -123,7 +123,7 @@ mod tests {
         let error = ApiError::from(opsgate_core::Error::user_safe(
             "sql_undefined_column",
             "SQL references a column that does not exist.",
-            Some("Use sql.schema first."),
+            Some("Use sql_schema first."),
         ));
 
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
@@ -132,6 +132,6 @@ mod tests {
             error.message,
             "SQL references a column that does not exist."
         );
-        assert_eq!(error.hint.as_deref(), Some("Use sql.schema first."));
+        assert_eq!(error.hint.as_deref(), Some("Use sql_schema first."));
     }
 }
