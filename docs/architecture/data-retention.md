@@ -3,8 +3,9 @@
 이 문서는 opsgate가 보관하는 감사/이력 데이터의 보관 기준과, 수평 확장
 환경에서 리텐션 작업을 안전하게 실행하기 위한 구현 기준을 정의합니다.
 
-현재 문서는 **정책/구현 기준**입니다. 실제 삭제 worker가 구현되기 전까지는
-런타임 동작을 의미하지 않습니다.
+현재 문서는 **정책과 구현 기준**입니다. 리텐션 worker는 구현되어 있지만
+기본값은 `OPSGATE_RETENTION_ENABLED=false`라서 명시적으로 켜기 전까지 삭제를
+수행하지 않습니다.
 
 ## 목적
 
@@ -148,8 +149,10 @@ OPSGATE_RETENTION_DATABASE_URL=postgres://opsgate_retention:...@postgres:5432/op
 - retention 대상 테이블의 제한된 DELETE
 - readiness 확인을 위한 최소 SELECT
 
-초기 구현에서 별도 role을 도입하지 못한다면, 그 결정은 명시적으로 기록하고
-나중에 별도 role로 분리해야 합니다.
+현재 migration `0003_retention_role.sql`은 `opsgate_retention` role을 만들고
+리텐션 대상 테이블에 `SELECT, DELETE`만 부여합니다. `OPSGATE_RETENTION_DATABASE_URL`이
+설정되면 worker는 이 URL을 사용합니다. 설정이 없으면 boot-time migration URL로 fallback하고
+warning 로그를 남깁니다. runtime role인 `opsgate_app`에는 DELETE 권한을 부여하지 않습니다.
 
 ## 설정 기준
 
@@ -157,6 +160,7 @@ OPSGATE_RETENTION_DATABASE_URL=postgres://opsgate_retention:...@postgres:5432/op
 
 ```env
 OPSGATE_RETENTION_ENABLED=false
+OPSGATE_RETENTION_DATABASE_URL=postgres://opsgate_retention:...@postgres:5432/opsgate
 OPSGATE_RETENTION_RUN_INTERVAL_HOURS=24
 OPSGATE_RETENTION_BATCH_SIZE=1000
 
@@ -221,7 +225,7 @@ loop every interval
 docker compose up -d --build
 ```
 
-기본 compose는 api replica 2개와 nginx proxy를 사용합니다. 리텐션 worker 구현 후에는
+기본 compose는 api replica 2개와 nginx proxy를 사용합니다. 리텐션 worker를 켠 뒤에는
 다음 조건을 확인합니다.
 
 ```text

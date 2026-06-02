@@ -18,6 +18,13 @@ use opsgate_core::{Error, Result};
 const DEFAULT_BIND_ADDR: &str = "0.0.0.0:9091";
 const DEFAULT_DB_MAX_CONNECTIONS: u32 = 10;
 const DEFAULT_JWKS_CACHE_TTL_SECS: u64 = 300;
+const DEFAULT_RETENTION_RUN_INTERVAL_HOURS: u64 = 24;
+const DEFAULT_RETENTION_BATCH_SIZE: u32 = 1000;
+const DEFAULT_RETENTION_AUDIT_LOG_DAYS: u32 = 365;
+const DEFAULT_RETENTION_API_CALL_HISTORY_DAYS: u32 = 90;
+const DEFAULT_RETENTION_SQL_QUERY_HISTORY_DAYS: u32 = 90;
+const DEFAULT_RETENTION_CREDENTIAL_HISTORY_DAYS: u32 = 365;
+const DEFAULT_RETENTION_DELETED_CREDENTIAL_DAYS: u32 = 400;
 
 /// Server + database configuration.
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -62,6 +69,33 @@ pub struct Config {
     /// Whether login flow cookies must carry the Secure flag.
     #[serde(skip)]
     pub secure_cookies: bool,
+    /// Whether the retention cleanup worker is enabled.
+    #[serde(default)]
+    pub retention_enabled: bool,
+    /// Optional narrowed database URL for the retention cleanup worker.
+    #[validate(length(min = 1))]
+    pub retention_database_url: Option<String>,
+    /// Retention worker run interval in hours.
+    #[validate(range(min = 1))]
+    pub retention_run_interval_hours: u64,
+    /// Max rows deleted per table batch.
+    #[validate(range(min = 1))]
+    pub retention_batch_size: u32,
+    /// Audit log retention in days.
+    #[validate(range(min = 1))]
+    pub retention_audit_log_days: u32,
+    /// API call history retention in days.
+    #[validate(range(min = 1))]
+    pub retention_api_call_history_days: u32,
+    /// SQL query history retention in days.
+    #[validate(range(min = 1))]
+    pub retention_sql_query_history_days: u32,
+    /// Credential history retention in days.
+    #[validate(range(min = 1))]
+    pub retention_credential_history_days: u32,
+    /// Deleted credential tombstone retention in days.
+    #[validate(range(min = 1))]
+    pub retention_deleted_credential_days: u32,
 }
 
 impl Config {
@@ -82,6 +116,23 @@ impl Config {
         self.resource_url = trim_trailing_slashes(&self.resource_url);
         self.secure_cookies = secure_cookies_for_redirect(&self.oauth_redirect_url);
     }
+
+    pub fn retention_database_url(&self) -> &str {
+        self.retention_database_url
+            .as_deref()
+            .unwrap_or(&self.database_migrate_url)
+    }
+
+    pub fn retention_policy(&self) -> opsgate_db::RetentionPolicy {
+        opsgate_db::RetentionPolicy {
+            batch_size: self.retention_batch_size,
+            audit_log_days: self.retention_audit_log_days,
+            api_call_history_days: self.retention_api_call_history_days,
+            sql_query_history_days: self.retention_sql_query_history_days,
+            credential_history_days: self.retention_credential_history_days,
+            deleted_credential_days: self.retention_deleted_credential_days,
+        }
+    }
 }
 
 fn load_from_sources(include_files: bool, environment: Environment) -> Result<Config> {
@@ -91,6 +142,37 @@ fn load_from_sources(include_files: bool, environment: Environment) -> Result<Co
         .set_default("db_max_connections", DEFAULT_DB_MAX_CONNECTIONS)
         .map_err(map_config_error)?
         .set_default("jwks_cache_ttl_secs", DEFAULT_JWKS_CACHE_TTL_SECS)
+        .map_err(map_config_error)?
+        .set_default("retention_enabled", false)
+        .map_err(map_config_error)?
+        .set_default(
+            "retention_run_interval_hours",
+            DEFAULT_RETENTION_RUN_INTERVAL_HOURS,
+        )
+        .map_err(map_config_error)?
+        .set_default("retention_batch_size", DEFAULT_RETENTION_BATCH_SIZE)
+        .map_err(map_config_error)?
+        .set_default("retention_audit_log_days", DEFAULT_RETENTION_AUDIT_LOG_DAYS)
+        .map_err(map_config_error)?
+        .set_default(
+            "retention_api_call_history_days",
+            DEFAULT_RETENTION_API_CALL_HISTORY_DAYS,
+        )
+        .map_err(map_config_error)?
+        .set_default(
+            "retention_sql_query_history_days",
+            DEFAULT_RETENTION_SQL_QUERY_HISTORY_DAYS,
+        )
+        .map_err(map_config_error)?
+        .set_default(
+            "retention_credential_history_days",
+            DEFAULT_RETENTION_CREDENTIAL_HISTORY_DAYS,
+        )
+        .map_err(map_config_error)?
+        .set_default(
+            "retention_deleted_credential_days",
+            DEFAULT_RETENTION_DELETED_CREDENTIAL_DAYS,
+        )
         .map_err(map_config_error)?;
 
     if include_files {
@@ -107,6 +189,7 @@ fn load_from_sources(include_files: bool, environment: Environment) -> Result<Co
         .map_err(map_config_error)?;
 
     config.validate().map_err(map_validation_error)?;
+    validate_retention_config(&config)?;
     config.normalize();
     Ok(config)
 }
@@ -147,6 +230,16 @@ fn validate_jwks_cache_ttl(value: &Duration) -> std::result::Result<(), Validati
 
 fn secure_cookies_for_redirect(oauth_redirect_url: &str) -> bool {
     oauth_redirect_url.starts_with("https://")
+}
+
+fn validate_retention_config(config: &Config) -> Result<()> {
+    if config.retention_deleted_credential_days < config.retention_credential_history_days {
+        return Err(Error::validation(
+            "configuration validation error: retention_deleted_credential_days must be >= retention_credential_history_days",
+        ));
+    }
+
+    Ok(())
 }
 
 fn map_validation_error(error: validator::ValidationErrors) -> Error {
@@ -199,6 +292,15 @@ mod tests {
             ),
             jwks_cache_ttl: Duration::from_secs(300),
             secure_cookies: false,
+            retention_enabled: false,
+            retention_database_url: None,
+            retention_run_interval_hours: 24,
+            retention_batch_size: 1000,
+            retention_audit_log_days: 365,
+            retention_api_call_history_days: 90,
+            retention_sql_query_history_days: 90,
+            retention_credential_history_days: 365,
+            retention_deleted_credential_days: 400,
         }
     }
 
@@ -243,6 +345,9 @@ mod tests {
             config.jwks_cache_ttl.as_secs(),
             super::DEFAULT_JWKS_CACHE_TTL_SECS
         );
+        assert!(!config.retention_enabled);
+        assert_eq!(config.retention_run_interval_hours, 24);
+        assert_eq!(config.retention_batch_size, 1000);
         Ok(())
     }
 
@@ -271,6 +376,51 @@ mod tests {
         let mut config = valid_config();
         config.jwks_cache_ttl = Duration::from_secs(1);
         assert!(config.validate().is_err());
+
+        let mut config = valid_config();
+        config.retention_batch_size = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_deleted_credential_retention_shorter_than_history()
+    -> opsgate_core::Result<()> {
+        let config = load_from_sources(
+            false,
+            test_env(&[
+                ("OPSGATE_DATABASE_URL", "postgres://env"),
+                ("OPSGATE_DATABASE_MIGRATE_URL", "postgres://owner"),
+                ("OPSGATE_AUTHGATE_URL", "https://auth.env"),
+                ("OPSGATE_PUBLIC_URL", "http://localhost:9091"),
+                ("OPSGATE_OAUTH_CLIENT_ID", "opsgate-web"),
+                (
+                    "OPSGATE_OAUTH_REDIRECT_URL",
+                    "http://localhost:9091/callback",
+                ),
+                ("OPSGATE_RESOURCE_URL", "http://localhost:9091/mcp"),
+                (
+                    "OPSGATE_MASTER_KEY",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                ),
+                ("OPSGATE_RETENTION_CREDENTIAL_HISTORY_DAYS", "365"),
+                ("OPSGATE_RETENTION_DELETED_CREDENTIAL_DAYS", "30"),
+            ]),
+        );
+
+        let error = match config {
+            Ok(_) => {
+                return Err(opsgate_core::Error::validation(
+                    "invalid retention config should fail validation",
+                ));
+            }
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("retention_deleted_credential_days")
+        );
+        Ok(())
     }
 
     #[test]

@@ -164,6 +164,15 @@ fn state_with_resource_url(
         master_key: SecretString::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
         jwks_cache_ttl: Duration::from_secs(300),
         secure_cookies: false,
+        retention_enabled: false,
+        retention_database_url: None,
+        retention_run_interval_hours: 24,
+        retention_batch_size: 1000,
+        retention_audit_log_days: 365,
+        retention_api_call_history_days: 90,
+        retention_sql_query_history_days: 90,
+        retention_credential_history_days: 365,
+        retention_deleted_credential_days: 400,
     });
     let jwt = crate::auth::jwt::JwtAuthority::from_jwks(&config, aliri_jwks()?);
     let oidc = Arc::new(crate::auth::oidc::OidcProvider::new(
@@ -242,6 +251,15 @@ fn test_config(resource_url: &str) -> crate::config::Config {
         master_key: SecretString::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
         jwks_cache_ttl: Duration::from_secs(300),
         secure_cookies: false,
+        retention_enabled: false,
+        retention_database_url: None,
+        retention_run_interval_hours: 24,
+        retention_batch_size: 1000,
+        retention_audit_log_days: 365,
+        retention_api_call_history_days: 90,
+        retention_sql_query_history_days: 90,
+        retention_credential_history_days: 365,
+        retention_deleted_credential_days: 400,
     }
 }
 
