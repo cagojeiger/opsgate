@@ -306,64 +306,12 @@ fn parse_json_path(base_path: &str, display_path: &str) -> Result<JsonPath> {
     })
 }
 
-fn jsonpath_error_hint(path: &str) -> String {
-    if let Some((lhs, pattern)) = unsupported_regex_operator_hint_parts(path) {
-        let quoted_pattern =
-            serde_json::to_string(&pattern).unwrap_or_else(|_error| "\"pattern\"".to_owned());
-        return format!(
-            "; hint: =~ regex filters are not supported; use search({lhs}, {quoted_pattern}) for partial regex search or match({lhs}, {quoted_pattern}) for full-string regex match"
-        );
-    }
+fn jsonpath_error_hint(path: &str) -> &'static str {
     if path.contains("=~") {
-        "; hint: =~ regex filters are not supported; use search(value, pattern) or match(value, pattern)".to_owned()
+        "; hint: =~ regex filters are not supported; use RFC 9535 search(value, pattern) or match(value, pattern)"
     } else {
-        String::new()
+        ""
     }
-}
-
-fn unsupported_regex_operator_hint_parts(path: &str) -> Option<(String, String)> {
-    let operator_start = path.find("=~")?;
-    let lhs = path[..operator_start].trim_end();
-    let lhs_start = lhs.rfind('@')?;
-    let lhs = lhs[lhs_start..].trim();
-    if lhs.is_empty() {
-        return None;
-    }
-
-    let rhs = path[operator_start + 2..].trim_start();
-    let mut chars = rhs.char_indices();
-    if chars.next()?.1 != '/' {
-        return None;
-    }
-
-    let mut pattern = String::new();
-    let mut escaped = false;
-    for (idx, ch) in chars {
-        if escaped {
-            if ch == '/' {
-                pattern.push('/');
-            } else {
-                pattern.push('\\');
-                pattern.push(ch);
-            }
-            escaped = false;
-        } else if ch == '\\' {
-            escaped = true;
-        } else if ch == '/' {
-            let flags = rhs[idx + ch.len_utf8()..]
-                .chars()
-                .take_while(|flag| flag.is_ascii_alphabetic())
-                .collect::<String>();
-            return match flags.as_str() {
-                "" => Some((lhs.to_owned(), pattern)),
-                "i" => Some((lhs.to_owned(), format!("(?i:{pattern})"))),
-                _ => None,
-            };
-        } else {
-            pattern.push(ch);
-        }
-    }
-    None
 }
 
 fn count_projection(count: usize) -> Value {
@@ -911,8 +859,8 @@ mod tests {
         assert!(validate_json_paths(&[format!("${}", "a".repeat(513))]).is_err());
         assert!(validate_json_paths(&["$..metadata.name".to_owned()]).is_err());
         let err = validation_error("$.items[?(@.metadata.name =~ /api/)].metadata.name")?;
-        assert!(err.contains("search(@.metadata.name, \"api\")"));
-        assert!(err.contains("match(@.metadata.name, \"api\")"));
+        assert!(err.contains("search(value, pattern)"));
+        assert!(err.contains("match(value, pattern)"));
         Ok(())
     }
 
@@ -935,12 +883,11 @@ mod tests {
     }
 
     #[test]
-    fn jsonpath_unsupported_regex_operator_hint_handles_flags_and_generic_cases() -> Result<()> {
+    fn jsonpath_unsupported_regex_operator_hint_is_generic() -> Result<()> {
         let err = validation_error("$.items[?(@.metadata.name =~ /api-[0-9]+/i)].metadata.name")?;
-        assert!(err.contains("search(@.metadata.name, \"(?i:api-[0-9]+)\")"));
-
-        let err = validation_error("$.items[?(@.metadata.name =~ \"api\")].metadata.name")?;
+        assert!(err.contains("=~ regex filters are not supported"));
         assert!(err.contains("search(value, pattern)"));
+        assert!(err.contains("match(value, pattern)"));
         Ok(())
     }
 
