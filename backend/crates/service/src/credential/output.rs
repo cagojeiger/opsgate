@@ -42,6 +42,10 @@ pub struct CredentialOutput {
     pub allow_private_network: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_insecure_transport: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_tls_ca: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_client_cert: Option<bool>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -107,6 +111,9 @@ impl CredentialOutput {
                 .then_some(credential.allow_private_network),
             allow_insecure_transport: include_field(fields, "allow_insecure_transport")
                 .then_some(credential.allow_insecure_transport),
+            has_tls_ca: include_field(fields, "has_tls_ca").then_some(credential.has_tls_ca),
+            has_client_cert: include_field(fields, "has_client_cert")
+                .then_some(credential.has_client_cert),
         }
     }
 }
@@ -187,7 +194,7 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
             has_tls_ca: true,
-            has_client_cert: false,
+            has_client_cert: true,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -199,6 +206,8 @@ mod tests {
         let json = serde_json::to_string(&output)?;
 
         assert!(json.contains("prod-api"));
+        assert!(json.contains("has_tls_ca"));
+        assert!(json.contains("has_client_cert"));
         assert!(!json.contains("internal.example.test"));
         assert!(!json.contains("secret"));
         Ok(())
@@ -214,6 +223,8 @@ mod tests {
         assert!(json.contains("k8s"));
         assert!(output.category.is_none());
         assert!(output.policy.is_none());
+        assert!(output.has_tls_ca.is_none());
+        assert!(output.has_client_cert.is_none());
         Ok(())
     }
 
@@ -240,7 +251,19 @@ mod tests {
         assert_eq!(credential.alias, "prod-api");
         assert_eq!(credential.provider.as_deref(), Some("k8s"));
         assert!(credential.category.is_none());
+        assert!(credential.has_tls_ca.is_none());
+        assert!(credential.has_client_cert.is_none());
         Ok(())
+    }
+
+    #[test]
+    fn field_projection_can_include_safe_tls_metadata() {
+        let fields = BTreeSet::from(["has_tls_ca".to_owned(), "has_client_cert".to_owned()]);
+        let output = CredentialOutput::from_with_fields(credential(), Some(&fields));
+
+        assert_eq!(output.has_tls_ca, Some(true));
+        assert_eq!(output.has_client_cert, Some(true));
+        assert!(output.provider.is_none());
     }
 
     #[test]

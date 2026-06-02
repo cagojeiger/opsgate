@@ -18,7 +18,7 @@
   "env": "prod",
   "tag": "cluster",
   "q": "osaka",
-  "fields": ["category", "provider", "env", "tags", "policy"],
+  "fields": ["category", "provider", "env", "tags", "policy", "has_client_cert"],
   "limit": 50,
   "cursor": "..."
 }
@@ -39,6 +39,8 @@ tags를 대상으로 검색합니다.
       "description": "Production Kubernetes API",
       "env": "prod",
       "tags": ["cluster", "prod"],
+      "has_tls_ca": true,
+      "has_client_cert": false,
       "policy": {
         "allowed_methods": ["GET"],
         "allowed_request_path_prefixes": ["/api/v1"],
@@ -61,6 +63,7 @@ tags를 대상으로 검색합니다.
 - `alias`는 항상 반환됩니다.
 - secret은 절대 반환하지 않습니다.
 - target URL 구성값(`origin`, `base_path`, `database_url`)은 절대 반환하지 않습니다.
+- `has_tls_ca`, `has_client_cert`는 안전한 metadata로, target URL이나 secret 없이 private CA/mTLS 사용 여부만 알려줍니다.
 - 삭제된 credential은 반환하지 않습니다.
 - 호출자 본인의 credential만 보이며, 다른 사용자의 credential은 볼 수 없습니다.
 - `limit`의 기본값은 50이며 최대 100으로 제한됩니다.

@@ -122,6 +122,8 @@ fn allowed_list_field(field: &str) -> bool {
             | "policy"
             | "allow_private_network"
             | "allow_insecure_transport"
+            | "has_tls_ca"
+            | "has_client_cert"
     )
 }
 
@@ -147,7 +149,11 @@ mod tests {
             env: Some("prod".to_owned()),
             tag: Some(" Cluster ".to_owned()),
             q: Some(" osaka ".to_owned()),
-            fields: Some(vec![" provider ".to_owned(), "env".to_owned()]),
+            fields: Some(vec![
+                " provider ".to_owned(),
+                "env".to_owned(),
+                "has_client_cert".to_owned(),
+            ]),
             limit: Some(50),
             cursor: Some("prod-api".to_owned()),
         });
