@@ -300,20 +300,11 @@ fn split_jsonpath_operator(path: &str) -> (&str, Option<JsonPathOperator>) {
 fn parse_json_path(base_path: &str, display_path: &str) -> Result<JsonPath> {
     JsonPath::parse(base_path).map_err(|error| {
         Error::validation(format!(
-            "invalid jsonpath expression {display_path:?}: {error}{}",
-            jsonpath_error_hint(display_path)
+            "invalid jsonpath expression {display_path:?}: parser reported {:?} at position {}. Use RFC 9535 JSONPath; regex filters use search(value, pattern) for partial search or match(value, pattern) for full-string match.",
+            error.message(),
+            error.position()
         ))
     })
-}
-
-fn jsonpath_error_hint(path: &str) -> &'static str {
-    if path.contains("=~") {
-        return "; hint: use RFC 9535 JSONPath regex functions: search(value, pattern) for partial regex search, or match(value, pattern) for full-string regex match. The =~ /regex/ operator syntax is not supported";
-    }
-    if path.contains("search(") || path.contains("match(") {
-        return "; hint: use RFC 9535 JSONPath regex functions: search(value, pattern) for partial regex search, or match(value, pattern) for full-string regex match";
-    }
-    ""
 }
 
 fn count_projection(count: usize) -> Value {
@@ -861,6 +852,9 @@ mod tests {
         assert!(validate_json_paths(&[format!("${}", "a".repeat(513))]).is_err());
         assert!(validate_json_paths(&["$..metadata.name".to_owned()]).is_err());
         let err = validation_error("$.items[?(@.metadata.name =~ /api/)].metadata.name")?;
+        assert!(err.contains("parser reported"));
+        assert!(err.contains("at position"));
+        assert!(err.contains("Use RFC 9535 JSONPath"));
         assert!(err.contains("search(value, pattern)"));
         assert!(err.contains("match(value, pattern)"));
         Ok(())
@@ -885,21 +879,14 @@ mod tests {
     }
 
     #[test]
-    fn jsonpath_unsupported_regex_operator_hint_is_generic() -> Result<()> {
-        let err = validation_error("$.items[?(@.metadata.name =~ /api-[0-9]+/i)].metadata.name")?;
-        assert!(err.contains("The =~ /regex/ operator syntax is not supported"));
+    fn jsonpath_parse_error_reports_parser_reason_and_common_regex_rule() -> Result<()> {
+        let err = validation_error("$.items[?foo(@.metadata.name, 'api')].metadata.name")?;
+        assert!(err.contains("parser reported"));
+        assert!(err.contains("function name 'foo' is not defined"));
+        assert!(err.contains("at position"));
+        assert!(err.contains("Use RFC 9535 JSONPath"));
         assert!(err.contains("search(value, pattern)"));
         assert!(err.contains("match(value, pattern)"));
-        Ok(())
-    }
-
-    #[test]
-    fn jsonpath_regex_function_hint_does_not_mention_operator_when_operator_was_not_used()
-    -> Result<()> {
-        let err = validation_error("$.items[?search(@.metadata.name)].metadata.name")?;
-        assert!(err.contains("search(value, pattern)"));
-        assert!(err.contains("match(value, pattern)"));
-        assert!(!err.contains("=~"));
         Ok(())
     }
 
