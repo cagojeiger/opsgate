@@ -35,7 +35,7 @@ pub async fn begin_read_only_connection(
     let mut conn = tokio::time::timeout(POSTGRES_CONNECT_TIMEOUT, pool.acquire())
         .await
         .map_err(|_error| Error::internal("postgres connection timed out"))?
-        .map_err(|_error| Error::internal("postgres connection failed"))?;
+        .map_err(crate::sql_common::map_postgres_connect_error)?;
     conn.execute("BEGIN READ ONLY")
         .await
         .map_err(|_error| Error::internal("postgres transaction failed"))?;
