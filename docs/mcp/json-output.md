@@ -79,8 +79,9 @@ JSON number는 `UseNumber`로 decode합니다. 큰 숫자 ID가 `float64`로 강
 ## JSONPath 검증 규칙
 
 `api_call`과 `sql_query`는 같은 JSONPath 검증을 사용합니다. 기본은
-`serde_json_path` parser가 받아들이는 JSONPath이며, 토큰 절감을 위해 끝에 붙이는
-작은 집계 suffix `.length()`/`.count()`를 추가로 지원합니다.
+`serde_json_path` parser가 받아들이는 RFC 9535 호환 JSONPath filter이며,
+정규식 필터는 RFC 9535식 `match()`/`search()` 함수를 사용합니다. 토큰 절감을
+위해 끝에 붙이는 작은 집계 suffix `.length()`/`.count()`도 지원합니다.
 
 허용 조건:
 
@@ -103,11 +104,16 @@ $.items[0]
 $.items[0:10]
 $.items['name','namespace']
 $.items[?(@.status.phase == 'Running')]
+$.items[?search(@.metadata.name, 'api|worker')].metadata.name
+$.items[?match(@.metadata.name, 'api-[0-9]+')].metadata.name
 $.items.length()                    # 배열/문자열/object 길이
 $.items[*].metadata.name.count()    # 매칭 node 개수
 ```
 
 `.length()`는 매칭된 값이 하나면 배열/문자열/object 길이를 숫자로 반환하고, 여러 값이면 각 값의 길이 배열을 반환합니다. `.count()`는 base JSONPath가 매칭한 node 개수를 숫자로 반환합니다. 매칭이 없으면 일반 selection과 `.length()`는 `[]`, `.count()`는 `0`을 반환합니다.
+
+정규식 필터는 RFC 9535의 `search(value, pattern)`/`match(value, pattern)`
+함수 형식을 사용합니다. `left =~ /regex/` 연산자 문법은 지원하지 않습니다.
 
 SQL의 column-oriented body에서 `$.column.count()`는 보통 배열 node 1개를 세므로 행 수가 아닙니다. SQL 행 수는 응답의 `row_count` 또는 `$.column.length()`를 사용합니다.
 의도는 무제한 recursive traversal을 막으면서도 LLM이 필요한 값이나 개수만 작게

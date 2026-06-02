@@ -67,8 +67,10 @@ table/column/index 구조를 고정된 JSON으로 반환하며 row 값은 포함
 반환하고, 큰 출력은 `api_call`과 같은 JSONPath/truncation 규칙을 따릅니다.
 
 큰 HTTP/SQL JSON 응답은 full body를 받기보다 `api_call.jsonpath` 또는
-`sql_query.jsonpath`로 필요한 값만 뽑는 것을 우선합니다. JSONPath는 표준 selection grammar를 기본으로 하며,
-개수 질문에는 `.length()`/`.count()` suffix로 작은 숫자만 반환할 수 있습니다.
+`sql_query.jsonpath`로 필요한 값만 뽑는 것을 우선합니다. JSONPath는 RFC 9535
+호환 selection/filter grammar를 기본으로 하며, 정규식 필터는
+`match()`/`search()`를 사용합니다. `.length()`/`.count()` suffix도 사용할 수
+있습니다.
 
 응답 truncation, preview, 토큰 예산 규칙은
 [JSON 출력과 토큰 예산 스펙](mcp/json-output.md)에 정의합니다.
