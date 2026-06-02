@@ -99,6 +99,9 @@ fn audit_detail(
         serde_json::json!(input.include_indexes),
     );
     detail.insert("purpose".to_owned(), serde_json::json!(input.purpose));
+    if let Some(database) = &input.database {
+        detail.insert("database".to_owned(), serde_json::json!(database));
+    }
     crate::audit::runtime::insert_reason_detail(&mut detail, outcome, error_kind);
     if let Some(credential) = credential {
         crate::audit::runtime::insert_credential_detail(
@@ -155,6 +158,7 @@ mod tests {
         SqlSchemaInput {
             alias: "analytics".to_owned(),
             purpose: "Inspect schema safely".to_owned(),
+            database: None,
             mode: String::new(),
             namespace: String::new(),
             table: String::new(),

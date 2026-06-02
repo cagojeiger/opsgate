@@ -103,7 +103,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "sql.query",
-        description = "Required: alias, purpose, query. Run read-only SELECT/WITH on a SQL alias. Prefer explicit columns/WHERE/count/group; avoid SELECT *. For SQL column arrays, use row_count or $.column.length() for row count."
+        description = "Required: alias, purpose, query. Optional database selects another DB on the same registered Postgres server. Run read-only SELECT/WITH on a SQL alias. Prefer explicit columns/WHERE/count/group; avoid SELECT *. For SQL column arrays, use row_count or $.column.length() for row count."
     )]
     pub async fn sql_query(
         &self,
@@ -121,7 +121,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "sql.schema",
-        description = "Required: alias, purpose. Inspect SQL schema before unknown queries. mode=tables lists tables; mode=table with namespace/table shows columns/indexes. Never returns row data."
+        description = "Required: alias, purpose. Optional database selects another DB on the same registered Postgres server. Inspect SQL schema before unknown queries. mode=tables lists tables; mode=table with namespace/table shows columns/indexes. Never returns row data."
     )]
     pub async fn sql_schema(
         &self,
@@ -146,7 +146,7 @@ impl ServerHandler for RuntimeMcpServer {
             .with_server_info(
                 Implementation::new("opsgate", env!("CARGO_PKG_VERSION")).with_title("opsgate"),
             )
-            .with_instructions("Use credential.list first to choose an alias. For HTTP, call api.call with request_path only; target URLs stay hidden. For SQL, run sql.schema before unknown tables, then sql.query with explicit columns/WHERE/count/group and avoid SELECT *. Use 1-3 jsonpath paths to shrink large JSON outputs.")
+            .with_instructions("Use credential.list first to choose an alias. For HTTP, call api.call with request_path only; target URLs stay hidden. For SQL, optional database selects another DB on the same registered Postgres server; run sql.schema before unknown tables, then sql.query with explicit columns/WHERE/count/group and avoid SELECT *. Use 1-3 jsonpath paths to shrink large JSON outputs.")
     }
 }
 

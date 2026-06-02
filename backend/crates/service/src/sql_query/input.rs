@@ -22,6 +22,9 @@ pub struct SqlQueryInput {
     pub alias: String,
     /// Short human reason for the query; stored in audit/history.
     pub purpose: String,
+    /// Optional database on the same registered Postgres server. Defaults to the credential database.
+    #[serde(default)]
+    pub database: Option<String>,
     /// Read-only SQL. Only SELECT/WITH are allowed. Prefer explicit columns, WHERE, count/group, or keyset pagination; avoid SELECT *.
     pub query: String,
     /// Positional bind parameters for the SQL query.
@@ -43,6 +46,7 @@ pub struct SqlQueryInput {
 pub(super) struct NormalizedInput {
     pub(super) alias: String,
     pub(super) purpose: String,
+    pub(super) database: Option<String>,
     pub(super) query: String,
     pub(super) params: Vec<Value>,
     pub(super) jsonpath: Vec<String>,
@@ -55,6 +59,7 @@ pub(super) struct NormalizedInput {
 pub(super) fn normalize_input(input: SqlQueryInput) -> Result<NormalizedInput> {
     let alias = trim_required("alias", &input.alias)?;
     let purpose = validate_purpose(&input.purpose)?;
+    let database = crate::sql_common::normalize_database_name(input.database)?;
     let query = input.query.trim().trim_end_matches(';').trim().to_owned();
     if query.is_empty() || query.len() > MAX_QUERY_LEN || query.contains('\0') {
         return Err(Error::validation(format!(
@@ -84,6 +89,7 @@ pub(super) fn normalize_input(input: SqlQueryInput) -> Result<NormalizedInput> {
     Ok(NormalizedInput {
         alias,
         purpose,
+        database,
         query,
         params: input.params,
         jsonpath: input.jsonpath,
@@ -108,6 +114,7 @@ mod tests {
             alias: "analytics".to_owned(),
             purpose: "Count recent rows".to_owned(),
             query: "select status, count(*) from payments group by status".to_owned(),
+            database: None,
             params: Vec::new(),
             jsonpath: Vec::new(),
             max_rows: None,
@@ -124,6 +131,22 @@ mod tests {
         assert_eq!(input.max_bytes, DEFAULT_MAX_BYTES);
         assert_eq!(input.timeout_ms, DEFAULT_TIMEOUT_MS);
         assert_eq!(input.params.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn input_normalizes_optional_database() -> Result<()> {
+        let input = normalize_input(SqlQueryInput {
+            database: Some(" feedgate_1 ".to_owned()),
+            ..base_input()
+        })?;
+        assert_eq!(input.database.as_deref(), Some("feedgate_1"));
+
+        let bad = normalize_input(SqlQueryInput {
+            database: Some("bad/database".to_owned()),
+            ..base_input()
+        });
+        assert!(bad.is_err());
         Ok(())
     }
 

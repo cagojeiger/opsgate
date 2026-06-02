@@ -20,7 +20,13 @@ const POOL_CONN_MAX_LIFETIME: Duration = Duration::from_secs(30 * 60);
 /// handshake.
 #[derive(Clone)]
 pub struct TargetPgPools {
-    cached: Cache<Uuid, PgPool>,
+    cached: Cache<PgPoolKey, PgPool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct PgPoolKey {
+    credential_id: Uuid,
+    database: String,
 }
 
 impl Default for TargetPgPools {
@@ -39,8 +45,17 @@ impl TargetPgPools {
     /// Return the cached pool for this credential, building it lazily on first
     /// use. Credential target URL, secret, and TLS material are immutable, so
     /// the credential id is a stable cache key for the pool's lifetime.
-    pub fn pool_for(&self, credential_id: Uuid, options: PgConnectOptions) -> Result<PgPool> {
-        if let Some(pool) = self.cached.get(&credential_id) {
+    pub fn pool_for(
+        &self,
+        credential_id: Uuid,
+        database: &str,
+        options: PgConnectOptions,
+    ) -> Result<PgPool> {
+        let key = PgPoolKey {
+            credential_id,
+            database: database.to_owned(),
+        };
+        if let Some(pool) = self.cached.get(&key) {
             return Ok(pool);
         }
         let pool = PgPoolOptions::new()
@@ -49,7 +64,7 @@ impl TargetPgPools {
             .idle_timeout(POOL_CONN_IDLE_TIMEOUT)
             .max_lifetime(POOL_CONN_MAX_LIFETIME)
             .connect_lazy_with(options);
-        self.cached.insert(credential_id, pool.clone());
+        self.cached.insert(key, pool.clone());
         Ok(pool)
     }
 
@@ -76,17 +91,27 @@ mod tests {
     async fn pool_is_reused_for_same_credential() -> Result<()> {
         let pools = TargetPgPools::new();
         let id = Uuid::from_u128(1);
-        let _ = pools.pool_for(id, options()?)?;
-        let _ = pools.pool_for(id, options()?)?;
+        let _ = pools.pool_for(id, "app", options()?)?;
+        let _ = pools.pool_for(id, "app", options()?)?;
         assert_eq!(pools.cached_len()?, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn distinct_databases_get_distinct_pools() -> Result<()> {
+        let pools = TargetPgPools::new();
+        let id = Uuid::from_u128(1);
+        let _ = pools.pool_for(id, "app", options()?)?;
+        let _ = pools.pool_for(id, "other", options()?)?;
+        assert_eq!(pools.cached_len()?, 2);
         Ok(())
     }
 
     #[tokio::test]
     async fn distinct_credentials_get_distinct_pools() -> Result<()> {
         let pools = TargetPgPools::new();
-        let _ = pools.pool_for(Uuid::from_u128(1), options()?)?;
-        let _ = pools.pool_for(Uuid::from_u128(2), options()?)?;
+        let _ = pools.pool_for(Uuid::from_u128(1), "app", options()?)?;
+        let _ = pools.pool_for(Uuid::from_u128(2), "app", options()?)?;
         assert_eq!(pools.cached_len()?, 2);
         Ok(())
     }

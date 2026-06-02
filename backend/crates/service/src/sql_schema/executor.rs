@@ -18,6 +18,7 @@ pub(super) async fn execute_schema_query(
         credential_id,
         target,
         secret,
+        input.database.as_deref(),
         input.timeout_ms,
     )
     .await?;

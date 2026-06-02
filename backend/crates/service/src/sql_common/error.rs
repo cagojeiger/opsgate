@@ -8,6 +8,10 @@ pub fn map_postgres_schema_error(error: sqlx::Error, fallback: &'static str) -> 
     map_postgres_error(error, fallback)
 }
 
+pub fn map_postgres_connect_error(error: sqlx::Error) -> Error {
+    map_postgres_error(error, "postgres connection failed")
+}
+
 pub fn safe_error_record(
     error: &Error,
     fallback_kind: &'static str,
@@ -79,6 +83,16 @@ fn error_from_sqlstate(code: &str) -> Option<Error> {
             "The target database role does not have permission for this SQL operation.",
             "Use sql.schema to confirm visible objects, or register a credential with the required read grants.",
         ),
+        "3D000" => (
+            "sql_database_not_found",
+            "The requested database does not exist on the registered Postgres server.",
+            "Check the database field, or omit it to use the credential default database.",
+        ),
+        "28P01" => (
+            "sql_authentication_failed",
+            "The target database rejected the registered credential.",
+            "Delete and register the SQL credential again with the correct username and password.",
+        ),
         "57014" => (
             "sql_timeout_or_canceled",
             "SQL execution was canceled or timed out.",
@@ -126,6 +140,12 @@ mod tests {
             ("22P02", "sql_invalid_parameter", "params array"),
             ("42804", "sql_datatype_mismatch", "Cast explicitly"),
             ("42501", "sql_permission_denied", "read grants"),
+            ("3D000", "sql_database_not_found", "database field"),
+            (
+                "28P01",
+                "sql_authentication_failed",
+                "username and password",
+            ),
             ("57014", "sql_timeout_or_canceled", "WHERE"),
         ] {
             let error = error_from_sqlstate(code)
