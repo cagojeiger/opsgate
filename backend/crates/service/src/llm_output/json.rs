@@ -308,10 +308,12 @@ fn parse_json_path(base_path: &str, display_path: &str) -> Result<JsonPath> {
 
 fn jsonpath_error_hint(path: &str) -> &'static str {
     if path.contains("=~") {
-        "; hint: =~ regex filters are not supported; use RFC 9535 search(value, pattern) or match(value, pattern)"
-    } else {
-        ""
+        return "; hint: use RFC 9535 JSONPath regex functions: search(value, pattern) for partial regex search, or match(value, pattern) for full-string regex match. The =~ /regex/ operator syntax is not supported";
     }
+    if path.contains("search(") || path.contains("match(") {
+        return "; hint: use RFC 9535 JSONPath regex functions: search(value, pattern) for partial regex search, or match(value, pattern) for full-string regex match";
+    }
+    ""
 }
 
 fn count_projection(count: usize) -> Value {
@@ -885,9 +887,19 @@ mod tests {
     #[test]
     fn jsonpath_unsupported_regex_operator_hint_is_generic() -> Result<()> {
         let err = validation_error("$.items[?(@.metadata.name =~ /api-[0-9]+/i)].metadata.name")?;
-        assert!(err.contains("=~ regex filters are not supported"));
+        assert!(err.contains("The =~ /regex/ operator syntax is not supported"));
         assert!(err.contains("search(value, pattern)"));
         assert!(err.contains("match(value, pattern)"));
+        Ok(())
+    }
+
+    #[test]
+    fn jsonpath_regex_function_hint_does_not_mention_operator_when_operator_was_not_used()
+    -> Result<()> {
+        let err = validation_error("$.items[?search(@.metadata.name)].metadata.name")?;
+        assert!(err.contains("search(value, pattern)"));
+        assert!(err.contains("match(value, pattern)"));
+        assert!(!err.contains("=~"));
         Ok(())
     }
 
