@@ -85,7 +85,7 @@ query required
 query length 1-16000
 query NUL denied
 params max count 64
-jsonpath uses the shared safe subset, including `.length()`/`.count()` count suffixes
+jsonpath uses the shared safe subset, including RFC 9535-compatible filters, regex `search(value, pattern)`/`match(value, pattern)`, and `.length()`/`.count()` count suffixes
 max_rows range 1..1000
 max_bytes range 1024..1MiB
 timeout_ms range 1..30000

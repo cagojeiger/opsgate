@@ -246,4 +246,23 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn jsonpath_regex_filters_column_arrays() -> Result<()> {
+        let rows = vec![
+            serde_json::json!({"service":"api-main", "status":"paid"}),
+            serde_json::json!({"service":"worker", "status":"failed"}),
+            serde_json::json!({"service":"api-jobs", "status":"pending"}),
+        ];
+        let mut input = input();
+        input.jsonpath = vec!["$.service[?search(@, '^api')]".to_owned()];
+        let output = build_column_output(rows, &input, false)?;
+
+        assert_eq!(
+            output.body.get("$.service[?search(@, '^api')]"),
+            Some(&serde_json::json!(["api-main", "api-jobs"]))
+        );
+        assert_eq!(output.row_count, 3);
+        Ok(())
+    }
 }

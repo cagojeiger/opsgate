@@ -239,9 +239,7 @@ pub fn validate_json_paths(paths: &[String]) -> Result<()> {
             ));
         }
         let (base_path, _operator) = split_jsonpath_operator(trimmed);
-        JsonPath::parse(base_path).map_err(|error| {
-            Error::validation(format!("invalid jsonpath expression {trimmed:?}: {error}"))
-        })?;
+        parse_json_path(base_path, trimmed)?;
     }
     Ok(())
 }
@@ -261,9 +259,7 @@ fn project_json_paths(value: &Value, paths: &[String]) -> Result<Value> {
     for raw_path in paths {
         let path_key = raw_path.trim();
         let (base_path, operator) = split_jsonpath_operator(path_key);
-        let path = JsonPath::parse(base_path).map_err(|error| {
-            Error::validation(format!("invalid jsonpath expression {path_key:?}: {error}"))
-        })?;
+        let path = parse_json_path(base_path, path_key)?;
         let nodes = path.query(value).all();
         let projected = match operator {
             Some(JsonPathOperator::Count) => count_projection(nodes.len()),
@@ -299,6 +295,16 @@ fn split_jsonpath_operator(path: &str) -> (&str, Option<JsonPathOperator>) {
         }
     }
     (path, None)
+}
+
+fn parse_json_path(base_path: &str, display_path: &str) -> Result<JsonPath> {
+    JsonPath::parse(base_path).map_err(|error| {
+        Error::validation(format!(
+            "invalid jsonpath expression {display_path:?}: parser reported {:?} at position {}. Use RFC 9535 JSONPath; regex filters use search(value, pattern) for partial search or match(value, pattern) for full-string match.",
+            error.message(),
+            error.position()
+        ))
+    })
 }
 
 fn count_projection(count: usize) -> Value {
@@ -606,6 +612,15 @@ mod tests {
         paths.iter().map(|path| (*path).to_owned()).collect()
     }
 
+    fn validation_error(path: &str) -> Result<String> {
+        match validate_json_paths(&[path.to_owned()]) {
+            Ok(()) => Err(Error::internal(format!(
+                "expected jsonpath validation error for {path:?}"
+            ))),
+            Err(error) => Ok(error.to_string()),
+        }
+    }
+
     #[test]
     fn from_value_matches_byte_path_across_cases() -> Result<()> {
         let value = serde_json::json!({
@@ -699,6 +714,80 @@ mod tests {
     }
 
     #[test]
+    fn jsonpath_regex_functions_filter_string_values() -> Result<()> {
+        let out = build_json_output(
+            br#"{"items":[{"metadata":{"name":"api"}},{"metadata":{"name":"worker"}},{"metadata":{"name":"db"}}]}"#,
+            JsonOutputOptions {
+                max_bytes: 4096,
+                json_paths: paths(&[
+                    "$.items[?search(@.metadata.name, 'wo')].metadata.name",
+                    "$.items[?match(@.metadata.name, 'a.*')].metadata.name",
+                ]),
+                ..JsonOutputOptions::default()
+            },
+        )?;
+
+        assert_eq!(
+            out.body
+                .get("$.items[?search(@.metadata.name, 'wo')].metadata.name"),
+            Some(&serde_json::json!(["worker"]))
+        );
+        assert_eq!(
+            out.body
+                .get("$.items[?match(@.metadata.name, 'a.*')].metadata.name"),
+            Some(&serde_json::json!(["api"]))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn jsonpath_regex_filters_compose_with_boolean_predicates() -> Result<()> {
+        let out = build_json_output(
+            br#"{"items":[{"metadata":{"name":"api-1"},"status":{"phase":"Running"}},{"metadata":{"name":"api-2"},"status":{"phase":"Pending"}},{"metadata":{"name":"worker"},"status":{"phase":"Running"}}]}"#,
+            JsonOutputOptions {
+                max_bytes: 4096,
+                json_paths: paths(&[
+                    "$.items[?@.status.phase == 'Running' && search(@.metadata.name, '^api')].metadata.name",
+                    "$.items[?@.status.phase == 'Running' && match(@.metadata.name, 'worker')].metadata.name",
+                ]),
+                ..JsonOutputOptions::default()
+            },
+        )?;
+
+        assert_eq!(
+            out.body.get(
+                "$.items[?@.status.phase == 'Running' && search(@.metadata.name, '^api')].metadata.name"
+            ),
+            Some(&serde_json::json!(["api-1"]))
+        );
+        assert_eq!(
+            out.body.get(
+                "$.items[?@.status.phase == 'Running' && match(@.metadata.name, 'worker')].metadata.name"
+            ),
+            Some(&serde_json::json!(["worker"]))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn jsonpath_regex_functions_return_empty_for_non_string_inputs() -> Result<()> {
+        let out = build_json_output(
+            br#"{"items":[{"name":123},{"name":null},{"name":"api"}]}"#,
+            JsonOutputOptions {
+                max_bytes: 4096,
+                json_paths: paths(&["$.items[?search(@.name, 'api')].name"]),
+                ..JsonOutputOptions::default()
+            },
+        )?;
+
+        assert_eq!(
+            out.body.get("$.items[?search(@.name, 'api')].name"),
+            Some(&serde_json::json!(["api"]))
+        );
+        Ok(())
+    }
+
+    #[test]
     fn jsonpath_length_projects_multiple_node_lengths() -> Result<()> {
         let out = build_json_output(
             br#"{"items":[{"containers":[1,2]},{"containers":[3]}]}"#,
@@ -756,12 +845,49 @@ mod tests {
     }
 
     #[test]
-    fn validates_jsonpath_limits_before_processing() {
+    fn validates_jsonpath_limits_before_processing() -> Result<()> {
         let too_many = vec!["$".to_owned(); 17];
         assert!(validate_json_paths(&too_many).is_err());
         assert!(validate_json_paths(&["items".to_owned()]).is_err());
         assert!(validate_json_paths(&[format!("${}", "a".repeat(513))]).is_err());
         assert!(validate_json_paths(&["$..metadata.name".to_owned()]).is_err());
+        let err = validation_error("$.items[?(@.metadata.name =~ /api/)].metadata.name")?;
+        assert!(err.contains("parser reported"));
+        assert!(err.contains("at position"));
+        assert!(err.contains("Use RFC 9535 JSONPath"));
+        assert!(err.contains("search(value, pattern)"));
+        assert!(err.contains("match(value, pattern)"));
+        Ok(())
+    }
+
+    #[test]
+    fn jsonpath_invalid_regex_pattern_returns_no_matches() -> Result<()> {
+        let out = build_json_output(
+            br#"{"items":[{"name":"api"}]}"#,
+            JsonOutputOptions {
+                max_bytes: 4096,
+                json_paths: paths(&["$.items[?search(@.name, '[')].name"]),
+                ..JsonOutputOptions::default()
+            },
+        )?;
+
+        assert_eq!(
+            out.body.get("$.items[?search(@.name, '[')].name"),
+            Some(&serde_json::json!([]))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn jsonpath_parse_error_reports_parser_reason_and_common_regex_rule() -> Result<()> {
+        let err = validation_error("$.items[?foo(@.metadata.name, 'api')].metadata.name")?;
+        assert!(err.contains("parser reported"));
+        assert!(err.contains("function name 'foo' is not defined"));
+        assert!(err.contains("at position"));
+        assert!(err.contains("Use RFC 9535 JSONPath"));
+        assert!(err.contains("search(value, pattern)"));
+        assert!(err.contains("match(value, pattern)"));
+        Ok(())
     }
 
     #[test]
