@@ -198,7 +198,7 @@ impl AdminMcpServer {
 
     #[tool(
         name = "credential.register_http",
-        description = "Register an HTTP/API infrastructure target for api.call, e.g. Kubernetes or internal JSON APIs. Use secret_headers for header auth and/or client_cert_pem/client_key_pem for mTLS auth. Put scheme+host in origin, optional fixed prefix in base_path, and per-call paths in api.call.request_path. Secrets are sealed and never returned."
+        description = "Register an HTTP/API infrastructure target for api.call, e.g. Kubernetes or internal JSON APIs. Prefer scoped short-lived header tokens. mTLS client_cert_pem/client_key_pem and allow_private_network are high-risk opt-ins for tightly controlled self-hosted/internal use. Put scheme+host in origin, optional fixed prefix in base_path, and per-call paths in api.call.request_path. Secrets are sealed and never returned."
     )]
     pub async fn credential_register_http(
         &self,

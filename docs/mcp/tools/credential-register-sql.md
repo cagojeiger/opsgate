@@ -68,7 +68,7 @@
 - 데이터 도달 범위는 `database_url`의 데이터베이스와 DB role grant로 제어합니다.
 - SQL policy는 row/byte/timeout, metadata, EXPLAIN, denied function 동작을
   제어합니다.
-- 기본적으로 `sslmode=require`가 필요합니다. `sslmode=verify-full`은 현재 guarded SQL target에서 지원하지 않으므로 거부됩니다. 내부/비TLS 연결은 `allow_private_network=true`와 `allow_insecure_transport=true`를 둘 다 켠 경우에만 허용됩니다.
+- 기본적으로 `sslmode=require`가 필요합니다. `sslmode=verify-full`은 현재 guarded SQL target에서 지원하지 않으므로 거부됩니다. 내부/비TLS 연결은 `allow_private_network=true`와 `allow_insecure_transport=true`를 둘 다 켠 경우에만 허용됩니다. 내부망/비TLS 허용은 SSRF·측면 이동·평문 노출 위험을 키우는 고위험 옵션이므로, 신뢰된 self-hosted/회사 내부 환경에서 필요한 alias에만 켭니다.
 - 봉인된 secret과 target `database_url`은 등록 후 변경할 수 없습니다. secret rotation이나
   데이터베이스 대상 변경은 delete 후 재등록으로 처리하며,
   `credential.update_sql`은 metadata와 policy만 수정합니다.

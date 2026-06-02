@@ -52,7 +52,7 @@ pub struct RegisterHttpCredentialInput {
     /// HTTP policy: methods, request_path prefixes, query/header constraints, and budgets.
     #[serde(default)]
     pub policy: CredentialPolicy,
-    /// Opt in only for trusted private-network targets.
+    /// High-risk opt-in for trusted private-network targets only; keep false for public use.
     #[serde(default)]
     pub allow_private_network: bool,
     /// Opt in only when plain HTTP is intentionally needed. HTTPS certificate
@@ -62,15 +62,14 @@ pub struct RegisterHttpCredentialInput {
     /// PEM CA bundle for private HTTPS servers. Leave empty for public WebPKI.
     #[serde(default)]
     pub tls_server_ca: String,
-    /// PEM client certificate chain for mutual-TLS targets (e.g. Kubernetes API
-    /// servers using client-certificate auth). Requires client_key_pem. Stored
-    /// as certificate material and never returned. Leave empty when not using
-    /// client certs.
+    /// High-risk mTLS client certificate chain for tightly controlled targets.
+    /// Requires client_key_pem. Stored as certificate material and never returned.
+    /// Prefer scoped short-lived bearer/API tokens for production automation.
     #[serde(default)]
     pub client_cert_pem: String,
-    /// PEM private key matching client_cert_pem. Requires client_cert_pem.
-    /// Sealed at rest with the master key and never returned. Leave empty when
-    /// not using client certs.
+    /// High-risk mTLS private key matching client_cert_pem. Requires client_cert_pem.
+    /// Sealed at rest but opened by opsgate at runtime for TLS client auth;
+    /// use only when opsgate is trusted to custody this private key.
     #[serde(default)]
     pub client_key_pem: String,
 }
@@ -100,7 +99,7 @@ pub struct RegisterSqlCredentialInput {
     /// SQL policy: metadata/explain permissions, denied functions, and row/byte/time budgets.
     #[serde(default)]
     pub policy: CredentialPolicy,
-    /// Opt in only for trusted private-network databases.
+    /// High-risk opt-in for trusted private-network databases only; keep false for public use.
     #[serde(default)]
     pub allow_private_network: bool,
     /// Opt in only when non-TLS Postgres is intentionally needed on trusted private networks.
