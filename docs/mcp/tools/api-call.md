@@ -156,7 +156,7 @@ JSONPath 예시:
 }
 ```
 
-정규식 기반 부분 검색은 RFC 9535식 `search()` 함수를 사용합니다.
+정규식 기반 부분 검색은 RFC 9535식 `search(value, pattern)` 함수를 사용합니다. 전체 문자열 매칭은 `match(value, pattern)`를 사용합니다.
 
 ```json
 {
