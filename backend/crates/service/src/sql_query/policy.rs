@@ -113,7 +113,7 @@ fn validate_set_expr(expr: &SetExpr) -> Result<()> {
             validate_set_expr(right)
         }
         _ => Err(Error::validation(
-            "query contains a statement type that sql.query does not allow",
+            "query contains a statement type that sql_query does not allow",
         )),
     }
 }

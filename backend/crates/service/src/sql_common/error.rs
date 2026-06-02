@@ -46,12 +46,12 @@ fn error_from_sqlstate(code: &str) -> Option<Error> {
         "42703" => (
             "sql_undefined_column",
             "SQL references a column that does not exist.",
-            "Use sql.schema(mode=\"table\") for the target table, then retry with existing columns.",
+            "Use sql_schema(mode=\"table\") for the target table, then retry with existing columns.",
         ),
         "42P01" => (
             "sql_undefined_table",
             "SQL references a table or relation that does not exist.",
-            "Use sql.schema(mode=\"tables\") to list visible tables, then sql.schema(mode=\"table\") before retrying.",
+            "Use sql_schema(mode=\"tables\") to list visible tables, then sql_schema(mode=\"table\") before retrying.",
         ),
         "42702" => (
             "sql_ambiguous_column",
@@ -81,7 +81,7 @@ fn error_from_sqlstate(code: &str) -> Option<Error> {
         "42501" => (
             "sql_permission_denied",
             "The target database role does not have permission for this SQL operation.",
-            "Use sql.schema to confirm visible objects, or register a credential with the required read grants.",
+            "Use sql_schema to confirm visible objects, or register a credential with the required read grants.",
         ),
         "3D000" => (
             "sql_database_not_found",
@@ -123,7 +123,7 @@ mod tests {
         assert!(message.contains("column"));
         assert!(
             hint.as_deref()
-                .is_some_and(|hint| hint.contains("sql.schema"))
+                .is_some_and(|hint| hint.contains("sql_schema"))
         );
         Ok(())
     }
@@ -132,7 +132,7 @@ mod tests {
     fn sqlstate_mapping_covers_retry_guidance_cases() -> Result<(), String> {
         for (code, expected_kind, expected_hint) in [
             ("42601", "sql_syntax_error", "read-only SELECT/WITH"),
-            ("42703", "sql_undefined_column", "sql.schema"),
+            ("42703", "sql_undefined_column", "sql_schema"),
             ("42P01", "sql_undefined_table", "mode=\"tables\""),
             ("42702", "sql_ambiguous_column", "Qualify"),
             ("42883", "sql_undefined_function", "function name"),
@@ -174,7 +174,7 @@ mod tests {
         let error = Error::user_safe(
             "sql_undefined_table",
             "SQL references a table that does not exist.",
-            Some("Use sql.schema first."),
+            Some("Use sql_schema first."),
         );
         let (kind, message) = safe_error_record(&error, "query_failed", "sql query failed");
         assert_eq!(kind, "sql_undefined_table");

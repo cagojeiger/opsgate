@@ -17,5 +17,5 @@ pub async fn call(
         .execute(caller, input)
         .await
         .map(Json)
-        .map_err(|error| crate::mcp::tools::map_core_error("sql.schema", error))
+        .map_err(|error| crate::mcp::tools::map_core_error("sql_schema", error))
 }

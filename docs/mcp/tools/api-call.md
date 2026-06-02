@@ -1,4 +1,4 @@
-# `api.call`
+# `api_call`
 
 서피스:
 
@@ -130,7 +130,7 @@ Truncation:
 
 LLM 가이드:
 
-- 먼저 `credential.list`를 호출해 policy를 확인하세요.
+- 먼저 `credential_list`를 호출해 policy를 확인하세요.
 - 구조를 아는 API라면 곧바로 `jsonpath`를 사용하세요. 개수 질문에는 전체 배열을
   받지 말고 `.length()` 또는 `.count()`를 먼저 사용하세요.
 - 구조를 모르는 API라면 낮은 `max_bytes`로 시작한 뒤

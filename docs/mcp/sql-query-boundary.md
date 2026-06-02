@@ -1,16 +1,16 @@
-# sql.query boundary 모델
+# sql_query boundary 모델
 
-이 문서는 `sql.query` 고유의 닫힌 boundary 모델을 정의합니다. `api.call`은
-HTTP/JSON 응답을 다루지만, `sql.query`는 Postgres 데이터베이스에 대해
+이 문서는 `sql_query` 고유의 닫힌 boundary 모델을 정의합니다. `api_call`은
+HTTP/JSON 응답을 다루지만, `sql_query`는 Postgres 데이터베이스에 대해
 읽기 전용 SQL을 실행하고 결과 행렬을 작은 JSON envelope으로 변환합니다.
 
-`sql.query`의 목표는 LLM이 DB password와 `database_url`을 보지 않은 채 등록된
+`sql_query`의 목표는 LLM이 DB password와 `database_url`을 보지 않은 채 등록된
 Postgres credential을 안전하게 사용하고, 필요한 만큼만 결과를 가져오게
 하는 것입니다.
 
-테이블/컬럼 구조를 모를 때는 먼저 `sql.schema`를 사용합니다. `sql.schema`는
-row 값을 반환하지 않고 고정 JSON 구조만 반환합니다. `sql.query`는 SQL 행렬을
-column-oriented JSON으로 전치한 뒤 `api.call`과 같은 JSON 출력 공통 유틸리티를
+테이블/컬럼 구조를 모를 때는 먼저 `sql_schema`를 사용합니다. `sql_schema`는
+row 값을 반환하지 않고 고정 JSON 구조만 반환합니다. `sql_query`는 SQL 행렬을
+column-oriented JSON으로 전치한 뒤 `api_call`과 같은 JSON 출력 공통 유틸리티를
 사용합니다.
 
 닫힌 종료 상태는 네 가지뿐이어야 합니다.
@@ -58,7 +58,7 @@ audit / history
 역할:
 
 ```text
-LLM이 준 SQL 요청이 sql.query 표면에 들어와도 되는 모양인지 확인
+LLM이 준 SQL 요청이 sql_query 표면에 들어와도 되는 모양인지 확인
 ```
 
 대상 입력:
@@ -293,7 +293,7 @@ error_kind
 safe error message
 ```
 
-`sql.query`의 policy/parser 거부는 클라이언트 응답에는 실행 가능한 검증 메시지를
+`sql_query`의 policy/parser 거부는 클라이언트 응답에는 실행 가능한 검증 메시지를
 반환할 수 있지만, history에는 raw SQL 조각이 섞일 위험을 피하기 위해 generic
 safe message(`sql query denied by credential policy`)만 저장합니다. SQL 실행 중
 Postgres가 반환한 알려진 SQLSTATE는 `sql_undefined_column` 같은 safe kind/message로

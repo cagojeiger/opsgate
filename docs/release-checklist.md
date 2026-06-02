@@ -140,19 +140,19 @@ curl -i -sS http://localhost:9091/mcp/admin -X POST -H 'content-type: applicatio
 ```text
 /mcp runtime:
   me
-  credential.list
-  api.call
-  sql.schema
-  sql.query
+  credential_list
+  api_call
+  sql_schema
+  sql_query
 
 /mcp/admin:
   me
-  credential.register_http
-  credential.register_sql
-  credential.update_http
-  credential.update_sql
-  credential.list
-  credential.delete
+  credential_register_http
+  credential_register_sql
+  credential_update_http
+  credential_update_sql
+  credential_list
+  credential_delete
 
 /api/v1 REST:
   GET /api/v1/me

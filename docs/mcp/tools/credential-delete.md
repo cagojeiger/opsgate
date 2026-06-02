@@ -1,4 +1,4 @@
-# `credential.delete`
+# `credential_delete`
 
 서피스:
 
@@ -35,8 +35,8 @@
 
 - 관리 서피스 전용이다(`/mcp/admin`에만 노출).
 - 사용자가 명시적으로 확인한 뒤에만 호출한다.
-- 삭제된 자격 증명은 `credential.list`에서 더 이상 보이지 않는다.
-- 삭제된 자격 증명은 `api.call`이나 `sql.query`로 사용할 수 없다.
+- 삭제된 자격 증명은 `credential_list`에서 더 이상 보이지 않는다.
+- 삭제된 자격 증명은 `api_call`이나 `sql_query`로 사용할 수 없다.
 - 메타데이터와 이력은 그대로 남는다.
 - 시크릿 자료는 `secret_ciphertext=NULL`로 설정하여 파기한다.
 - `secret_destroyed_at`이 기록된다.
@@ -44,6 +44,6 @@
 
 감사/이력:
 
-- 감사 액션: `mcp.credential.delete`
+- 감사 액션: `mcp.credential_delete`
 - 이력 액션: `delete`
 - 상세(detail)에 `delete_reason`이 포함된다.

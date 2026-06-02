@@ -15,8 +15,8 @@ const POOL_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 const POOL_CONN_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 const POOL_CONN_MAX_LIFETIME: Duration = Duration::from_secs(30 * 60);
 
-/// Per-credential Postgres connection pools, reused across `sql.query` and
-/// `sql.schema` calls so each call no longer pays a fresh TCP + TLS + SCRAM
+/// Per-credential Postgres connection pools, reused across `sql_query` and
+/// `sql_schema` calls so each call no longer pays a fresh TCP + TLS + SCRAM
 /// handshake.
 #[derive(Clone)]
 pub struct TargetPgPools {

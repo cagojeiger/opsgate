@@ -148,7 +148,7 @@ pub fn build_json_output(raw: &[u8], options: JsonOutputOptions) -> Result<JsonO
 
 /// Shape an already-parsed JSON value for return, skipping the byte parse step.
 ///
-/// Callers that build the value in-process (e.g. `sql.query` columnar output)
+/// Callers that build the value in-process (e.g. `sql_query` columnar output)
 /// would otherwise serialize to bytes only for [`build_json_output`] to parse
 /// them straight back. This applies the same JSONPath projection, byte cap, and
 /// truncation guidance directly on the owned value, matching `build_json_output`

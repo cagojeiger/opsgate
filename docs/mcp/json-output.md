@@ -1,6 +1,6 @@
 # JSON 출력과 토큰 예산 스펙
 
-이 문서는 `api.call`이 target JSON 응답을, `sql.query`가 SQL 결과 JSON을
+이 문서는 `api_call`이 target JSON 응답을, `sql_query`가 SQL 결과 JSON을
 LLM에게 반환할 때의 공통 규칙을 정의합니다.
 
 목표는 target 응답 전체를 그대로 보여주는 것이 아닙니다. 목표는 LLM이
@@ -20,7 +20,7 @@ LLM에게 반환할 때의 공통 규칙을 정의합니다.
 ## 정상 응답
 
 target 응답이 유효한 JSON이고 compact JSON 크기가 `max_bytes` 안에 들어오면
-`api.call`은 `body`에 JSON 값을 그대로 반환합니다.
+`api_call`은 `body`에 JSON 값을 그대로 반환합니다.
 
 ```json
 {
@@ -78,7 +78,7 @@ JSON number는 `UseNumber`로 decode합니다. 큰 숫자 ID가 `float64`로 강
 
 ## JSONPath 검증 규칙
 
-`api.call`과 `sql.query`는 같은 JSONPath 검증을 사용합니다. 기본은
+`api_call`과 `sql_query`는 같은 JSONPath 검증을 사용합니다. 기본은
 `serde_json_path` parser가 받아들이는 JSONPath이며, 토큰 절감을 위해 끝에 붙이는
 작은 집계 suffix `.length()`/`.count()`를 추가로 지원합니다.
 
@@ -162,7 +162,7 @@ target 응답이 hard read cap을 넘는 경우에도, 불완전한 JSON prefix�
 
 ## 점진적 호출 프로토콜
 
-`api.call`과 `sql.query`는 큰 JSON을 한 번에 많이 보여주는 도구가 아닙니다.
+`api_call`과 `sql_query`는 큰 JSON을 한 번에 많이 보여주는 도구가 아닙니다.
 LLM이 작은 호출에서 시작해서 필요한 정보만 점진적으로 가져오도록 설계합니다.
 
 `more.options.preferred_next`는 다음 호출의 우선 행동입니다.
@@ -312,7 +312,7 @@ items[*].containers[*].env[*]
 
 `0.1.0`에서는 preview pagination을 추가하지 않습니다.
 
-이유: `api.call`은 target 실행 도구입니다. 캐시 없이 preview page를 더
+이유: `api_call`은 target 실행 도구입니다. 캐시 없이 preview page를 더
 보려면 같은 target API를 다시 호출해야 합니다. 캐시를 추가하면 TTL, 권한,
 메모리 제한, response retention 정책이 따라옵니다.
 
