@@ -20,6 +20,7 @@ pub(super) async fn execute_postgres(
         credential_id,
         target,
         secret,
+        input.database.as_deref(),
         input.timeout_ms,
     )
     .await?;

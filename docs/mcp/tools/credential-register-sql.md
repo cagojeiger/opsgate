@@ -60,12 +60,12 @@
 
 - `provider`의 기본값은 `postgres`입니다.
 - `policy={}`는 유효합니다.
-- `database_url`이 데이터베이스 경계를 선택합니다.
+- `database_url`은 기본 데이터베이스와 고정된 서버(host/port/options)를 선택합니다. `sql.schema`/`sql.query`의 `database` 옵션으로 같은 서버의 다른 DB를 선택할 수 있지만 host/port/user/password는 바뀌지 않습니다.
 - `database_url`에는 username이나 password를 포함하면 안 됩니다.
 - username/password는 봉인(sealed)되며 절대 반환하지 않습니다.
-- opsgate는 일반적인 데이터 경계로 LLM에게 데이터베이스 schema를 고르게 하지
-  않습니다.
-- 데이터 도달 범위는 `database_url`의 데이터베이스와 DB role grant로 제어합니다.
+- opsgate는 서버(host/port)와 계정(username/password)을 credential 등록 시점에 고정하고,
+  호출 시에는 같은 서버 안의 데이터베이스 이름만 선택할 수 있게 합니다.
+- 데이터 도달 범위는 DB role grant로 제어합니다. 하나의 credential로 여러 DB를 조회하려면 해당 role에 각 DB의 읽기 권한이 있어야 합니다.
 - SQL policy는 row/byte/timeout, metadata, EXPLAIN, denied function 동작을
   제어합니다.
 - 기본적으로 `sslmode=require`가 필요합니다. `sslmode=verify-full`은 현재 guarded SQL target에서 지원하지 않으므로 거부됩니다. 내부/비TLS 연결은 `allow_private_network=true`와 `allow_insecure_transport=true`를 둘 다 켠 경우에만 허용됩니다.

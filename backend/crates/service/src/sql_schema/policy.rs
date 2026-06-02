@@ -36,6 +36,7 @@ mod tests {
         SqlSchemaInput {
             alias: "analytics".to_owned(),
             purpose: "Inspect schema safely".to_owned(),
+            database: None,
             mode: String::new(),
             namespace: String::new(),
             table: String::new(),

@@ -163,6 +163,9 @@ fn audit_detail(
     detail.insert("max_bytes".to_owned(), serde_json::json!(input.max_bytes));
     detail.insert("timeout_ms".to_owned(), serde_json::json!(input.timeout_ms));
     detail.insert("purpose".to_owned(), serde_json::json!(input.purpose));
+    if let Some(database) = &input.database {
+        detail.insert("database".to_owned(), serde_json::json!(database));
+    }
     if let Some(credential) = credential {
         crate::audit::runtime::insert_credential_detail(
             &mut detail,
@@ -253,6 +256,7 @@ mod tests {
         NormalizedInput {
             alias: "analytics".to_owned(),
             purpose: "Count recent rows".to_owned(),
+            database: None,
             query: "select secret_col from payments where token = $1".to_owned(),
             params: vec![serde_json::json!("secret-param")],
             jsonpath: Vec::new(),

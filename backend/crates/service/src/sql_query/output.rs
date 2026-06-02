@@ -137,6 +137,7 @@ mod tests {
         NormalizedInput {
             alias: "analytics".to_owned(),
             purpose: "Count recent rows".to_owned(),
+            database: None,
             query: "select status, count(*) from payments group by status".to_owned(),
             params: Vec::new(),
             jsonpath: Vec::new(),

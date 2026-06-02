@@ -175,6 +175,7 @@ mod tests {
         NormalizedInput {
             alias: "analytics".to_owned(),
             purpose: "Inspect schema safely".to_owned(),
+            database: None,
             mode: MODE_TABLES.to_owned(),
             namespace: String::new(),
             table: String::new(),

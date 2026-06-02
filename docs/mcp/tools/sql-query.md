@@ -18,6 +18,7 @@
 {
   "alias": "analytics-db",
   "purpose": "Count failed payments from yesterday",
+  "database": "feedgate",
   "query": "select status, count(*) as total from payments where created_at >= $1 group by status",
   "params": ["2026-05-19"],
   "jsonpath": ["$.status", "$.total"],
@@ -35,6 +36,7 @@
 
 선택:
 
+- `database`: 같은 등록 Postgres 서버의 다른 데이터베이스를 선택합니다. 생략하면 credential의 `database_url`에 등록된 기본 DB를 사용합니다. host/port/user/password는 바뀌지 않으며 실제 접근 범위는 DB role grant가 결정합니다.
 - `params`
 - `jsonpath`
 - `max_rows`

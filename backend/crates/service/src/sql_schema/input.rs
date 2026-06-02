@@ -22,6 +22,9 @@ pub struct SqlSchemaInput {
     pub alias: String,
     /// Short human reason for inspecting schema; stored in audit/history.
     pub purpose: String,
+    /// Optional database on the same registered Postgres server. Defaults to the credential database.
+    #[serde(default)]
+    pub database: Option<String>,
     /// tables = list tables. table = inspect one table using namespace and table.
     #[serde(default)]
     pub mode: String,
@@ -49,6 +52,7 @@ pub struct SqlSchemaInput {
 pub(super) struct NormalizedInput {
     pub(super) alias: String,
     pub(super) purpose: String,
+    pub(super) database: Option<String>,
     pub(super) mode: String,
     pub(super) namespace: String,
     pub(super) table: String,
@@ -62,6 +66,7 @@ pub(super) struct NormalizedInput {
 pub(super) fn normalize_input(input: SqlSchemaInput) -> Result<NormalizedInput> {
     let alias = trim_required("alias", &input.alias)?;
     let purpose = validate_purpose(&input.purpose)?;
+    let database = crate::sql_common::normalize_database_name(input.database)?;
     let mode = if input.mode.trim().is_empty() {
         DEFAULT_MODE.to_owned()
     } else {
@@ -103,6 +108,7 @@ pub(super) fn normalize_input(input: SqlSchemaInput) -> Result<NormalizedInput> 
     Ok(NormalizedInput {
         alias,
         purpose,
+        database,
         mode,
         namespace,
         table,
@@ -131,6 +137,7 @@ mod tests {
         SqlSchemaInput {
             alias: "analytics".to_owned(),
             purpose: "Inspect schema safely".to_owned(),
+            database: None,
             mode: String::new(),
             namespace: String::new(),
             table: String::new(),
@@ -149,6 +156,22 @@ mod tests {
         assert_eq!(input.limit, DEFAULT_LIMIT);
         assert_eq!(input.max_bytes, DEFAULT_MAX_BYTES);
         assert_eq!(input.timeout_ms, DEFAULT_TIMEOUT_MS);
+        Ok(())
+    }
+
+    #[test]
+    fn input_normalizes_optional_database() -> Result<()> {
+        let input = normalize_input(SqlSchemaInput {
+            database: Some(" authgate ".to_owned()),
+            ..base_input()
+        })?;
+        assert_eq!(input.database.as_deref(), Some("authgate"));
+
+        let bad = normalize_input(SqlSchemaInput {
+            database: Some("bad/database".to_owned()),
+            ..base_input()
+        });
+        assert!(bad.is_err());
         Ok(())
     }
 

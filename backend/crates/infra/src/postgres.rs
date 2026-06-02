@@ -15,20 +15,29 @@ pub struct GuardedPostgresTarget {
 }
 
 impl GuardedPostgresTarget {
-    pub fn connect_options(&self, username: &str, password: &str) -> Result<PgConnectOptions> {
-        let options = PgConnectOptions::from_str(&self.database_url)
+    pub fn connect_options(
+        &self,
+        username: &str,
+        password: &str,
+        database: Option<&str>,
+    ) -> Result<TargetPgConnectOptions> {
+        let mut options = PgConnectOptions::from_str(&self.database_url)
             .map_err(|error| Error::validation(format!("postgres database_url: {error}")))?;
+        if let Some(database) = database {
+            options = options.database(database);
+        }
         validate_ssl_mode(
             options.get_ssl_mode(),
             self.allow_private_network,
             self.allow_insecure_transport,
         )?;
+        let database = options.get_database().unwrap_or_default().to_owned();
         let options = options
             .host(&self.connect_addr.ip().to_string())
             .port(self.connect_addr.port())
             .username(username)
             .password(password);
-        Ok(options)
+        Ok(TargetPgConnectOptions { database, options })
     }
 
     #[cfg(test)]
@@ -132,6 +141,11 @@ fn select_postgres_addr(
     Ok(SocketAddr::new(first, port))
 }
 
+pub struct TargetPgConnectOptions {
+    pub database: String,
+    pub options: PgConnectOptions,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,7 +230,7 @@ mod tests {
             allow_insecure_transport: false,
         };
         let err = target
-            .connect_options("user", "password")
+            .connect_options("user", "password", None)
             .err()
             .map(|error| error.to_string())
             .unwrap_or_default();
@@ -231,10 +245,11 @@ mod tests {
             allow_private_network: false,
             allow_insecure_transport: false,
         };
-        let options = target.connect_options("user", "password")?;
-        assert_eq!(options.get_host(), "93.184.216.34");
-        assert_eq!(options.get_port(), 6543);
-        assert_eq!(options.get_database(), Some("app"));
+        let connect = target.connect_options("user", "password", None)?;
+        assert_eq!(connect.options.get_host(), "93.184.216.34");
+        assert_eq!(connect.options.get_port(), 6543);
+        assert_eq!(connect.database, "app");
+        assert_eq!(connect.options.get_database(), Some("app"));
         Ok(())
     }
 
@@ -247,7 +262,7 @@ mod tests {
             allow_insecure_transport: false,
         };
         let err = rejected
-            .connect_options("user", "password")
+            .connect_options("user", "password", None)
             .err()
             .map(|error| error.to_string())
             .unwrap_or_default();
@@ -259,8 +274,8 @@ mod tests {
             allow_private_network: true,
             allow_insecure_transport: true,
         };
-        let options = allowed.connect_options("user", "password")?;
-        assert_eq!(options.get_host(), "93.184.216.34");
+        let connect = allowed.connect_options("user", "password", None)?;
+        assert_eq!(connect.options.get_host(), "93.184.216.34");
         Ok(())
     }
 }

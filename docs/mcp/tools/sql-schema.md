@@ -16,6 +16,7 @@
 {
   "alias": "analytics-db",
   "purpose": "Find tables needed for API call history analysis",
+  "database": "authgate",
   "mode": "tables",
   "limit": 50,
   "cursor": "",
@@ -30,6 +31,7 @@
 {
   "alias": "analytics-db",
   "purpose": "Inspect columns for API call history aggregation",
+  "database": "authgate",
   "mode": "table",
   "table": "api_call_history",
   "namespace": "public",
@@ -44,6 +46,7 @@
 
 기본값:
 
+- `database` 생략 시 credential의 `database_url`에 등록된 기본 DB를 사용합니다. 지정하면 같은 등록 Postgres 서버의 다른 데이터베이스 schema를 조회합니다. host/port/user/password는 바뀌지 않으며 실제 접근 범위는 DB role grant가 결정합니다.
 - `mode=tables`
 - `limit=50`
 - `max_bytes=65536`

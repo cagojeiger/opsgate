@@ -23,13 +23,15 @@ pub async fn begin_read_only_connection(
     credential_id: Uuid,
     target: &GuardedPostgresTarget,
     secret: &SqlSecret,
+    database: Option<&str>,
     timeout_ms: u32,
 ) -> Result<PoolConnection<Postgres>> {
-    let options = target.connect_options(
+    let connect = target.connect_options(
         secret.username.expose_secret(),
         secret.password.expose_secret(),
+        database,
     )?;
-    let pool = pools.pool_for(credential_id, options)?;
+    let pool = pools.pool_for(credential_id, &connect.database, connect.options)?;
     let mut conn = tokio::time::timeout(POSTGRES_CONNECT_TIMEOUT, pool.acquire())
         .await
         .map_err(|_error| Error::internal("postgres connection timed out"))?
