@@ -36,7 +36,10 @@ impl Default for SignupConfig {
 }
 
 fn default_signup_allowed_email_patterns() -> Vec<String> {
-    vec!["*".to_owned()]
+    // Secure-by-default: only the owner may create a new browser user.
+    // Widen via a TOML layer (e.g. a Kubernetes ConfigMap) — set "*" for
+    // allow-all or add more patterns. The value is an anchored regex.
+    vec!["cagojeiger89@gmail\\.com".to_owned()]
 }
 
 /// Server + database configuration.
@@ -275,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn signup_defaults_to_allow_all_wildcard() -> opsgate_core::Result<()> {
+    fn signup_defaults_to_owner_email_only() -> opsgate_core::Result<()> {
         let config = load_from_sources(
             false,
             test_env(&[
@@ -296,7 +299,10 @@ mod tests {
             ]),
         )?;
 
-        assert_eq!(config.signup.allowed_email_patterns, ["*".to_owned()]);
+        assert_eq!(
+            config.signup.allowed_email_patterns,
+            ["cagojeiger89@gmail\\.com".to_owned()]
+        );
         Ok(())
     }
 
