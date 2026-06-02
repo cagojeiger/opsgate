@@ -1,4 +1,4 @@
-# `credential.update_http`
+# `credential_update_http`
 
 서피스:
 

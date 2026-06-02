@@ -1,9 +1,9 @@
-# api.call boundary 모델
+# api_call boundary 모델
 
-이 문서는 `api.call` 고유의 닫힌 boundary 모델을 정의합니다. `sql.query`는
+이 문서는 `api_call` 고유의 닫힌 boundary 모델을 정의합니다. `sql_query`는
 다른 실행 모델을 가지므로 여기서 다루지 않습니다.
 
-`api.call`의 목표는 LLM이 secret과 target URL 구성값(`origin`, `base_path`)을 보지 않은 채 등록된 HTTP
+`api_call`의 목표는 LLM이 secret과 target URL 구성값(`origin`, `base_path`)을 보지 않은 채 등록된 HTTP
 credential을 안전하게 사용하는 것입니다.
 
 닫힌 종료 상태는 네 가지뿐이어야 합니다.
@@ -53,7 +53,7 @@ pagination도 제공하지 않습니다.
 역할:
 
 ```text
-LLM이 준 입력이 api.call 표면에 들어와도 되는 모양인지 확인
+LLM이 준 입력이 api_call 표면에 들어와도 되는 모양인지 확인
 ```
 
 대상 입력:

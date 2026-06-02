@@ -29,16 +29,16 @@ pub struct ListCredentialsInput {
 pub struct RegisterHttpCredentialInput {
     /// Provider label for grouping, e.g. k8s, github, internal-api.
     pub provider: String,
-    /// Stable short name used later by api.call.
+    /// Stable short name used later by api_call.
     pub alias: String,
     /// Scheme and host only, e.g. https://k8s.example.com. Do not include request paths.
     pub origin: String,
-    /// Optional fixed path prefix hidden from api.call, e.g. /cluster-a.
+    /// Optional fixed path prefix hidden from api_call, e.g. /cluster-a.
     #[serde(default)]
     pub base_path: String,
-    /// Secret headers attached to every api.call. Values are sealed and never returned.
+    /// Secret headers attached to every api_call. Values are sealed and never returned.
     pub secret_headers: Vec<SecretHeaderInput>,
-    /// Human description shown by credential.list.
+    /// Human description shown by credential_list.
     #[serde(default)]
     pub description: String,
     /// Environment label such as local, dev, prod.
@@ -66,7 +66,7 @@ pub struct RegisterSqlCredentialInput {
     /// Provider label for grouping. Defaults to postgres when empty.
     #[serde(default)]
     pub provider: String,
-    /// Stable short name used later by sql.schema and sql.query.
+    /// Stable short name used later by sql_schema and sql_query.
     pub alias: String,
     /// Postgres target URL without username/password, e.g. postgres://db.example.com/app?sslmode=require.
     pub database_url: String,
@@ -74,7 +74,7 @@ pub struct RegisterSqlCredentialInput {
     pub username: String,
     /// Database password. Sealed and never returned.
     pub password: String,
-    /// Human description shown by credential.list.
+    /// Human description shown by credential_list.
     #[serde(default)]
     pub description: String,
     /// Environment label such as local, dev, prod.

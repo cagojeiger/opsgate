@@ -1,4 +1,4 @@
-# `credential.register_sql`
+# `credential_register_sql`
 
 서피스:
 
@@ -6,7 +6,7 @@
 /mcp/admin
 ```
 
-목적: 이후 `sql.query`에서 사용할 Postgres credential을 등록합니다.
+목적: 이후 `sql_query`에서 사용할 Postgres credential을 등록합니다.
 
 입력:
 
@@ -60,7 +60,7 @@
 
 - `provider`의 기본값은 `postgres`입니다.
 - `policy={}`는 유효합니다.
-- `database_url`은 기본 데이터베이스와 고정된 서버(host/port/options)를 선택합니다. `sql.schema`/`sql.query`의 `database` 옵션으로 같은 서버의 다른 DB를 선택할 수 있지만 host/port/user/password는 바뀌지 않습니다.
+- `database_url`은 기본 데이터베이스와 고정된 서버(host/port/options)를 선택합니다. `sql_schema`/`sql_query`의 `database` 옵션으로 같은 서버의 다른 DB를 선택할 수 있지만 host/port/user/password는 바뀌지 않습니다.
 - `database_url`에는 username이나 password를 포함하면 안 됩니다.
 - username/password는 봉인(sealed)되며 절대 반환하지 않습니다.
 - opsgate는 서버(host/port)와 계정(username/password)을 credential 등록 시점에 고정하고,
@@ -71,4 +71,4 @@
 - 기본적으로 `sslmode=require`가 필요합니다. `sslmode=verify-full`은 현재 guarded SQL target에서 지원하지 않으므로 거부됩니다. 내부/비TLS 연결은 `allow_private_network=true`와 `allow_insecure_transport=true`를 둘 다 켠 경우에만 허용됩니다.
 - 봉인된 secret과 target `database_url`은 등록 후 변경할 수 없습니다. secret rotation이나
   데이터베이스 대상 변경은 delete 후 재등록으로 처리하며,
-  `credential.update_sql`은 metadata와 policy만 수정합니다.
+  `credential_update_sql`은 metadata와 policy만 수정합니다.

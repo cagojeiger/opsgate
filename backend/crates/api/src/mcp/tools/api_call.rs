@@ -17,5 +17,5 @@ pub async fn call(
         .call(caller, input)
         .await
         .map(Json)
-        .map_err(|error| crate::mcp::tools::map_core_error("api.call", error))
+        .map_err(|error| crate::mcp::tools::map_core_error("api_call", error))
 }

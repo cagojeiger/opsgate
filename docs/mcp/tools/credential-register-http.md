@@ -1,4 +1,4 @@
-# `credential.register_http`
+# `credential_register_http`
 
 서피스:
 
@@ -6,7 +6,7 @@
 /mcp/admin
 ```
 
-목적: 이후 `api.call`에서 사용할 HTTP API credential을 등록합니다. LLM에는 전체 target URL을 노출하지 않고, 등록된 `origin`과 숨겨진 `base_path`에 런타임 `request_path`를 붙여 호출합니다.
+목적: 이후 `api_call`에서 사용할 HTTP API credential을 등록합니다. LLM에는 전체 target URL을 노출하지 않고, 등록된 `origin`과 숨겨진 `base_path`에 런타임 `request_path`를 붙여 호출합니다.
 
 입력:
 
@@ -44,7 +44,7 @@
 
 선택값이지만 중요한 필드:
 
-- `base_path`: target origin 뒤에 항상 붙는 숨겨진 기본 경로입니다. 생략하면 `/`입니다. 예를 들어 `base_path=/cluster-a`, `api.call.request_path=/api/v1/pods`이면 실제 호출 경로는 `/cluster-a/api/v1/pods`입니다.
+- `base_path`: target origin 뒤에 항상 붙는 숨겨진 기본 경로입니다. 생략하면 `/`입니다. 예를 들어 `base_path=/cluster-a`, `api_call.request_path=/api/v1/pods`이면 실제 호출 경로는 `/cluster-a/api/v1/pods`입니다.
 
 출력:
 
@@ -73,5 +73,5 @@
 - `allow_private_network=false`이면 private, loopback, link-local, 클라우드
   메타데이터 IP 대상을 차단합니다. 등록 시 DNS 검사와 런타임 target guard가 모두 적용됩니다.
 - 봉인된 secret과 target(`origin`, `base_path`, TLS CA)은 등록 후 변경할 수 없습니다. secret rotation이나 대상
-  변경은 delete 후 재등록으로 처리하며, `credential.update_http`는 metadata와
+  변경은 delete 후 재등록으로 처리하며, `credential_update_http`는 metadata와
   policy만 수정합니다.

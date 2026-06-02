@@ -25,7 +25,7 @@ const MAX_HEADER_VALUE_LEN: usize = 1024;
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ApiCallInput {
-    /// Alias from credential.list with category=http.
+    /// Alias from credential_list with category=http.
     pub alias: String,
     /// Short human reason for the call; stored in audit/history.
     pub purpose: String,
