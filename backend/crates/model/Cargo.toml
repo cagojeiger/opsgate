@@ -9,6 +9,7 @@ license.workspace = true
 opsgate-core.workspace = true
 serde.workspace = true
 uuid.workspace = true
+regex.workspace = true
 chrono.workspace = true
 secrecy.workspace = true
 url.workspace = true

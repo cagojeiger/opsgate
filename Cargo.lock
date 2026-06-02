@@ -1851,6 +1851,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "opsgate-core",
+ "regex",
  "schemars 1.2.1",
  "secrecy",
  "serde",

@@ -19,6 +19,26 @@ const DEFAULT_BIND_ADDR: &str = "0.0.0.0:9091";
 const DEFAULT_DB_MAX_CONNECTIONS: u32 = 10;
 const DEFAULT_JWKS_CACHE_TTL_SECS: u64 = 300;
 
+#[derive(Debug, Clone, Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
+pub struct SignupConfig {
+    /// Email patterns allowed to create a new browser user. "*" allows all. Empty blocks new signups.
+    #[serde(default = "default_signup_allowed_email_patterns")]
+    pub allowed_email_patterns: Vec<String>,
+}
+
+impl Default for SignupConfig {
+    fn default() -> Self {
+        Self {
+            allowed_email_patterns: default_signup_allowed_email_patterns(),
+        }
+    }
+}
+
+fn default_signup_allowed_email_patterns() -> Vec<String> {
+    vec!["*".to_owned()]
+}
+
 /// Server + database configuration.
 #[derive(Debug, Clone, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
@@ -52,6 +72,9 @@ pub struct Config {
     pub resource_url: String,
     /// Base64-encoded 32-byte master key for sealing credential secrets.
     pub master_key: SecretString,
+    /// Browser signup policy.
+    #[serde(default)]
+    pub signup: SignupConfig,
     /// Shared JWKS cache TTL.
     #[serde(
         rename = "jwks_cache_ttl_secs",
@@ -71,7 +94,9 @@ impl Config {
     /// - `config/default.toml`
     /// - `config/local.toml`
     ///
-    /// `OPSGATE_`-prefixed environment variables have highest precedence.
+    /// `OPSGATE_`-prefixed environment variables have highest precedence for scalar
+    /// settings. List policies such as `signup.allowed_email_patterns` are intended
+    /// for TOML files, e.g. a Kubernetes ConfigMap mounted at `config/local.toml`.
     pub fn load() -> Result<Self> {
         load_from_sources(true, Environment::with_prefix("OPSGATE"))
     }
@@ -197,6 +222,9 @@ mod tests {
             master_key: SecretString::from(
                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned(),
             ),
+            signup: super::SignupConfig {
+                allowed_email_patterns: vec!["*".to_owned()],
+            },
             jwks_cache_ttl: Duration::from_secs(300),
             secure_cookies: false,
         }
@@ -242,6 +270,67 @@ mod tests {
         assert_eq!(
             config.jwks_cache_ttl.as_secs(),
             super::DEFAULT_JWKS_CACHE_TTL_SECS
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn signup_defaults_to_allow_all_wildcard() -> opsgate_core::Result<()> {
+        let config = load_from_sources(
+            false,
+            test_env(&[
+                ("OPSGATE_DATABASE_URL", "postgres://env"),
+                ("OPSGATE_DATABASE_MIGRATE_URL", "postgres://owner"),
+                ("OPSGATE_AUTHGATE_URL", "https://auth.env"),
+                ("OPSGATE_PUBLIC_URL", "http://localhost:9091"),
+                ("OPSGATE_OAUTH_CLIENT_ID", "opsgate-web"),
+                (
+                    "OPSGATE_OAUTH_REDIRECT_URL",
+                    "http://localhost:9091/callback",
+                ),
+                ("OPSGATE_RESOURCE_URL", "http://localhost:9091/mcp"),
+                (
+                    "OPSGATE_MASTER_KEY",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                ),
+            ]),
+        )?;
+
+        assert_eq!(config.signup.allowed_email_patterns, ["*".to_owned()]);
+        Ok(())
+    }
+
+    #[test]
+    fn toml_layer_overrides_signup_allowed_email_patterns() -> opsgate_core::Result<()> {
+        let source = r#"
+            bind_addr = "127.0.0.1:9091"
+            database_url = "postgres://file"
+            database_migrate_url = "postgres://owner"
+            db_max_connections = 10
+            authgate_url = "https://auth.file"
+            public_url = "http://localhost:9091"
+            oauth_client_id = "opsgate-web"
+            oauth_redirect_url = "http://localhost:9091/callback"
+            resource_url = "http://localhost:9091/mcp"
+            master_key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+            jwks_cache_ttl_secs = 300
+
+            [signup]
+            allowed_email_patterns = ["^me@example\\.com$"]
+        "#;
+
+        let mut config = super::LayeredConfig::builder()
+            .add_source(super::File::from_str(source, super::FileFormat::Toml))
+            .build()
+            .map_err(super::map_config_error)?
+            .try_deserialize::<Config>()
+            .map_err(super::map_config_error)?;
+        config.validate().map_err(super::map_validation_error)?;
+        config.normalize();
+
+        assert_eq!(
+            config.signup.allowed_email_patterns,
+            ["^me@example\\.com$".to_owned()]
         );
         Ok(())
     }

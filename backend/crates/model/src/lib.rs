@@ -8,5 +8,7 @@ pub mod identity;
 pub mod user;
 
 pub use credential::{Credential, CredentialCategory};
-pub use identity::{Caller, Channel, IdentityError, ResolveAttrs, Resolver, UserStore};
+pub use identity::{
+    BrowserSignupPolicy, Caller, Channel, IdentityError, ResolveAttrs, Resolver, UserStore,
+};
 pub use user::User;
