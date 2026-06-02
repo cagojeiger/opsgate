@@ -113,6 +113,17 @@ JSONPath projection 결과는 `api_call`과 같은 공통 JSON 출력 규칙을 
 들어간다. `length()`는 배열/문자열/object 길이, `count()`는 매칭 node 개수를 반환한다.
 SQL의 column-oriented body에서 `$.status.count()`는 보통 컬럼 배열 node 1개를 세므로 행 수가 아니다. 행 수는 응답의 `row_count` 또는 `$.status.length()`를 사용한다.
 
+정규식 기반 부분 검색은 RFC 9535식 `search(value, pattern)` 함수를 사용한다. 전체 문자열 매칭은 `match(value, pattern)`를 사용한다.
+
+```json
+{
+  "alias": "analytics-db",
+  "purpose": "Read API payment statuses only",
+  "query": "select service, status from payments",
+  "jsonpath": ["$.service[?search(@, 'api')]"]
+}
+```
+
 ## Truncation
 
 `body`가 `max_bytes`를 넘으면 partial JSON을 반환하지 않는다. 대신 `body`는

@@ -2709,6 +2709,7 @@ checksum = "b992cea3194eea663ba99a042d61cea4bd1872da37021af56f6a37e0359b9d33"
 dependencies = [
  "inventory",
  "nom",
+ "regex",
  "serde",
  "serde_json",
  "serde_json_path_core",

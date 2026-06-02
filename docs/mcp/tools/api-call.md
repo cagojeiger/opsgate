@@ -156,6 +156,20 @@ JSONPath 예시:
 }
 ```
 
+정규식 기반 부분 검색은 RFC 9535식 `search(value, pattern)` 함수를 사용합니다. 전체 문자열 매칭은 `match(value, pattern)`를 사용합니다.
+
+```json
+{
+  "alias": "prod-k8s",
+  "purpose": "List API pod names",
+  "method": "GET",
+  "request_path": "/api/v1/pods",
+  "jsonpath": [
+    "$.items[?search(@.metadata.name, 'api')].metadata.name"
+  ]
+}
+```
+
 Projection 출력:
 
 ```json

@@ -48,7 +48,7 @@ pub struct ApiCallInput {
     /// Content-Type for body. Defaults to application/json when body is present.
     #[serde(default)]
     pub content_type: String,
-    /// JSONPath projections. length() returns array/string/object length; count() returns matched node count.
+    /// JSONPath projections. Use RFC 9535 syntax; regex filters use search(value, pattern) for partial search or match(value, pattern) for full-string match. length()/count() suffixes are supported.
     #[serde(default)]
     pub jsonpath: Vec<String>,
     /// Response byte budget after JSONPath projection. Lower values force concise output.
