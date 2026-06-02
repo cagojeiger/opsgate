@@ -33,8 +33,8 @@ services:
       OPSGATE_RESOURCE_URL: http://localhost:9091/mcp
       OPSGATE_JWKS_CACHE_TTL_SECS: 300
       OPSGATE_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-    ports:
-      - "9091:9091"
+    expose:
+      - "9091"
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,6 +43,18 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    restart: unless-stopped
+
+  # Local reverse proxy. It owns the public 9091 port so the api service can
+  # be scaled with `docker compose up -d --scale api=2` without port conflicts.
+  proxy:
+    image: nginx:1.27-alpine
+    ports:
+      - "9091:9091"
+    volumes:
+      - ./deploy/nginx/opsgate.conf:/etc/nginx/conf.d/opsgate.conf:ro
+    depends_on:
+      - api
     restart: unless-stopped
 
   # Frontend (Next.js) — uncomment once frontend/ exists.
