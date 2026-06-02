@@ -17,6 +17,9 @@ services:
     restart: unless-stopped
 
   api:
+    # Local default runs two replicas so MCP/API horizontal scaling is exercised
+    # during normal docker compose development.
+    scale: 2
     build:
       context: .
       dockerfile: backend/Dockerfile
