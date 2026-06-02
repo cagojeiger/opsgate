@@ -29,6 +29,8 @@ async fn main() -> anyhow::Result<()> {
     init_tracing();
 
     let config = Config::load()?;
+    let browser_signup =
+        opsgate_model::BrowserSignupPolicy::from_patterns(&config.signup.allowed_email_patterns)?;
 
     // fail-fast: install the SIGTERM handler during boot so a failure here
     // aborts startup instead of leaving us without graceful shutdown.
@@ -51,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
         .build()?;
     let jwks_url = format!("{}/keys", config.authgate_url);
     let user_repo = opsgate_db::UserRepo::new(pool.clone());
-    let resolver = opsgate_model::Resolver::new(user_repo);
+    let resolver = opsgate_model::Resolver::new(user_repo, browser_signup);
     let credential_repo = opsgate_db::CredentialRepo::new(pool.clone());
     let api_call_history = opsgate_db::ApiCallHistoryRepo::new(pool.clone());
     let sql_query_history = opsgate_db::SqlQueryHistoryRepo::new(pool.clone());

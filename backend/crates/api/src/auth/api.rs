@@ -89,6 +89,8 @@ pub(crate) async fn resolve_api_caller(
 fn map_identity_error(error: IdentityError) -> AuthError {
     match error {
         IdentityError::NotRegistered => AuthError::NotRegistered,
+        // Browser signup policy is not part of API/MCP bearer verification.
+        IdentityError::SignupNotAllowed => AuthError::Internal,
         IdentityError::Inactive => AuthError::Inactive,
         IdentityError::Store(_error) => AuthError::Internal,
     }

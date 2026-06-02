@@ -149,6 +149,7 @@ mod tests {
             master_key: SecretString::from(
                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned(),
             ),
+            signup: crate::config::SignupConfig::default(),
             jwks_cache_ttl: Duration::from_secs(300),
             secure_cookies: false,
         }

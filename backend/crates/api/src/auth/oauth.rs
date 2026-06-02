@@ -174,6 +174,26 @@ pub(crate) async fn callback(
             );
             (jar, html_page(StatusCode::OK, "Login complete", &body)).into_response()
         }
+        Err(IdentityError::SignupNotAllowed) => {
+            crate::audit::auth::record_signup(
+                &state.audit,
+                None,
+                crate::audit::AuditOutcome::Denied,
+                Some("signup_not_allowed"),
+                &attrs,
+                &metadata,
+            )
+            .await;
+            (
+                jar,
+                html_page(
+                    StatusCode::FORBIDDEN,
+                    "Login forbidden",
+                    "signup is not allowed for this email",
+                ),
+            )
+                .into_response()
+        }
         Err(IdentityError::Inactive) => {
             crate::audit::auth::record_signup(
                 &state.audit,

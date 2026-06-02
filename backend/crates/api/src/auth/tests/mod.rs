@@ -162,6 +162,7 @@ fn state_with_resource_url(
         oauth_redirect_url: "http://localhost:9091/callback".to_owned(),
         resource_url: resource_url.to_owned(),
         master_key: SecretString::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
+        signup: crate::config::SignupConfig::default(),
         jwks_cache_ttl: Duration::from_secs(300),
         secure_cookies: false,
     });
@@ -240,6 +241,7 @@ fn test_config(resource_url: &str) -> crate::config::Config {
         oauth_redirect_url: "http://localhost:9091/callback".to_owned(),
         resource_url: resource_url.to_owned(),
         master_key: SecretString::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
+        signup: crate::config::SignupConfig::default(),
         jwks_cache_ttl: Duration::from_secs(300),
         secure_cookies: false,
     }
