@@ -54,6 +54,8 @@
 {
   "status_code": 200,
   "headers": {"content-type": "application/json"},
+  "body_mode": "jsonpath_projection",
+  "output_state": "ok",
   "body": {
     "$.items[*].metadata.name": ["api", "worker"],
     "$.items[*].status.phase": ["Running", "Running"]
@@ -85,6 +87,11 @@
   error kind와 짧은 safe message만 history에 저장합니다.
 - history는 JSONPath 표현식을 projected value가 아니라 `projection_keys`로
   저장합니다.
+- `body_mode`는 `raw_json`, `jsonpath_projection`, `omitted` 중 하나입니다.
+- `output_state`는 `ok`, `need_jsonpath`, `need_narrow_jsonpath`,
+  `need_narrow_request` 중 하나입니다.
+- `truncation_kind`는 `body_mode=omitted`일 때 `output_bytes`,
+  `projection_bytes`, `transport_cap` 중 하나입니다.
 - `truncated`는 top-level 필드로도 반환됩니다.
 - `original_bytes`는 일반 응답에서는 compact 전 원본 body 크기이고, hard cap 초과 시에는 전체 크기 또는 확인된 최소 크기입니다.
 - `jsonpath`는 JSONPath 표현식을 사용하며 flat-keyed object를 반환합니다.
@@ -105,6 +112,9 @@ Truncation:
 ```json
 {
   "status_code": 200,
+  "body_mode": "omitted",
+  "output_state": "need_jsonpath",
+  "truncation_kind": "output_bytes",
   "body": null,
   "truncated": true,
   "original_bytes": 287000,

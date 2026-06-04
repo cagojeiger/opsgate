@@ -1,5 +1,6 @@
 use crate::llm_output::{
-    JsonOutput, JsonOutputOptions, More, MoreOptions, build_json_output_from_value,
+    BodyMode, JsonOutput, JsonOutputOptions, More, MoreOptions, OutputState, TruncationKind,
+    build_json_output_from_value,
 };
 use opsgate_core::{Error, Result};
 use schemars::JsonSchema;
@@ -10,10 +11,16 @@ use super::input::{MAX_MAX_BYTES, NormalizedInput};
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct SqlQueryOutput {
+    pub body_mode: BodyMode,
+    pub output_state: OutputState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncation_kind: Option<TruncationKind>,
     #[schemars(schema_with = "opsgate_core::schema::json_value_schema")]
     pub body: Value,
     /// Rows fetched from Postgres after max_rows enforcement, before JSONPath or byte truncation.
     pub row_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub row_limit: Option<RowLimit>,
     pub truncated: bool,
     pub original_bytes: usize,
     pub returned_bytes: usize,
@@ -22,6 +29,12 @@ pub struct SqlQueryOutput {
     pub more: Option<More>,
     #[serde(skip)]
     pub column_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
+pub struct RowLimit {
+    pub hit: bool,
+    pub max_rows: i32,
 }
 
 pub(super) fn build_column_output(
@@ -36,8 +49,15 @@ pub(super) fn build_column_output(
     let more = finalize_more(shaped.more, truncated, input);
 
     Ok(SqlQueryOutput {
+        body_mode: shaped.body_mode,
+        output_state: shaped.output_state,
+        truncation_kind: shaped.truncation_kind,
         body: shaped.body,
         row_count,
+        row_limit: truncated.then(|| RowLimit {
+            hit: true,
+            max_rows: input.max_rows,
+        }),
         truncated: truncated_total,
         original_bytes: shaped.original_bytes,
         returned_bytes: shaped.returned_bytes,
@@ -98,6 +118,7 @@ fn build_shaped_body(body: Value, input: &NormalizedInput) -> Result<JsonOutput>
             json_paths: input.jsonpath.clone(),
             transport_truncated: false,
             original_bytes: None,
+            source_body_mode: BodyMode::ColumnarJson,
         },
     )
 }
@@ -157,6 +178,10 @@ mod tests {
         let output = build_column_output(rows, &input(), false)?;
 
         assert_eq!(output.row_count, 2);
+        assert_eq!(output.body_mode, BodyMode::ColumnarJson);
+        assert_eq!(output.output_state, OutputState::Ok);
+        assert_eq!(output.truncation_kind, None);
+        assert_eq!(output.row_limit, None);
         assert_eq!(
             output.column_names,
             vec!["status".to_owned(), "total".to_owned(), "region".to_owned()]
@@ -180,6 +205,13 @@ mod tests {
         let output = build_column_output(rows, &input, true)?;
 
         assert!(output.truncated);
+        assert_eq!(
+            output.row_limit,
+            Some(RowLimit {
+                hit: true,
+                max_rows: 2,
+            })
+        );
         let more = output.more.ok_or_else(|| Error::internal("missing more"))?;
         assert_eq!(more.options.preferred_next, "max_rows");
         assert!(more.options.suggested_jsonpath.is_empty());
@@ -238,6 +270,9 @@ mod tests {
             .body
             .get("$.status")
             .ok_or_else(|| Error::internal("missing projected column"))?;
+        assert_eq!(output.body_mode, BodyMode::JsonpathProjection);
+        assert_eq!(output.output_state, OutputState::Ok);
+        assert_eq!(output.truncation_kind, None);
         assert_eq!(projected, &serde_json::json!([["failed", "paid"]]));
         assert_eq!(output.row_count, 2);
         assert_eq!(

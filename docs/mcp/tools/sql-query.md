@@ -61,6 +61,8 @@ paid   | 900
 
 ```json
 {
+  "body_mode": "columnar_json",
+  "output_state": "ok",
   "body": {
     "status": ["failed", "paid"],
     "total": [42, 900]
@@ -97,6 +99,8 @@ paid   | 900
 
 ```json
 {
+  "body_mode": "jsonpath_projection",
+  "output_state": "ok",
   "body": {
     "$.status": [["failed", "paid"]]
   },
@@ -112,6 +116,11 @@ JSONPath projection 결과는 `api_call`과 같은 공통 JSON 출력 규칙을 
 각 path는 결과 객체의 key가 되고, 일반 selection은 매칭된 node 목록이 배열로
 들어간다. `length()`는 배열/문자열/object 길이, `count()`는 매칭 node 개수를 반환한다.
 SQL의 column-oriented body에서 `$.status.count()`는 보통 컬럼 배열 node 1개를 세므로 행 수가 아니다. 행 수는 응답의 `row_count` 또는 `$.status.length()`를 사용한다.
+
+`body_mode`는 기본 결과에서는 `columnar_json`, JSONPath를 사용한 결과에서는
+`jsonpath_projection`, byte budget 때문에 body를 생략하면 `omitted`가 된다.
+`output_state`는 정상 반환이면 `ok`, JSONPath가 필요하면 `need_jsonpath`,
+기존 JSONPath를 더 좁혀야 하면 `need_narrow_jsonpath`가 된다.
 
 정규식 기반 부분 검색은 RFC 9535식 `search(value, pattern)` 함수를 사용한다. 전체 문자열 매칭은 `match(value, pattern)`를 사용한다.
 
@@ -131,6 +140,9 @@ SQL의 column-oriented body에서 `$.status.count()`는 보통 컬럼 배열 nod
 
 ```json
 {
+  "body_mode": "omitted",
+  "output_state": "need_jsonpath",
+  "truncation_kind": "output_bytes",
   "body": null,
   "row_count": 100,
   "truncated": true,
@@ -153,6 +165,10 @@ SQL의 column-oriented body에서 `$.status.count()`는 보통 컬럼 배열 nod
 
 - SQL 행 수가 `max_rows`를 넘어 잘림
 - JSON 출력이 `max_bytes`를 넘어 `body=null`로 대체됨
+
+SQL 행 수가 `max_rows`를 넘은 경우에는 `row_limit` sidecar가 함께 반환될 수 있다.
+단, byte overflow로 `body=null`이 된 경우에는 `more.options.preferred_next`의
+byte/projection hint가 우선이다.
 
 규칙:
 

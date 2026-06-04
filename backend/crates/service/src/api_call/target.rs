@@ -82,6 +82,7 @@ pub(super) async fn execute_target_call(
             json_paths: input.jsonpath.clone(),
             transport_truncated,
             original_bytes: Some(original_bytes),
+            source_body_mode: crate::llm_output::BodyMode::RawJson,
         },
     )
     .map_err(|error| {
@@ -90,6 +91,9 @@ pub(super) async fn execute_target_call(
     Ok(ApiCallOutput {
         status_code,
         headers,
+        body_mode: shaped.body_mode,
+        output_state: shaped.output_state,
+        truncation_kind: shaped.truncation_kind,
         body: shaped.body,
         truncated: shaped.truncated,
         original_bytes: shaped.original_bytes,

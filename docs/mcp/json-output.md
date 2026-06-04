@@ -25,6 +25,8 @@ target 응답이 유효한 JSON이고 compact JSON 크기가 `max_bytes` 안에 
 ```json
 {
   "status_code": 200,
+  "body_mode": "raw_json",
+  "output_state": "ok",
   "body": {
     "kind": "PodList",
     "items": []
@@ -50,6 +52,43 @@ null
 JSON number는 `UseNumber`로 decode합니다. 큰 숫자 ID가 `float64`로 강제
 변환되면서 정밀도가 깨지는 것을 피하기 위한 선택입니다.
 
+## 출력 상태 필드
+
+`api_call`과 `sql_query`의 JSON body 계열 출력은 기존 `body`, `truncated`,
+`more`를 유지하면서 다음 상태 필드를 함께 반환합니다.
+
+```text
+body_mode         무엇을 body에 담았는지 표시한다.
+output_state      다음 행동이 필요한지 표시한다.
+truncation_kind   body가 omitted일 때 왜 빠졌는지 표시한다.
+```
+
+`body_mode`:
+
+```text
+raw_json              api_call target의 원본 JSON
+columnar_json         sql_query rows를 컬럼별 배열로 전치한 JSON
+jsonpath_projection   JSONPath projection 결과
+omitted               크기/transport cap 때문에 body=null
+```
+
+`output_state`:
+
+```text
+ok
+need_jsonpath
+need_narrow_jsonpath
+need_narrow_request
+```
+
+`truncation_kind`:
+
+```text
+output_bytes       projection 없이 만든 JSON body가 max_bytes를 초과
+projection_bytes   JSONPath projection 결과도 max_bytes를 초과
+transport_cap      target body가 hard read cap을 초과해 완전 JSON을 읽지 못함
+```
+
 ## Projection
 
 큰 target JSON은 `jsonpath`로 필요한 값만 뽑는 것이 기본 전략입니다.
@@ -69,6 +108,8 @@ JSON number는 `UseNumber`로 decode합니다. 큰 숫자 ID가 `float64`로 강
 
 ```json
 {
+  "body_mode": "jsonpath_projection",
+  "output_state": "ok",
   "body": {
     "$.items[*].metadata.name": ["api", "worker"],
     "$.items[*].status.phase": ["Running", "Pending"]
@@ -128,6 +169,9 @@ target JSON 또는 SQL 결과 JSON이 호출자의 `max_bytes`보다 크면 전�
 ```json
 {
   "status_code": 200,
+  "body_mode": "omitted",
+  "output_state": "need_jsonpath",
+  "truncation_kind": "output_bytes",
   "body": null,
   "truncated": true,
   "original_bytes": 287000,
@@ -156,6 +200,7 @@ target JSON 또는 SQL 결과 JSON이 호출자의 `max_bytes`보다 크면 전�
 
 ```text
 body=null
+body_mode=omitted
 more.truncated=true
 partial JSON 문자열 반환 금지
 response body audit/history 저장 금지
@@ -165,7 +210,8 @@ response body audit/history 저장 금지
 target 응답이 hard read cap을 넘는 경우에도, 불완전한 JSON prefix를
 파싱하려고 하지 않습니다. 대신 truncated envelope을 반환합니다. 이때
 `original_bytes`는 Content-Length가 있으면 전체 크기이고, 없으면 cap을 넘었다는
-사실을 확인한 최소 크기일 수 있습니다.
+사실을 확인한 최소 크기일 수 있습니다. 이 경우 `output_state=need_narrow_request`,
+`truncation_kind=transport_cap`이며 preview는 만들지 않습니다.
 
 ## 점진적 호출 프로토콜
 
