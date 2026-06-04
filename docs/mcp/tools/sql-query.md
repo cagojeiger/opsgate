@@ -62,7 +62,7 @@ paid   | 900
 ```json
 {
   "body_mode": "columnar_json",
-  "output_state": "ok",
+  "body_state": "returned",
   "body": {
     "status": ["failed", "paid"],
     "total": [42, 900]
@@ -100,7 +100,7 @@ paid   | 900
 ```json
 {
   "body_mode": "jsonpath_projection",
-  "output_state": "ok",
+  "body_state": "returned",
   "body": {
     "$.status": [["failed", "paid"]]
   },
@@ -118,9 +118,9 @@ JSONPath projection 결과는 `api_call`과 같은 공통 JSON 출력 규칙을 
 SQL의 column-oriented body에서 `$.status.count()`는 보통 컬럼 배열 node 1개를 세므로 행 수가 아니다. 행 수는 응답의 `row_count` 또는 `$.status.length()`를 사용한다.
 
 `body_mode`는 기본 결과에서는 `columnar_json`, JSONPath를 사용한 결과에서는
-`jsonpath_projection`, byte budget 때문에 body를 생략하면 `omitted`가 된다.
-`output_state`는 정상 반환이면 `ok`, JSONPath가 필요하면 `need_jsonpath`,
-기존 JSONPath를 더 좁혀야 하면 `need_narrow_jsonpath`가 된다.
+`jsonpath_projection`이 된다. `body_state`는 정상 반환이면 `returned`,
+byte budget 때문에 body를 생략하면 `omitted`가 된다. `omit_reason`은 생략 원인이
+원본/columnar JSON 크기인지, projection 결과 크기인지를 구분한다.
 
 정규식 기반 부분 검색은 RFC 9535식 `search(value, pattern)` 함수를 사용한다. 전체 문자열 매칭은 `match(value, pattern)`를 사용한다.
 
@@ -140,9 +140,9 @@ SQL의 column-oriented body에서 `$.status.count()`는 보통 컬럼 배열 nod
 
 ```json
 {
-  "body_mode": "omitted",
-  "output_state": "need_jsonpath",
-  "truncation_kind": "output_bytes",
+  "body_mode": "columnar_json",
+  "body_state": "omitted",
+  "omit_reason": "output_bytes",
   "body": null,
   "row_count": 100,
   "truncated": true,
@@ -152,7 +152,7 @@ SQL의 column-oriented body에서 `$.status.count()`는 보통 컬럼 배열 nod
   "more": {
     "truncated": true,
     "options": {
-      "preferred_next": "jsonpath",
+      "next_action": "jsonpath",
       "suggested_jsonpath": ["$.id", "$.status"],
       "suggested_max_bytes": 8192
     },
@@ -167,7 +167,7 @@ SQL의 column-oriented body에서 `$.status.count()`는 보통 컬럼 배열 nod
 - JSON 출력이 `max_bytes`를 넘어 `body=null`로 대체됨
 
 SQL 행 수가 `max_rows`를 넘은 경우에는 `row_limit` sidecar가 함께 반환될 수 있다.
-단, byte overflow로 `body=null`이 된 경우에는 `more.options.preferred_next`의
+단, byte overflow로 `body=null`이 된 경우에는 `more.options.next_action`의
 byte/projection hint가 우선이다.
 
 규칙:
@@ -210,5 +210,5 @@ LLM 가이드:
   인덱스의 값들을 하나의 행으로 해석한다.
 - 특정 컬럼이나 큰 결과의 일부만 필요하면 `jsonpath`를 사용한다. 행 수는 `row_count`나
   `$.column.length()`를 사용하고, `$.column.count()`를 행 수로 해석하지 않는다.
-- `body=null`이고 `more.options.preferred_next=jsonpath`이면 `max_bytes`부터
+- `body=null`이고 `more.options.next_action=jsonpath`이면 `max_bytes`부터
   올리지 말고 `suggested_jsonpath` 또는 `more.preview.paths`로 먼저 좁힌다.

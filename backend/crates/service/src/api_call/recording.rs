@@ -346,9 +346,9 @@ mod tests {
         let output = ApiCallOutput {
             status_code: 200,
             headers: BTreeMap::new(),
-            body_mode: crate::llm_output::BodyMode::Omitted,
-            output_state: crate::llm_output::OutputState::NeedNarrowRequest,
-            truncation_kind: Some(crate::llm_output::TruncationKind::TransportCap),
+            body_mode: crate::llm_output::BodyMode::RawJson,
+            body_state: crate::llm_output::BodyState::Omitted,
+            omit_reason: Some(crate::llm_output::OmitReason::TransportCap),
             body: Value::Null,
             truncated: true,
             original_bytes: MAX_MAX_BYTES + 1,

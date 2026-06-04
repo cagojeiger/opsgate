@@ -1,6 +1,6 @@
 use crate::llm_output::{
-    BodyMode, JsonOutput, JsonOutputOptions, More, MoreOptions, OutputState, TruncationKind,
-    build_json_output_from_value,
+    BodyMode, BodyState, JsonOutput, JsonOutputOptions, More, MoreOptions, NextAction, OmitReason,
+    SourceBodyMode, build_json_output_from_value,
 };
 use opsgate_core::{Error, Result};
 use schemars::JsonSchema;
@@ -12,9 +12,9 @@ use super::input::{MAX_MAX_BYTES, NormalizedInput};
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct SqlQueryOutput {
     pub body_mode: BodyMode,
-    pub output_state: OutputState,
+    pub body_state: BodyState,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub truncation_kind: Option<TruncationKind>,
+    pub omit_reason: Option<OmitReason>,
     #[schemars(schema_with = "opsgate_core::schema::json_value_schema")]
     pub body: Value,
     /// Rows fetched from Postgres after max_rows enforcement, before JSONPath or byte truncation.
@@ -50,8 +50,8 @@ pub(super) fn build_column_output(
 
     Ok(SqlQueryOutput {
         body_mode: shaped.body_mode,
-        output_state: shaped.output_state,
-        truncation_kind: shaped.truncation_kind,
+        body_state: shaped.body_state,
+        omit_reason: shaped.omit_reason,
         body: shaped.body,
         row_count,
         row_limit: truncated.then(|| RowLimit {
@@ -98,8 +98,9 @@ fn row_truncation_more(input: &NormalizedInput) -> More {
     More {
         truncated: true,
         options: MoreOptions {
-            preferred_next: "max_rows".to_owned(),
-            ..MoreOptions::default()
+            next_action: NextAction::MaxRows,
+            suggested_jsonpath: Vec::new(),
+            suggested_max_bytes: None,
         },
         hints: vec![format!(
             "row limit reached (max_rows={}); raise max_rows up to policy, or narrow with WHERE / aggregate (count, group by) / keyset pagination",
@@ -118,7 +119,7 @@ fn build_shaped_body(body: Value, input: &NormalizedInput) -> Result<JsonOutput>
             json_paths: input.jsonpath.clone(),
             transport_truncated: false,
             original_bytes: None,
-            source_body_mode: BodyMode::ColumnarJson,
+            source_body_mode: SourceBodyMode::ColumnarJson,
         },
     )
 }
@@ -179,8 +180,8 @@ mod tests {
 
         assert_eq!(output.row_count, 2);
         assert_eq!(output.body_mode, BodyMode::ColumnarJson);
-        assert_eq!(output.output_state, OutputState::Ok);
-        assert_eq!(output.truncation_kind, None);
+        assert_eq!(output.body_state, BodyState::Returned);
+        assert_eq!(output.omit_reason, None);
         assert_eq!(output.row_limit, None);
         assert_eq!(
             output.column_names,
@@ -213,7 +214,7 @@ mod tests {
             })
         );
         let more = output.more.ok_or_else(|| Error::internal("missing more"))?;
-        assert_eq!(more.options.preferred_next, "max_rows");
+        assert_eq!(more.options.next_action, NextAction::MaxRows);
         assert!(more.options.suggested_jsonpath.is_empty());
         assert!(
             more.hints
@@ -238,8 +239,9 @@ mod tests {
         let byte_more = More {
             truncated: true,
             options: MoreOptions {
-                preferred_next: "jsonpath".to_owned(),
-                ..MoreOptions::default()
+                next_action: NextAction::Jsonpath,
+                suggested_jsonpath: Vec::new(),
+                suggested_max_bytes: None,
             },
             hints: vec!["response JSON is too large".to_owned()],
             preview: None,
@@ -247,7 +249,7 @@ mod tests {
         let more = finalize_more(Some(byte_more), true, &input())
             .ok_or_else(|| Error::internal("more present"))?;
 
-        assert_eq!(more.options.preferred_next, "jsonpath");
+        assert_eq!(more.options.next_action, NextAction::Jsonpath);
         assert!(
             more.hints
                 .iter()
@@ -271,8 +273,8 @@ mod tests {
             .get("$.status")
             .ok_or_else(|| Error::internal("missing projected column"))?;
         assert_eq!(output.body_mode, BodyMode::JsonpathProjection);
-        assert_eq!(output.output_state, OutputState::Ok);
-        assert_eq!(output.truncation_kind, None);
+        assert_eq!(output.body_state, BodyState::Returned);
+        assert_eq!(output.omit_reason, None);
         assert_eq!(projected, &serde_json::json!([["failed", "paid"]]));
         assert_eq!(output.row_count, 2);
         assert_eq!(

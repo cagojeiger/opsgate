@@ -26,7 +26,7 @@ target 응답이 유효한 JSON이고 compact JSON 크기가 `max_bytes` 안에 
 {
   "status_code": 200,
   "body_mode": "raw_json",
-  "output_state": "ok",
+  "body_state": "returned",
   "body": {
     "kind": "PodList",
     "items": []
@@ -58,9 +58,9 @@ JSON number는 `UseNumber`로 decode합니다. 큰 숫자 ID가 `float64`로 강
 `more`를 유지하면서 다음 상태 필드를 함께 반환합니다.
 
 ```text
-body_mode         무엇을 body에 담았는지 표시한다.
-output_state      다음 행동이 필요한지 표시한다.
-truncation_kind   body가 omitted일 때 왜 빠졌는지 표시한다.
+body_mode      body의 JSON shape를 표시한다.
+body_state     body가 반환됐는지 생략됐는지 표시한다.
+omit_reason    body_state=omitted일 때 왜 빠졌는지 표시한다.
 ```
 
 `body_mode`:
@@ -69,19 +69,16 @@ truncation_kind   body가 omitted일 때 왜 빠졌는지 표시한다.
 raw_json              api_call target의 원본 JSON
 columnar_json         sql_query rows를 컬럼별 배열로 전치한 JSON
 jsonpath_projection   JSONPath projection 결과
-omitted               크기/transport cap 때문에 body=null
 ```
 
-`output_state`:
+`body_state`:
 
 ```text
-ok
-need_jsonpath
-need_narrow_jsonpath
-need_narrow_request
+returned
+omitted
 ```
 
-`truncation_kind`:
+`omit_reason`:
 
 ```text
 output_bytes       projection 없이 만든 JSON body가 max_bytes를 초과
@@ -109,7 +106,7 @@ transport_cap      target body가 hard read cap을 초과해 완전 JSON을 읽�
 ```json
 {
   "body_mode": "jsonpath_projection",
-  "output_state": "ok",
+  "body_state": "returned",
   "body": {
     "$.items[*].metadata.name": ["api", "worker"],
     "$.items[*].status.phase": ["Running", "Pending"]
@@ -169,9 +166,9 @@ target JSON 또는 SQL 결과 JSON이 호출자의 `max_bytes`보다 크면 전�
 ```json
 {
   "status_code": 200,
-  "body_mode": "omitted",
-  "output_state": "need_jsonpath",
-  "truncation_kind": "output_bytes",
+  "body_mode": "raw_json",
+  "body_state": "omitted",
+  "omit_reason": "output_bytes",
   "body": null,
   "truncated": true,
   "original_bytes": 287000,
@@ -180,7 +177,7 @@ target JSON 또는 SQL 결과 JSON이 호출자의 `max_bytes`보다 크면 전�
   "more": {
     "truncated": true,
     "options": {
-      "preferred_next": "jsonpath",
+      "next_action": "jsonpath",
       "suggested_jsonpath": [
         "$.items[*].metadata.name",
         "$.items[*].status.phase"
@@ -200,7 +197,7 @@ target JSON 또는 SQL 결과 JSON이 호출자의 `max_bytes`보다 크면 전�
 
 ```text
 body=null
-body_mode=omitted
+body_state=omitted
 more.truncated=true
 partial JSON 문자열 반환 금지
 response body audit/history 저장 금지
@@ -210,30 +207,33 @@ response body audit/history 저장 금지
 target 응답이 hard read cap을 넘는 경우에도, 불완전한 JSON prefix를
 파싱하려고 하지 않습니다. 대신 truncated envelope을 반환합니다. 이때
 `original_bytes`는 Content-Length가 있으면 전체 크기이고, 없으면 cap을 넘었다는
-사실을 확인한 최소 크기일 수 있습니다. 이 경우 `output_state=need_narrow_request`,
-`truncation_kind=transport_cap`이며 preview는 만들지 않습니다.
+사실을 확인한 최소 크기일 수 있습니다. 이 경우 `omit_reason=transport_cap`,
+`more.options.next_action=narrow_request`이며 preview는 만들지 않습니다.
 
 ## 점진적 호출 프로토콜
 
 `api_call`과 `sql_query`는 큰 JSON을 한 번에 많이 보여주는 도구가 아닙니다.
 LLM이 작은 호출에서 시작해서 필요한 정보만 점진적으로 가져오도록 설계합니다.
 
-`more.options.preferred_next`는 다음 호출의 우선 행동입니다.
+`more.options.next_action`은 다음 호출의 우선 행동입니다.
 
 ```text
 jsonpath          projection 없이 큰 응답을 받았으니 JSONPath로 좁힌다.
 narrow_jsonpath   이미 JSONPath를 썼지만 결과가 아직 크니 표현식을 더 좁힌다.
+narrow_request    target body가 hard read cap을 넘었으니 request 자체를 좁힌다.
+max_rows          SQL row limit에 걸렸으니 max_rows/WHERE/aggregate를 조정한다.
 ```
 
 규칙:
 
 ```text
 1. body=null이면 max_bytes부터 올리지 않는다.
-2. preferred_next=jsonpath이면 suggested_jsonpath에서 1-3개만 골라 재호출한다.
+2. next_action=jsonpath이면 suggested_jsonpath에서 1-3개만 골라 재호출한다.
 3. suggested_jsonpath가 없으면 more.preview.paths에서 scalar path를 고른다.
-4. preferred_next=narrow_jsonpath이면 expression 개수, slice 범위, filter 조건을 줄인다.
-5. max_bytes 증가는 projection 결과도 필요한데 여전히 큰 경우의 마지막 수단이다.
-6. hard read cap 초과 시 max_bytes 증가는 도움이 되지 않는다.
+4. next_action=narrow_jsonpath이면 expression 개수, slice 범위, filter 조건을 줄인다.
+5. next_action=narrow_request이면 request path/query/body나 upstream 조회 범위를 줄인다.
+6. max_bytes 증가는 projection 결과도 필요한데 여전히 큰 경우의 마지막 수단이다.
+7. hard read cap 초과 시 max_bytes 증가는 도움이 되지 않는다.
 ```
 
 예시:
@@ -243,7 +243,7 @@ narrow_jsonpath   이미 JSONPath를 썼지만 결과가 아직 크니 표현식
   "more": {
     "truncated": true,
     "options": {
-      "preferred_next": "jsonpath",
+      "next_action": "jsonpath",
       "suggested_jsonpath": [
         "$.items[*].metadata.name",
         "$.items[*].status.phase"

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::llm_output::{BodyMode, More, OutputState, TruncationKind};
+use crate::llm_output::{BodyMode, BodyState, More, OmitReason};
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
@@ -11,9 +11,9 @@ pub struct ApiCallOutput {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub headers: BTreeMap<String, String>,
     pub body_mode: BodyMode,
-    pub output_state: OutputState,
+    pub body_state: BodyState,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub truncation_kind: Option<TruncationKind>,
+    pub omit_reason: Option<OmitReason>,
     #[schemars(schema_with = "opsgate_core::schema::json_value_schema")]
     pub body: Value,
     pub truncated: bool,

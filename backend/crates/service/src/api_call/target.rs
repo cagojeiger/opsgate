@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use crate::llm_output::{JsonOutputOptions, build_json_output};
+use crate::llm_output::{JsonOutputOptions, SourceBodyMode, build_json_output};
 use opsgate_core::{Error, Result};
 use opsgate_model::credential::{Credential, CredentialTarget, SecretHeader};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
@@ -82,7 +82,7 @@ pub(super) async fn execute_target_call(
             json_paths: input.jsonpath.clone(),
             transport_truncated,
             original_bytes: Some(original_bytes),
-            source_body_mode: crate::llm_output::BodyMode::RawJson,
+            source_body_mode: SourceBodyMode::RawJson,
         },
     )
     .map_err(|error| {
@@ -92,8 +92,8 @@ pub(super) async fn execute_target_call(
         status_code,
         headers,
         body_mode: shaped.body_mode,
-        output_state: shaped.output_state,
-        truncation_kind: shaped.truncation_kind,
+        body_state: shaped.body_state,
+        omit_reason: shaped.omit_reason,
         body: shaped.body,
         truncated: shaped.truncated,
         original_bytes: shaped.original_bytes,

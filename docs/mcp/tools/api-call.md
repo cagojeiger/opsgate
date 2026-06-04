@@ -55,7 +55,7 @@
   "status_code": 200,
   "headers": {"content-type": "application/json"},
   "body_mode": "jsonpath_projection",
-  "output_state": "ok",
+  "body_state": "returned",
   "body": {
     "$.items[*].metadata.name": ["api", "worker"],
     "$.items[*].status.phase": ["Running", "Running"]
@@ -87,10 +87,9 @@
   error kind와 짧은 safe message만 history에 저장합니다.
 - history는 JSONPath 표현식을 projected value가 아니라 `projection_keys`로
   저장합니다.
-- `body_mode`는 `raw_json`, `jsonpath_projection`, `omitted` 중 하나입니다.
-- `output_state`는 `ok`, `need_jsonpath`, `need_narrow_jsonpath`,
-  `need_narrow_request` 중 하나입니다.
-- `truncation_kind`는 `body_mode=omitted`일 때 `output_bytes`,
+- `body_mode`는 `raw_json` 또는 `jsonpath_projection`입니다.
+- `body_state`는 `returned` 또는 `omitted`입니다.
+- `omit_reason`은 `body_state=omitted`일 때 `output_bytes`,
   `projection_bytes`, `transport_cap` 중 하나입니다.
 - `truncated`는 top-level 필드로도 반환됩니다.
 - `original_bytes`는 일반 응답에서는 compact 전 원본 body 크기이고, hard cap 초과 시에는 전체 크기 또는 확인된 최소 크기입니다.
@@ -105,16 +104,16 @@
 Truncation:
 
 응답이 `max_bytes` 또는 hard read cap을 초과하면 `body=null`이 되고, `more`가 재시도 방법을
-설명합니다. 응답에 따라 `more.options.preferred_next`는 `jsonpath` 또는
-`narrow_jsonpath`가 될 수 있고, projection을 narrowing하는 데 도움이 되도록
-`more.preview`에 path 메타데이터가 포함될 수 있습니다.
+설명합니다. 응답에 따라 `more.options.next_action`은 `jsonpath`,
+`narrow_jsonpath`, `narrow_request`가 될 수 있고, projection을 narrowing하는 데
+도움이 되도록 `more.preview`에 path 메타데이터가 포함될 수 있습니다.
 
 ```json
 {
   "status_code": 200,
-  "body_mode": "omitted",
-  "output_state": "need_jsonpath",
-  "truncation_kind": "output_bytes",
+  "body_mode": "raw_json",
+  "body_state": "omitted",
+  "omit_reason": "output_bytes",
   "body": null,
   "truncated": true,
   "original_bytes": 287000,
@@ -123,7 +122,7 @@ Truncation:
   "more": {
     "truncated": true,
     "options": {
-      "preferred_next": "jsonpath",
+      "next_action": "jsonpath",
       "suggested_jsonpath": [
         "$.items[*].metadata.name",
         "$.items[*].status.phase"
@@ -144,7 +143,7 @@ LLM 가이드:
 - 구조를 아는 API라면 곧바로 `jsonpath`를 사용하세요. 개수 질문에는 전체 배열을
   받지 말고 `.length()` 또는 `.count()`를 먼저 사용하세요.
 - 구조를 모르는 API라면 낮은 `max_bytes`로 시작한 뒤
-  `more.options.preferred_next`를 따르세요.
+  `more.options.next_action`을 따르세요.
 - `max_bytes`를 올리기 전에 `suggested_jsonpath`/`more.preview.paths`를
   우선 사용하세요. `suggested_max_bytes`는 최후의 수단입니다.
 - `suggested_max_bytes`는 대상 서버의 공백 포함 원본 응답 크기가 아니라
