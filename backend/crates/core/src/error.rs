@@ -31,7 +31,6 @@ pub enum Error {
         kind: &'static str,
         message: String,
         hint: Option<String>,
-        data: Option<serde_json::Value>,
     },
 }
 
@@ -61,21 +60,6 @@ impl Error {
             kind,
             message: message.to_string(),
             hint: hint.map(|hint| hint.to_string()),
-            data: None,
-        }
-    }
-
-    pub fn user_safe_with_data(
-        kind: &'static str,
-        message: impl fmt::Display,
-        hint: Option<impl fmt::Display>,
-        data: serde_json::Value,
-    ) -> Self {
-        Self::UserSafe {
-            kind,
-            message: message.to_string(),
-            hint: hint.map(|hint| hint.to_string()),
-            data: Some(data),
         }
     }
 }

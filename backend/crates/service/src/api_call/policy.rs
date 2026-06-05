@@ -2,7 +2,6 @@ use opsgate_core::Error;
 use opsgate_model::credential::{
     Credential, SecretHeader, contains_fold, header_blocked, request_path_matches_prefix,
 };
-use serde_json::{Value, json};
 
 use super::input::NormalizedApiCallInput;
 
@@ -51,16 +50,20 @@ impl ApiPolicyDenial {
 
     fn hint(&self) -> &'static str {
         match self {
-            Self::MethodNotAllowed { .. } => "Use one of the credential policy allowed_methods.",
-            Self::RequestPathNotAllowed { .. } => {
-                "Use a request_path under one of the credential policy allowed_request_path_prefixes."
+            Self::MethodNotAllowed { .. } => {
+                "Use credential_list to inspect allowed_methods for this alias, then retry with an allowed method."
             }
-            Self::QueryKeyDenied { .. } => "Remove query keys denied by credential policy.",
+            Self::RequestPathNotAllowed { .. } => {
+                "Use credential_list to inspect allowed_request_path_prefixes for this alias, then retry under an allowed prefix."
+            }
+            Self::QueryKeyDenied { .. } => {
+                "Use credential_list to inspect denied_query_keys for this alias, then remove denied query keys."
+            }
             Self::RequestHeaderBlocked => {
                 "Remove blocked transport or auth headers from the request."
             }
             Self::RequestHeaderNotAllowed { .. } => {
-                "Use only request headers listed in credential policy allowed_request_headers."
+                "Use credential_list to inspect allowed_request_headers for this alias, then retry with only allowed headers."
             }
             Self::SecretHeaderOverride => {
                 "Remove caller-supplied headers that are sealed on the credential."
@@ -68,45 +71,9 @@ impl ApiPolicyDenial {
         }
     }
 
-    fn data(&self) -> Value {
-        match self {
-            Self::MethodNotAllowed { allowed_methods } => policy_denial_data(
-                "use_allowed_method",
-                Some(json!({ "allowed_methods": allowed_methods })),
-            ),
-            Self::RequestPathNotAllowed {
-                allowed_request_path_prefixes,
-            } => policy_denial_data(
-                "use_allowed_request_path_prefix",
-                Some(json!({ "allowed_request_path_prefixes": allowed_request_path_prefixes })),
-            ),
-            Self::QueryKeyDenied { denied_query_keys } => policy_denial_data(
-                "remove_denied_query_key",
-                Some(json!({ "denied_query_keys": denied_query_keys })),
-            ),
-            Self::RequestHeaderBlocked => policy_denial_data("remove_blocked_request_header", None),
-            Self::RequestHeaderNotAllowed {
-                allowed_request_headers,
-            } => policy_denial_data(
-                "use_allowed_request_header",
-                Some(json!({ "allowed_request_headers": allowed_request_headers })),
-            ),
-            Self::SecretHeaderOverride => policy_denial_data("remove_secret_header_override", None),
-        }
-    }
-
     pub(super) fn into_error(self) -> Error {
-        Error::user_safe_with_data(self.kind(), self.message(), Some(self.hint()), self.data())
+        Error::user_safe(self.kind(), self.message(), Some(self.hint()))
     }
-}
-
-fn policy_denial_data(next_action: &'static str, policy_hint: Option<Value>) -> Value {
-    let mut data = serde_json::Map::new();
-    data.insert("next_action".to_owned(), json!(next_action));
-    if let Some(policy_hint) = policy_hint {
-        data.insert("policy_hint".to_owned(), policy_hint);
-    }
-    Value::Object(data)
 }
 
 pub(super) fn validate_policy_boundary(
@@ -286,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn policy_denial_error_includes_public_recovery_data() -> opsgate_core::Result<()> {
+    fn policy_denial_error_includes_public_recovery_hint() -> opsgate_core::Result<()> {
         let credential = http_credential(CredentialPolicy {
             allowed_methods: vec!["GET".to_owned()],
             ..CredentialPolicy::default()
@@ -298,28 +265,14 @@ mod tests {
 
         let error =
             expect_denial(validate_policy_boundary(&credential, &method_denied))?.into_error();
-        let Error::UserSafe {
-            kind, data, hint, ..
-        } = error
-        else {
+        let Error::UserSafe { kind, hint, .. } = error else {
             return Err(Error::internal("expected user-safe policy denial"));
         };
 
         assert_eq!(kind, "policy_method_not_allowed");
-        assert!(
-            hint.as_deref()
-                .is_some_and(|hint| hint.contains("allowed_methods"))
-        );
-        let data = data.ok_or_else(|| Error::internal("policy denial data missing"))?;
-        assert_eq!(
-            data.get("next_action").and_then(Value::as_str),
-            Some("use_allowed_method")
-        );
-        assert_eq!(
-            data.pointer("/policy_hint/allowed_methods/0")
-                .and_then(Value::as_str),
-            Some("GET")
-        );
+        assert!(hint.as_deref().is_some_and(
+            |hint| hint.contains("credential_list") && hint.contains("allowed_methods")
+        ));
         Ok(())
     }
 

@@ -4,7 +4,6 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use opsgate_core::Error as CoreError;
-use serde_json::Value;
 
 #[derive(Debug)]
 pub(crate) struct ApiError {
@@ -12,7 +11,6 @@ pub(crate) struct ApiError {
     code: &'static str,
     message: String,
     hint: Option<String>,
-    data: Option<Value>,
 }
 
 impl ApiError {
@@ -22,7 +20,6 @@ impl ApiError {
             code,
             message: message.into(),
             hint: None,
-            data: None,
         }
     }
 
@@ -30,14 +27,12 @@ impl ApiError {
         code: &'static str,
         message: impl Into<String>,
         hint: Option<String>,
-        data: Option<Value>,
     ) -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
             code,
             message: message.into(),
             hint,
-            data,
         }
     }
 
@@ -70,8 +65,7 @@ impl From<CoreError> for ApiError {
                 kind,
                 message,
                 hint,
-                data,
-            } => Self::user_safe(kind, message, hint, data),
+            } => Self::user_safe(kind, message, hint),
             CoreError::Internal(msg) => {
                 tracing::error!(event = "error.internal", detail = %msg);
                 Self::internal("internal server error")
@@ -90,11 +84,6 @@ impl IntoResponse for ApiError {
             && let Some(object) = body.as_object_mut()
         {
             object.insert("hint".to_owned(), serde_json::json!(hint));
-        }
-        if let Some(data) = self.data
-            && let Some(object) = body.as_object_mut()
-        {
-            object.insert("data".to_owned(), data);
         }
         (self.status, Json(body)).into_response()
     }
@@ -144,28 +133,5 @@ mod tests {
             "SQL references a column that does not exist."
         );
         assert_eq!(error.hint.as_deref(), Some("Use sql_schema first."));
-        assert!(error.data.is_none());
-    }
-
-    #[test]
-    fn user_safe_core_error_preserves_public_http_data() {
-        let error = ApiError::from(opsgate_core::Error::user_safe_with_data(
-            "policy_method_not_allowed",
-            "method not allowed by credential policy",
-            Some("Use one of the allowed methods."),
-            serde_json::json!({
-                "next_action": "use_allowed_method",
-                "policy_hint": {
-                    "allowed_methods": ["GET"]
-                }
-            }),
-        ));
-
-        assert_eq!(error.status, StatusCode::BAD_REQUEST);
-        assert_eq!(error.code, "policy_method_not_allowed");
-        assert_eq!(
-            error.data.as_ref().and_then(|data| data.get("next_action")),
-            Some(&serde_json::json!("use_allowed_method"))
-        );
     }
 }
