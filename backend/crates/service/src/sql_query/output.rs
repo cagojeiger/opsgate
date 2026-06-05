@@ -54,7 +54,7 @@ pub(super) fn build_column_output(
         omit_reason: shaped.omit_reason,
         body: shaped.body,
         row_count,
-        row_limit: truncated.then(|| RowLimit {
+        row_limit: truncated.then_some(RowLimit {
             hit: true,
             max_rows: input.max_rows,
         }),

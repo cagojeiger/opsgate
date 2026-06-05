@@ -60,11 +60,13 @@ pub enum BodyState {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
 pub enum OmitReason {
-    OutputBodyTooLarge,
-    ProjectionBodyTooLarge,
-    SourceBodyTooLarge,
+    #[serde(rename = "output_body_too_large")]
+    Output,
+    #[serde(rename = "projection_body_too_large")]
+    Projection,
+    #[serde(rename = "source_body_too_large")]
+    Source,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -449,11 +451,11 @@ fn next_action(options: &JsonOutputOptions, source_body_truncated: bool) -> Next
 
 fn omit_reason(options: &JsonOutputOptions, source_body_truncated: bool) -> OmitReason {
     if source_body_truncated {
-        OmitReason::SourceBodyTooLarge
+        OmitReason::Source
     } else if options.json_paths.is_empty() {
-        OmitReason::OutputBodyTooLarge
+        OmitReason::Output
     } else {
-        OmitReason::ProjectionBodyTooLarge
+        OmitReason::Projection
     }
 }
 
@@ -934,7 +936,7 @@ mod tests {
         assert!(out.truncated);
         assert_eq!(out.body_mode, BodyMode::RawJson);
         assert_eq!(out.body_state, BodyState::Omitted);
-        assert_eq!(out.omit_reason, Some(OmitReason::OutputBodyTooLarge));
+        assert_eq!(out.omit_reason, Some(OmitReason::Output));
         assert_eq!(out.body, Value::Null);
         let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
         assert_eq!(more.options.next_action, NextAction::AddJsonpath);
@@ -960,7 +962,7 @@ mod tests {
         )?;
         assert_eq!(out.body_mode, BodyMode::JsonpathProjection);
         assert_eq!(out.body_state, BodyState::Omitted);
-        assert_eq!(out.omit_reason, Some(OmitReason::ProjectionBodyTooLarge));
+        assert_eq!(out.omit_reason, Some(OmitReason::Projection));
         let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
         assert_eq!(more.options.next_action, NextAction::NarrowJsonpath);
         assert!(more.preview.is_none());
@@ -970,15 +972,15 @@ mod tests {
     #[test]
     fn serializes_omit_reasons_and_next_actions_as_llm_terms() -> Result<()> {
         assert_eq!(
-            serde_json::to_value(OmitReason::OutputBodyTooLarge).map_err(Error::internal)?,
+            serde_json::to_value(OmitReason::Output).map_err(Error::internal)?,
             serde_json::json!("output_body_too_large")
         );
         assert_eq!(
-            serde_json::to_value(OmitReason::ProjectionBodyTooLarge).map_err(Error::internal)?,
+            serde_json::to_value(OmitReason::Projection).map_err(Error::internal)?,
             serde_json::json!("projection_body_too_large")
         );
         assert_eq!(
-            serde_json::to_value(OmitReason::SourceBodyTooLarge).map_err(Error::internal)?,
+            serde_json::to_value(OmitReason::Source).map_err(Error::internal)?,
             serde_json::json!("source_body_too_large")
         );
         assert_eq!(
@@ -1186,7 +1188,7 @@ mod tests {
         assert!(out.truncated);
         assert_eq!(out.body_mode, BodyMode::RawJson);
         assert_eq!(out.body_state, BodyState::Omitted);
-        assert_eq!(out.omit_reason, Some(OmitReason::SourceBodyTooLarge));
+        assert_eq!(out.omit_reason, Some(OmitReason::Source));
         assert_eq!(out.original_bytes, 2048);
         assert_eq!(out.returned_bytes, 0);
         let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
@@ -1209,7 +1211,7 @@ mod tests {
 
         assert_eq!(out.body_mode, BodyMode::JsonpathProjection);
         assert_eq!(out.body_state, BodyState::Omitted);
-        assert_eq!(out.omit_reason, Some(OmitReason::SourceBodyTooLarge));
+        assert_eq!(out.omit_reason, Some(OmitReason::Source));
         let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
         assert_eq!(more.options.next_action, NextAction::NarrowRequest);
         assert!(more.options.suggested_jsonpath.is_empty());
