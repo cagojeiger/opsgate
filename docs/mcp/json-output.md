@@ -63,6 +63,9 @@ body_state     body가 반환됐는지 생략됐는지 표시한다.
 omit_reason    body_state=omitted일 때 왜 빠졌는지 표시한다.
 ```
 
+`body_state=omitted`이면 실제 `body`는 `null`입니다. 이때 `body_mode`는
+`null`의 타입이 아니라, 크기 제한 전에 반환하려던 JSON shape를 표시합니다.
+
 `body_mode`:
 
 ```text
@@ -390,11 +393,14 @@ index cache와 함께 검토합니다.
 `body=null`이고 `more.truncated=true`이면:
 
 ```text
-1. max_bytes를 올리기보다 jsonpath를 우선 사용한다.
-2. preview가 있으면 present_sampled가 높은 path부터 사용한다.
-3. 중첩 배열 path는 꼭 필요할 때만 사용한다.
-4. preview가 잘렸다면 preview를 더 보려 하지 말고 더 좁은 jsonpath를 만든다.
-5. full response가 작다는 확신이 있고 policy가 허용할 때만 max_bytes를 올린다.
+1. more.options.next_action을 먼저 따른다.
+2. next_action=jsonpath이면 suggested_jsonpath에서 1-3개만 골라 재호출한다.
+3. next_action=narrow_jsonpath이면 expression 개수, slice 범위, filter 조건을 줄인다.
+4. next_action=narrow_request이면 max_bytes/jsonpath보다 request path/query/body나 upstream 조회 범위를 줄인다.
+5. preview가 있으면 present_sampled가 높은 path부터 사용한다.
+6. 중첩 배열 path는 꼭 필요할 때만 사용한다.
+7. preview가 잘렸다면 preview를 더 보려 하지 말고 더 좁은 jsonpath를 만든다.
+8. full response가 작다는 확신이 있고 policy가 허용할 때만 max_bytes를 올린다.
 ```
 
 ## 현재 구현 상태
