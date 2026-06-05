@@ -343,6 +343,7 @@ mod tests {
             kind,
             message,
             hint,
+            ..
         } = mapped
         else {
             return Err(Error::internal("expected user-safe blocked target error"));
@@ -388,6 +389,7 @@ mod tests {
             kind,
             message,
             hint,
+            ..
         } = mapped
         else {
             return Err(Error::internal("expected user-safe timeout error"));

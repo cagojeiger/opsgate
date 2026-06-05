@@ -85,6 +85,14 @@
 - target 전송 실패는 raw transport error를 저장하지 않고, 안전하게 분류된 경우
   `target_timeout`, `target_unreachable`, `target_private_network_blocked` 같은
   error kind와 짧은 safe message만 history에 저장합니다.
+- policy 거부는 generic `policy_denied`로 뭉개지 않고
+  `policy_method_not_allowed`, `policy_request_path_not_allowed`,
+  `policy_query_key_denied`, `policy_request_header_blocked`,
+  `policy_request_header_not_allowed`, `policy_secret_header_override` 중 하나로
+  분류됩니다.
+- policy 거부 응답은 안전한 경우 `data.next_action`과 `data.policy_hint`를
+  포함할 수 있습니다. history/audit에는 세부 kind와 safe message만 저장하고,
+  `next_action`/`policy_hint`는 저장하지 않습니다.
 - history는 JSONPath 표현식을 projected value가 아니라 `projection_keys`로
   저장합니다.
 - 출력 상태, truncation, JSONPath 검증은 공통

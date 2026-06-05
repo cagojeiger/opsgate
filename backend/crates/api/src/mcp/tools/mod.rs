@@ -1,7 +1,7 @@
 use axum::http::request::Parts;
 use opsgate_model::Caller;
 use rmcp::ErrorData;
-use serde_json::json;
+use serde_json::{Value, json};
 
 pub(crate) mod api_call;
 pub(crate) mod credentials;
@@ -25,18 +25,27 @@ pub(crate) fn map_core_error(tool: &'static str, error: opsgate_core::Error) -> 
             kind,
             message,
             hint,
-        } => ErrorData::invalid_params(
-            message,
-            Some(json!({
-                "kind": kind,
-                "hint": hint,
-            })),
-        ),
+            data,
+        } => ErrorData::invalid_params(message, Some(user_safe_error_data(kind, hint, data))),
         opsgate_core::Error::Internal(message) => {
             tracing::error!(event = "mcp.tool.internal_error", tool, detail = %message);
             ErrorData::internal_error("internal server error", None)
         }
     }
+}
+
+fn user_safe_error_data(kind: &'static str, hint: Option<String>, data: Option<Value>) -> Value {
+    let mut object = serde_json::Map::new();
+    object.insert("kind".to_owned(), json!(kind));
+    object.insert("hint".to_owned(), json!(hint));
+    if let Some(data) = data {
+        if let Value::Object(data) = data {
+            object.extend(data);
+        } else {
+            object.insert("data".to_owned(), data);
+        }
+    }
+    Value::Object(object)
 }
 
 #[cfg(test)]
@@ -89,6 +98,40 @@ mod tests {
         assert_eq!(
             data.get("hint").and_then(serde_json::Value::as_str),
             Some("Use sql_schema first.")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn user_safe_core_error_preserves_public_mcp_data() -> Result<(), String> {
+        let error = map_core_error(
+            "api_call",
+            opsgate_core::Error::user_safe_with_data(
+                "policy_method_not_allowed",
+                "method not allowed by credential policy",
+                Some("Use one of the allowed methods."),
+                json!({
+                    "next_action": "use_allowed_method",
+                    "policy_hint": {
+                        "allowed_methods": ["GET"]
+                    }
+                }),
+            ),
+        );
+
+        let data = error.data.ok_or_else(|| "expected error data".to_owned())?;
+        assert_eq!(
+            data.get("kind").and_then(serde_json::Value::as_str),
+            Some("policy_method_not_allowed")
+        );
+        assert_eq!(
+            data.get("next_action").and_then(serde_json::Value::as_str),
+            Some("use_allowed_method")
+        );
+        assert_eq!(
+            data.pointer("/policy_hint/allowed_methods/0")
+                .and_then(serde_json::Value::as_str),
+            Some("GET")
         );
         Ok(())
     }
