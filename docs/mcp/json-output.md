@@ -416,19 +416,16 @@ api.preview_read(preview_id, cursor, limit)
 이 기능은 preview browsing이 실제로 자주 필요해질 때, 짧은 TTL의 preview
 index cache와 함께 검토합니다.
 
-## LLM 권장 동작
+## Preview 사용 규칙
 
-`body=null`이고 `more.truncated=true`이면:
+`more.preview`는 `add_jsonpath`를 돕는 첫 화면 힌트입니다. paging 인터페이스가
+아니므로 preview가 잘렸다면 preview를 더 보려 하지 말고 더 좁은 JSONPath로
+재호출합니다.
 
 ```text
-1. more.options.next_action을 먼저 따른다.
-2. next_action=add_jsonpath이면 source는 이미 읽혔으니 suggested_jsonpath에서 1-3개만 골라 output을 좁힌다.
-3. next_action=narrow_jsonpath이면 expression 개수, slice 범위, filter 조건을 줄인다.
-4. next_action=narrow_request이면 source를 완전히 못 읽은 것이므로 max_bytes/jsonpath보다 request path/query/body나 upstream 조회 범위를 줄인다.
-5. preview가 있으면 present_sampled가 높은 path부터 사용한다.
-6. 중첩 배열 path는 꼭 필요할 때만 사용한다.
-7. preview가 잘렸다면 preview를 더 보려 하지 말고 더 좁은 jsonpath를 만든다.
-8. full response가 작다는 확신이 있고 policy가 허용할 때만 max_bytes를 올린다.
+1. present_sampled가 높은 scalar path부터 사용한다.
+2. 중첩 배열 path는 꼭 필요할 때만 사용한다.
+3. full response가 작다는 확신이 있고 policy가 허용할 때만 max_bytes를 올린다.
 ```
 
 ## 현재 구현 상태
