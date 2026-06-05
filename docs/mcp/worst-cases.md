@@ -110,7 +110,7 @@ raw dependency error 중 URL/secret이 섞일 수 있는 값
 |---|---:|
 | `api_call.max_bytes` 기본값 | 4096 |
 | `api_call.max_bytes` 최소/최대 | 256 / 1 MiB |
-| `api_call` hard read cap | 1 MiB |
+| `api_call` source body read limit | 1 MiB |
 | `api_call.jsonpath` 최대 개수 | 16 |
 | `api_call.jsonpath` 최대 길이 | 512 |
 | `api_call.headers` 최대 개수 | 16 |
@@ -136,7 +136,7 @@ raw dependency error 중 URL/secret이 섞일 수 있는 값
 ```text
 body=null
 truncated=true
-more.options.preferred_next=jsonpath 또는 narrow_jsonpath
+more.options.next_action=add_jsonpath, narrow_jsonpath, 또는 narrow_request
 partial JSON 반환 없음
 response body 저장 없음
 ```
@@ -169,7 +169,7 @@ write/lock/side-effect 함수/metadata 접근은 정책에 따라 거부
 큰 결과:
 
 ```text
-row limit에 걸리면 more.options.preferred_next=max_rows
+row limit에 걸리면 more.options.next_action=adjust_max_rows
 byte limit에 걸리면 body=null + jsonpath/query narrowing hint
 query text, params 값, result 값 저장 없음
 ```

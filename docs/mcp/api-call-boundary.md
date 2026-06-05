@@ -198,7 +198,7 @@ HTTP client selection
 SSRF guarded dial
 redirect blocked
 Content-Type checked before body read
-response body hard cap read
+source body read limit
 ```
 
 불변조건:
@@ -208,7 +208,7 @@ origin/base_path only from credential row
 redirect blocked
 `allow_private_network=false`이면 private/link-local/loopback/cloud metadata 주소를 차단
 call-time DNS/dial guard closes DNS rebinding window
-response read cap is MaxMaxBytes
+source body read limit is MaxMaxBytes
 known oversized Content-Length is rejected without body read
 unknown-size response stops after MaxMaxBytes+1 confirmed bytes
 ```
@@ -240,10 +240,10 @@ multiple top-level JSON values denied
 top-level scalar JSON allowed
 UseNumber preserves large JSON numbers
 jsonpath projection returns flat-keyed object; RFC 9535-compatible filters are supported; regex filters use `search(value, pattern)` for partial search or `match(value, pattern)` for full-string match; `.length()`/`.count()` suffix may return small scalar counts
-transport hard cap truncation is not parsed as JSON
+source body read-limit truncation is not parsed as JSON
 top-level truncated mirrors the output truncation state
 max_bytes truncation returns body=null
-hard cap truncation returns body=null without parsing partial JSON
+source body read-limit truncation returns body=null without parsing partial JSON
 partial JSON never returned
 ```
 
@@ -282,7 +282,7 @@ purpose
 outcome
 status_code
 latency_ms
-original_bytes (exact size or confirmed minimum when hard cap is hit)
+original_bytes (exact size or confirmed minimum when source body read limit is hit)
 returned_bytes
 truncated
 error_kind

@@ -7,6 +7,6 @@
 mod json;
 
 pub use json::{
-    JsonOutput, JsonOutputOptions, More, MoreOptions, build_json_output,
-    build_json_output_from_value, validate_json_paths,
+    BodyMode, BodyState, JsonOutput, JsonOutputOptions, More, MoreOptions, NextAction, OmitReason,
+    SourceBodyMode, build_json_output, build_json_output_from_value, validate_json_paths,
 };

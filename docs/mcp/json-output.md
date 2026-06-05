@@ -25,6 +25,8 @@ target 응답이 유효한 JSON이고 compact JSON 크기가 `max_bytes` 안에 
 ```json
 {
   "status_code": 200,
+  "body_mode": "raw_json",
+  "body_state": "returned",
   "body": {
     "kind": "PodList",
     "items": []
@@ -50,6 +52,43 @@ null
 JSON number는 `UseNumber`로 decode합니다. 큰 숫자 ID가 `float64`로 강제
 변환되면서 정밀도가 깨지는 것을 피하기 위한 선택입니다.
 
+## 출력 상태 필드
+
+`api_call`과 `sql_query`의 JSON body 계열 출력은 기존 `body`, `truncated`,
+`more`를 유지하면서 다음 상태 필드를 함께 반환합니다.
+
+```text
+body_mode      body의 JSON shape를 표시한다.
+body_state     body가 반환됐는지 생략됐는지 표시한다.
+omit_reason    body_state=omitted일 때 왜 빠졌는지 표시한다.
+```
+
+`body_state=omitted`이면 실제 `body`는 `null`입니다. 이때 `body_mode`는
+`null`의 타입이 아니라, 크기 제한 전에 반환하려던 JSON shape를 표시합니다.
+
+`body_mode`:
+
+```text
+raw_json              api_call target의 원본 JSON
+columnar_json         sql_query rows를 컬럼별 배열로 전치한 JSON
+jsonpath_projection   JSONPath projection 결과
+```
+
+`body_state`:
+
+```text
+returned
+omitted
+```
+
+`omit_reason`:
+
+```text
+output_body_too_large       projection 없이 만든 JSON body가 max_bytes를 초과
+projection_body_too_large   JSONPath projection 결과도 max_bytes를 초과
+source_body_too_large       target 응답 body가 read limit을 초과해 완전 JSON을 읽지 못함
+```
+
 ## Projection
 
 큰 target JSON은 `jsonpath`로 필요한 값만 뽑는 것이 기본 전략입니다.
@@ -69,6 +108,8 @@ JSON number는 `UseNumber`로 decode합니다. 큰 숫자 ID가 `float64`로 강
 
 ```json
 {
+  "body_mode": "jsonpath_projection",
+  "body_state": "returned",
   "body": {
     "$.items[*].metadata.name": ["api", "worker"],
     "$.items[*].status.phase": ["Running", "Pending"]
@@ -128,6 +169,9 @@ target JSON 또는 SQL 결과 JSON이 호출자의 `max_bytes`보다 크면 전�
 ```json
 {
   "status_code": 200,
+  "body_mode": "raw_json",
+  "body_state": "omitted",
+  "omit_reason": "output_body_too_large",
   "body": null,
   "truncated": true,
   "original_bytes": 287000,
@@ -136,7 +180,7 @@ target JSON 또는 SQL 결과 JSON이 호출자의 `max_bytes`보다 크면 전�
   "more": {
     "truncated": true,
     "options": {
-      "preferred_next": "jsonpath",
+      "next_action": "add_jsonpath",
       "suggested_jsonpath": [
         "$.items[*].metadata.name",
         "$.items[*].status.phase"
@@ -156,38 +200,43 @@ target JSON 또는 SQL 결과 JSON이 호출자의 `max_bytes`보다 크면 전�
 
 ```text
 body=null
+body_state=omitted
 more.truncated=true
 partial JSON 문자열 반환 금지
 response body audit/history 저장 금지
 다음 호출을 좁힐 수 있는 structured option과 hint 제공
 ```
 
-target 응답이 hard read cap을 넘는 경우에도, 불완전한 JSON prefix를
+target 응답 body가 source body read limit을 넘는 경우에도, 불완전한 JSON prefix를
 파싱하려고 하지 않습니다. 대신 truncated envelope을 반환합니다. 이때
-`original_bytes`는 Content-Length가 있으면 전체 크기이고, 없으면 cap을 넘었다는
-사실을 확인한 최소 크기일 수 있습니다.
+`original_bytes`는 Content-Length가 있으면 전체 크기이고, 없으면 limit을 넘었다는
+사실을 확인한 최소 크기일 수 있습니다. 이 경우 `omit_reason=source_body_too_large`,
+`more.options.next_action=narrow_request`이며 preview는 만들지 않습니다.
 
 ## 점진적 호출 프로토콜
 
 `api_call`과 `sql_query`는 큰 JSON을 한 번에 많이 보여주는 도구가 아닙니다.
 LLM이 작은 호출에서 시작해서 필요한 정보만 점진적으로 가져오도록 설계합니다.
 
-`more.options.preferred_next`는 다음 호출의 우선 행동입니다.
+`more.options.next_action`은 다음 호출의 우선 행동입니다.
 
 ```text
-jsonpath          projection 없이 큰 응답을 받았으니 JSONPath로 좁힌다.
+add_jsonpath      projection 없이 큰 응답을 받았으니 JSONPath로 좁힌다.
 narrow_jsonpath   이미 JSONPath를 썼지만 결과가 아직 크니 표현식을 더 좁힌다.
+narrow_request    target 응답 body가 source body read limit을 넘었으니 request 자체를 좁힌다.
+adjust_max_rows   SQL row limit에 걸렸으니 max_rows/WHERE/aggregate를 조정한다.
 ```
 
 규칙:
 
 ```text
 1. body=null이면 max_bytes부터 올리지 않는다.
-2. preferred_next=jsonpath이면 suggested_jsonpath에서 1-3개만 골라 재호출한다.
+2. next_action=add_jsonpath이면 suggested_jsonpath에서 1-3개만 골라 재호출한다.
 3. suggested_jsonpath가 없으면 more.preview.paths에서 scalar path를 고른다.
-4. preferred_next=narrow_jsonpath이면 expression 개수, slice 범위, filter 조건을 줄인다.
-5. max_bytes 증가는 projection 결과도 필요한데 여전히 큰 경우의 마지막 수단이다.
-6. hard read cap 초과 시 max_bytes 증가는 도움이 되지 않는다.
+4. next_action=narrow_jsonpath이면 expression 개수, slice 범위, filter 조건을 줄인다.
+5. next_action=narrow_request이면 request path/query/body나 upstream 조회 범위를 줄인다.
+6. max_bytes 증가는 projection 결과도 필요한데 여전히 큰 경우의 마지막 수단이다.
+7. source body read limit 초과 시 max_bytes 증가는 도움이 되지 않는다.
 ```
 
 예시:
@@ -197,7 +246,7 @@ narrow_jsonpath   이미 JSONPath를 썼지만 결과가 아직 크니 표현식
   "more": {
     "truncated": true,
     "options": {
-      "preferred_next": "jsonpath",
+      "next_action": "add_jsonpath",
       "suggested_jsonpath": [
         "$.items[*].metadata.name",
         "$.items[*].status.phase"
@@ -344,11 +393,14 @@ index cache와 함께 검토합니다.
 `body=null`이고 `more.truncated=true`이면:
 
 ```text
-1. max_bytes를 올리기보다 jsonpath를 우선 사용한다.
-2. preview가 있으면 present_sampled가 높은 path부터 사용한다.
-3. 중첩 배열 path는 꼭 필요할 때만 사용한다.
-4. preview가 잘렸다면 preview를 더 보려 하지 말고 더 좁은 jsonpath를 만든다.
-5. full response가 작다는 확신이 있고 policy가 허용할 때만 max_bytes를 올린다.
+1. more.options.next_action을 먼저 따른다.
+2. next_action=add_jsonpath이면 suggested_jsonpath에서 1-3개만 골라 재호출한다.
+3. next_action=narrow_jsonpath이면 expression 개수, slice 범위, filter 조건을 줄인다.
+4. next_action=narrow_request이면 max_bytes/jsonpath보다 request path/query/body나 upstream 조회 범위를 줄인다.
+5. preview가 있으면 present_sampled가 높은 path부터 사용한다.
+6. 중첩 배열 path는 꼭 필요할 때만 사용한다.
+7. preview가 잘렸다면 preview를 더 보려 하지 말고 더 좁은 jsonpath를 만든다.
+8. full response가 작다는 확신이 있고 policy가 허용할 때만 max_bytes를 올린다.
 ```
 
 ## 현재 구현 상태
@@ -358,7 +410,7 @@ index cache와 함께 검토합니다.
 ```text
 JSON-only response envelope
 max_bytes truncation 시 body=null
-hard read cap 보호
+source body read limit 보호
 jsonpath 입력
 JSONPath safe subset 검증
 jsonpath `.length()`/`.count()` 집계 suffix
