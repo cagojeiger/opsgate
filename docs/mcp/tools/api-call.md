@@ -87,66 +87,30 @@
   error kind와 짧은 safe message만 history에 저장합니다.
 - history는 JSONPath 표현식을 projected value가 아니라 `projection_keys`로
   저장합니다.
-- `body_mode`는 `raw_json` 또는 `jsonpath_projection`입니다.
-- `body_state`는 `returned` 또는 `omitted`입니다.
-- `omit_reason`은 `body_state=omitted`일 때 `output_body_too_large`,
-  `projection_body_too_large`, `source_body_too_large` 중 하나입니다.
-- `truncated`는 top-level 필드로도 반환됩니다.
+- 출력 상태, truncation, JSONPath 검증은 공통
+  [JSON 출력과 토큰 예산 스펙](../json-output.md)을 따릅니다.
 - `original_bytes`는 일반 응답에서는 compact 전 원본 body 크기이고, source body read limit 초과 시에는 전체 크기 또는 확인된 최소 크기입니다.
-- `jsonpath`는 JSONPath 표현식을 사용하며 flat-keyed object를 반환합니다.
-  `length()`는 배열/문자열/object 길이, `count()`는 매칭 node 개수를 반환합니다.
-- `jsonpath`는 공통 JSONPath 검증 규칙을 따릅니다. 표현식은 `$`로 시작해야
-  하며, 최대 16개/각 512자까지 허용됩니다.
-- recursive descent(`..`)는 허용되지 않습니다.
-- 예: pod 수만 필요하면 `$.items.length()`, 매칭된 이름 개수만 필요하면
-  `$.items[*].metadata.name.count()`를 사용합니다.
 
-Truncation:
+큰 응답에서 `api_call`만의 차이:
 
-응답이 `max_bytes`를 넘거나 source body read limit에 걸리면 `body=null`이 되고, `more`가 재시도 방법을
-설명합니다. 응답에 따라 `more.options.next_action`은 `add_jsonpath`,
-`narrow_jsonpath`, `narrow_request`가 될 수 있고, projection을 narrowing하는 데
-도움이 되도록 `more.preview`에 path 메타데이터가 포함될 수 있습니다.
-
-```json
-{
-  "status_code": 200,
-  "body_mode": "raw_json",
-  "body_state": "omitted",
-  "omit_reason": "output_body_too_large",
-  "body": null,
-  "truncated": true,
-  "original_bytes": 287000,
-  "latency_ms": 34,
-  "more": {
-    "truncated": true,
-    "options": {
-      "next_action": "add_jsonpath",
-      "suggested_jsonpath": [
-        "$.items[*].metadata.name",
-        "$.items[*].status.phase"
-      ],
-      "suggested_max_bytes": 8192
-    },
-    "hints": [
-      "retry with jsonpath=[\"$.items[*].metadata.name\",\"$.items[*].status.phase\"] using 1-3 paths from more.options.suggested_jsonpath",
-      "last resort: retry with max_bytes=8192 to fit the full body"
-    ]
-  }
-}
-```
+- `source_body_too_large`가 가능하다. 이 경우 Opsgate가 target 응답 body를
+  완전히 읽지 못한 것이므로 `max_bytes`나 `jsonpath`보다 target-native
+  pagination, limit, cursor/continue, selector, filter, time range, 더 좁은
+  `request_path`/`query`가 먼저다.
+- source body read limit에 걸린 partial JSON은 파싱하지 않는다. 따라서
+  `more.preview`, `suggested_jsonpath`, projected body를 만들지 않는다.
+- `output_body_too_large`와 `projection_body_too_large`는 source JSON을 완전히
+  읽은 뒤 output budget만 넘은 상태다. 공통 `next_action` 규칙은
+  [JSON 출력과 토큰 예산 스펙](../json-output.md)을 따른다.
 
 LLM 가이드:
 
 - 먼저 `credential_list`를 호출해 policy를 확인하세요.
 - 구조를 아는 API라면 곧바로 `jsonpath`를 사용하세요. 개수 질문에는 전체 배열을
   받지 말고 `.length()` 또는 `.count()`를 먼저 사용하세요.
-- 구조를 모르는 API라면 낮은 `max_bytes`로 시작한 뒤
-  `more.options.next_action`을 따르세요.
-- `max_bytes`를 올리기 전에 `suggested_jsonpath`/`more.preview.paths`를
-  우선 사용하세요. `suggested_max_bytes`는 최후의 수단입니다.
-- `suggested_max_bytes`는 대상 서버의 공백 포함 원본 응답 크기가 아니라
-  opsgate가 반환할 compact JSON body 기준입니다.
+- JSONPath projection은 matched-node list입니다. 여러 JSONPath 결과 배열의 같은
+  index가 같은 source row라는 보장은 없습니다. optional field가 있는 row 정합성이
+  필요하면 page/filter를 줄이고 `$.items[*]`처럼 row object 자체를 projection하세요.
 - 일부 Kubernetes의 읽기성 API는 POST이며, 그래도 POST policy가 필요합니다.
 - `origin=https://k8s.example.com`, `base_path=/cluster-a`, `request_path=/api/v1/pods`이면 실제 호출 URL은 `https://k8s.example.com/cluster-a/api/v1/pods`입니다. LLM은 `origin`과 `base_path`를 직접 보지 않습니다.
 

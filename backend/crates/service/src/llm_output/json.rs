@@ -152,11 +152,11 @@ pub fn build_json_output(raw: &[u8], options: JsonOutputOptions) -> Result<JsonO
     let original_bytes = options.original_bytes.unwrap_or(raw.len());
     if options.source_body_truncated {
         return Ok(truncated_output(
-            Value::Null,
             original_bytes,
             &options,
             None,
-            true,
+            0,
+            OmitReason::Source,
         ));
     }
 
@@ -186,11 +186,11 @@ pub fn build_json_output(raw: &[u8], options: JsonOutputOptions) -> Result<JsonO
         None
     };
     Ok(truncated_output(
-        body,
         original_bytes,
         &options,
         preview,
-        false,
+        marshaled.len(),
+        output_budget_omit_reason(&options),
     ))
 }
 
@@ -208,11 +208,11 @@ pub fn build_json_output_from_value(
     validate_json_paths(&options.json_paths)?;
     if options.source_body_truncated {
         return Ok(truncated_output(
-            Value::Null,
             options.original_bytes.unwrap_or(0),
             &options,
             None,
-            true,
+            0,
+            OmitReason::Source,
         ));
     }
 
@@ -235,11 +235,11 @@ pub fn build_json_output_from_value(
         }
         let preview = build_preview(&value);
         return Ok(truncated_output(
-            value,
             original_bytes,
             &options,
             preview,
-            false,
+            marshaled.len(),
+            output_budget_omit_reason(&options),
         ));
     }
 
@@ -262,11 +262,11 @@ pub fn build_json_output_from_value(
         });
     }
     Ok(truncated_output(
-        body,
         original_bytes,
         &options,
         None,
-        false,
+        marshaled.len(),
+        output_budget_omit_reason(&options),
     ))
 }
 
@@ -393,29 +393,24 @@ fn value_length(value: &Value) -> Option<usize> {
 }
 
 fn truncated_output(
-    body: Value,
     original_bytes: usize,
     options: &JsonOutputOptions,
     preview: Option<Preview>,
-    source_body_truncated: bool,
+    body_bytes: usize,
+    omit_reason: OmitReason,
 ) -> JsonOutput {
-    let more_options = truncation_options(
-        options,
-        preview.as_ref(),
-        body_size(&body),
-        source_body_truncated,
-    );
+    let more_options = truncation_options(options, preview.as_ref(), body_bytes, omit_reason);
     JsonOutput {
         body_mode: output_body_mode(options),
         body_state: BodyState::Omitted,
-        omit_reason: Some(omit_reason(options, source_body_truncated)),
+        omit_reason: Some(omit_reason),
         body: Value::Null,
         original_bytes,
         returned_bytes: 0,
         truncated: true,
         more: Some(More {
             truncated: true,
-            hints: truncation_hints(options, &more_options, source_body_truncated),
+            hints: truncation_hints(omit_reason, &more_options),
             options: more_options,
             preview,
         }),
@@ -439,23 +434,19 @@ impl From<SourceBodyMode> for BodyMode {
     }
 }
 
-fn next_action(options: &JsonOutputOptions, source_body_truncated: bool) -> NextAction {
-    if source_body_truncated {
-        NextAction::NarrowRequest
-    } else if options.json_paths.is_empty() {
-        NextAction::AddJsonpath
-    } else {
-        NextAction::NarrowJsonpath
-    }
-}
-
-fn omit_reason(options: &JsonOutputOptions, source_body_truncated: bool) -> OmitReason {
-    if source_body_truncated {
-        OmitReason::Source
-    } else if options.json_paths.is_empty() {
+fn output_budget_omit_reason(options: &JsonOutputOptions) -> OmitReason {
+    if options.json_paths.is_empty() {
         OmitReason::Output
     } else {
         OmitReason::Projection
+    }
+}
+
+fn next_action(omit_reason: OmitReason) -> NextAction {
+    match omit_reason {
+        OmitReason::Source => NextAction::NarrowRequest,
+        OmitReason::Output => NextAction::AddJsonpath,
+        OmitReason::Projection => NextAction::NarrowJsonpath,
     }
 }
 
@@ -463,40 +454,35 @@ fn truncation_options(
     options: &JsonOutputOptions,
     preview: Option<&Preview>,
     body_bytes: usize,
-    source_body_truncated: bool,
+    omit_reason: OmitReason,
 ) -> MoreOptions {
     let mut out = MoreOptions {
-        next_action: next_action(options, source_body_truncated),
+        next_action: next_action(omit_reason),
         suggested_jsonpath: Vec::new(),
         suggested_max_bytes: None,
     };
     if let Some(preview) = preview {
         out.suggested_jsonpath = suggested_json_paths(preview, 3);
     }
-    if !source_body_truncated && options.max_bytes < options.max_allowed_bytes {
+    if omit_reason != OmitReason::Source && options.max_bytes < options.max_allowed_bytes {
         out.suggested_max_bytes = Some(body_bytes.min(options.max_allowed_bytes));
     }
     out
 }
 
-fn truncation_hints(
-    options: &JsonOutputOptions,
-    more_options: &MoreOptions,
-    source_body_truncated: bool,
-) -> Vec<String> {
-    if source_body_truncated {
-        return vec![
-            "target response body is too large to read fully; retry with narrower request filters (path/query/body, time range, selectors, pagination, or limit)"
+fn truncation_hints(omit_reason: OmitReason, more_options: &MoreOptions) -> Vec<String> {
+    match omit_reason {
+        OmitReason::Source => vec![
+            "Opsgate could not read the full target response body; retry with target-native pagination, filters, selectors, limits, time ranges, or a narrower path/query/body"
                 .to_owned(),
-        ];
-    }
-    if options.json_paths.is_empty() {
-        vec!["response JSON is too large; retry with jsonpath using 1-3 paths from suggested_jsonpath or preview.paths".to_owned()]
-    } else {
-        vec![format!(
-            "jsonpath projection is still too large; reduce expression count/range before raising max_bytes to {:?}",
+        ],
+        OmitReason::Output => vec![
+            "Opsgate read the full JSON, but the tool output budget is too small; retry with jsonpath using 1-3 paths from suggested_jsonpath or preview.paths".to_owned(),
+        ],
+        OmitReason::Projection => vec![format!(
+            "Opsgate read the full JSON, but the JSONPath projection is still too large; reduce expression count, slice range, or filter scope before raising max_bytes to {:?}",
             more_options.suggested_max_bytes
-        )]
+        )],
     }
 }
 
@@ -677,10 +663,6 @@ fn value_type(value: &Value) -> &'static str {
         Value::Array(_) => "array",
         Value::Object(_) => "object",
     }
-}
-
-fn body_size(body: &Value) -> usize {
-    compact_json_bytes(body).map_or(0, |bytes| bytes.len())
 }
 
 fn preview_json_len(paths: &[PreviewPath]) -> usize {
@@ -947,6 +929,12 @@ mod tests {
                 .any(|path| path == "$.items[*].metadata.name")
         );
         assert!(more.preview.is_some());
+        assert!(more.options.suggested_max_bytes.is_some());
+        assert!(
+            more.hints.iter().any(|hint| {
+                hint.contains("read the full JSON") && hint.contains("output budget")
+            })
+        );
         Ok(())
     }
 
@@ -966,6 +954,9 @@ mod tests {
         let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
         assert_eq!(more.options.next_action, NextAction::NarrowJsonpath);
         assert!(more.preview.is_none());
+        assert!(more.hints.iter().any(|hint| {
+            hint.contains("read the full JSON") && hint.contains("projection is still too large")
+        }));
         Ok(())
     }
 
@@ -1194,6 +1185,12 @@ mod tests {
         let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
         assert_eq!(more.options.next_action, NextAction::NarrowRequest);
         assert_eq!(more.options.suggested_max_bytes, None);
+        assert!(more.options.suggested_jsonpath.is_empty());
+        assert!(more.preview.is_none());
+        assert!(more.hints.iter().any(|hint| {
+            hint.contains("could not read the full target response body")
+                && hint.contains("pagination")
+        }));
         Ok(())
     }
 

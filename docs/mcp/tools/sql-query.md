@@ -79,6 +79,11 @@ paid   | 900
 `max_bytes`로 `body`가 줄어들거나 `null`이 되어도, 이 값은 원본 SQL 결과의
 행 수를 의미한다.
 
+`columnar_json`은 SQL row를 기준으로 전치한다. 어떤 row에 새 column이 나타나거나
+값이 없으면 같은 row index를 유지하도록 `null`을 채운다. 따라서 SQL columnar
+body는 API `jsonpath_projection`의 matched-node list와 달리 같은 index를 같은
+row로 해석할 수 있다.
+
 ## JSONPath projection
 
 큰 결과나 특정 컬럼만 필요할 때는 `jsonpath`를 사용한다. JSONPath는 전치된
@@ -112,63 +117,28 @@ paid   | 900
 }
 ```
 
-JSONPath projection 결과는 `api_call`과 같은 공통 JSON 출력 규칙을 따른다.
-각 path는 결과 객체의 key가 되고, 일반 selection은 매칭된 node 목록이 배열로
-들어간다. `length()`는 배열/문자열/object 길이, `count()`는 매칭 node 개수를 반환한다.
-SQL의 column-oriented body에서 `$.status.count()`는 보통 컬럼 배열 node 1개를 세므로 행 수가 아니다. 행 수는 응답의 `row_count` 또는 `$.status.length()`를 사용한다.
+JSONPath projection 자체는 공통 [JSON 출력과 토큰 예산 스펙](../json-output.md)을
+따른다. SQL에서 주의할 점은 column-oriented body에 적용된다는 것이다.
+`$.status.count()`는 보통 컬럼 배열 node 1개를 세므로 행 수가 아니다. 행 수는
+응답의 `row_count` 또는 `$.status.length()`를 사용한다.
 
-`body_mode`는 기본 결과에서는 `columnar_json`, JSONPath를 사용한 결과에서는
-`jsonpath_projection`이 된다. `body_state`는 정상 반환이면 `returned`,
-byte budget 때문에 body를 생략하면 `omitted`가 된다. `omit_reason`은 생략 원인이
-원본/columnar JSON 크기인지, projection 결과 크기인지를 구분한다.
+## 큰 응답
 
-정규식 기반 부분 검색은 RFC 9535식 `search(value, pattern)` 함수를 사용한다. 전체 문자열 매칭은 `match(value, pattern)`를 사용한다.
+`sql_query`는 DB 결과를 `max_rows + 1`까지만 가져온 뒤 `columnar_json`으로 만든다.
+따라서 `source_body_too_large`는 발생하지 않는다. SQL의 큰 응답은 두 축으로
+나뉜다.
 
-```json
-{
-  "alias": "analytics-db",
-  "purpose": "Read API payment statuses only",
-  "query": "select service, status from payments",
-  "jsonpath": ["$.service[?search(@, 'api')]"]
-}
+```text
+row_limit
+  max_rows를 넘어 행이 잘렸다. row_limit sidecar와 next_action=adjust_max_rows를 본다.
+
+output/projection budget
+  읽은 SQL 결과를 columnar_json 또는 jsonpath_projection으로 만들었지만
+  max_bytes를 넘었다. body=null이며 공통 JSON 출력 규칙을 따른다.
 ```
 
-## Truncation
-
-`body`가 `max_bytes`를 넘으면 partial JSON을 반환하지 않는다. 대신 `body`는
-`null`이 되고, 다음 호출을 좁히기 위한 `more`가 붙는다.
-
-```json
-{
-  "body_mode": "columnar_json",
-  "body_state": "omitted",
-  "omit_reason": "output_body_too_large",
-  "body": null,
-  "row_count": 100,
-  "truncated": true,
-  "original_bytes": 287000,
-  "returned_bytes": 0,
-  "latency_ms": 34,
-  "more": {
-    "truncated": true,
-    "options": {
-      "next_action": "add_jsonpath",
-      "suggested_jsonpath": ["$.id", "$.status"],
-      "suggested_max_bytes": 8192
-    },
-    "hints": ["response JSON is too large; retry with jsonpath using 1-3 paths from suggested_jsonpath or preview.paths"]
-  }
-}
-```
-
-`truncated=true`는 두 경우 모두 가능하다.
-
-- SQL 행 수가 `max_rows`를 넘어 잘림
-- JSON 출력이 `max_bytes`를 넘어 `body=null`로 대체됨
-
-SQL 행 수가 `max_rows`를 넘은 경우에는 `row_limit` sidecar가 함께 반환될 수 있다.
-단, byte overflow로 `body=null`이 된 경우에는 `more.options.next_action`의
-byte/projection hint가 우선이다.
+두 축이 동시에 걸리면 `body=null`이 우선이다. 이때는 `more.options.next_action`의
+byte/projection hint를 먼저 따르고, SQL query narrowing 힌트도 함께 참고한다.
 
 규칙:
 
@@ -206,9 +176,7 @@ LLM 가이드:
 
 - `count(*)`, 그룹 요약, 정확한 조회 조건(predicate), 명시적 컬럼 목록으로 시작한다.
 - 테이블이 작다고 확신하지 않는 한 `select *`는 피한다.
-- 결과는 컬럼별 배열이므로, 행 단위 객체가 필요하면 필요한 컬럼을 명시하고 같은
-  인덱스의 값들을 하나의 행으로 해석한다.
+- 결과는 컬럼별 배열이며 SQL row 기준으로 `null` padding된다. 행 단위 객체가
+  필요하면 필요한 컬럼을 명시하고 같은 인덱스의 값들을 하나의 행으로 해석한다.
 - 특정 컬럼이나 큰 결과의 일부만 필요하면 `jsonpath`를 사용한다. 행 수는 `row_count`나
   `$.column.length()`를 사용하고, `$.column.count()`를 행 수로 해석하지 않는다.
-- `body=null`이고 `more.options.next_action=add_jsonpath`이면 `max_bytes`부터
-  올리지 말고 `suggested_jsonpath` 또는 `more.preview.paths`로 먼저 좁힌다.

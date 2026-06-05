@@ -61,7 +61,9 @@ target 재호출이 필요한 경우 LLM이 더 좁은 요청을 만들 수 있�
 ### response/output
 
 - 깨진 JSON이나 partial JSON 문자열을 반환하지 않습니다.
-- 큰 JSON은 `body=null`, `truncated=true`, `more` 힌트로 반환합니다.
+- 큰 JSON은 `body=null`, `truncated=true`, `omit_reason`, `more` 힌트로 반환합니다.
+  `source_body_too_large`는 request를 줄이고, output/projection 초과는 JSONPath로
+  output을 줄입니다.
 - `api_call`과 `sql_query`는 JSONPath projection을 지원합니다.
 - 개수 질문은 전체 배열을 반환하지 않고 `.length()`/`.count()` suffix로 작게 답할 수 있습니다.
 - `sql_query`는 행 배열을 그대로 반환하지 않고 column-oriented JSON으로 반환합니다.
@@ -131,12 +133,26 @@ raw dependency error 중 URL/secret이 섞일 수 있는 값
 
 ### `api_call`
 
-큰 JSON 응답:
+source body read limit 초과:
 
 ```text
 body=null
 truncated=true
-more.options.next_action=add_jsonpath, narrow_jsonpath, 또는 narrow_request
+omit_reason=source_body_too_large
+more.options.next_action=narrow_request
+request 자체를 target-native pagination/filter/limit/selector/time range로 좁힘
+partial JSON 반환 없음
+response body 저장 없음
+```
+
+source는 읽었지만 output budget 초과:
+
+```text
+body=null
+truncated=true
+omit_reason=output_body_too_large 또는 projection_body_too_large
+more.options.next_action=add_jsonpath 또는 narrow_jsonpath
+jsonpath/projection으로 output을 좁힘
 partial JSON 반환 없음
 response body 저장 없음
 ```

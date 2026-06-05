@@ -146,7 +146,7 @@ impl ServerHandler for RuntimeMcpServer {
             .with_server_info(
                 Implementation::new("opsgate", env!("CARGO_PKG_VERSION")).with_title("opsgate"),
             )
-            .with_instructions("Use credential_list first to choose an alias. For HTTP, call api_call with request_path only; target URLs stay hidden. For SQL, optional database selects another DB on the same registered Postgres server; run sql_schema before unknown tables, then sql_query with explicit columns/WHERE/count/group and avoid SELECT *. Use 1-3 jsonpath paths to shrink large JSON outputs.")
+            .with_instructions("Use credential_list first to choose an alias. For HTTP, call api_call with request_path only; target URLs stay hidden. For SQL, optional database selects another DB on the same registered Postgres server; run sql_schema before unknown tables, then sql_query with explicit columns/WHERE/count/group and avoid SELECT *. If body is omitted, follow omit_reason and more.options.next_action: add_jsonpath/narrow_jsonpath shrink output with 1-3 JSONPath paths, while narrow_request means reduce the upstream request with target-native pagination/filter/selector/time range.")
     }
 }
 

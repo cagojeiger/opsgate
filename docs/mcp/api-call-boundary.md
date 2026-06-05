@@ -11,7 +11,7 @@ credential을 안전하게 사용하는 것입니다.
 ```text
 1. denied with safe reason
 2. error with safe kind
-3. body=null + hints
+3. body=null + omit_reason + hints
 4. small valid JSON
 ```
 
@@ -242,7 +242,8 @@ UseNumber preserves large JSON numbers
 jsonpath projection returns flat-keyed object; RFC 9535-compatible filters are supported; regex filters use `search(value, pattern)` for partial search or `match(value, pattern)` for full-string match; `.length()`/`.count()` suffix may return small scalar counts
 source body read-limit truncation is not parsed as JSON
 top-level truncated mirrors the output truncation state
-max_bytes truncation returns body=null
+max_bytes truncation happens only after source JSON was fully read
+max_bytes truncation returns body=null with output/projection guidance
 source body read-limit truncation returns body=null without parsing partial JSON
 partial JSON never returned
 ```
