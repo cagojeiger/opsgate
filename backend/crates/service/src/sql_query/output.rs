@@ -98,7 +98,7 @@ fn row_truncation_more(input: &NormalizedInput) -> More {
     More {
         truncated: true,
         options: MoreOptions {
-            next_action: NextAction::MaxRows,
+            next_action: NextAction::AdjustMaxRows,
             suggested_jsonpath: Vec::new(),
             suggested_max_bytes: None,
         },
@@ -117,7 +117,7 @@ fn build_shaped_body(body: Value, input: &NormalizedInput) -> Result<JsonOutput>
             max_bytes: input.max_bytes,
             max_allowed_bytes: MAX_MAX_BYTES,
             json_paths: input.jsonpath.clone(),
-            transport_truncated: false,
+            source_body_truncated: false,
             original_bytes: None,
             source_body_mode: SourceBodyMode::ColumnarJson,
         },
@@ -214,7 +214,7 @@ mod tests {
             })
         );
         let more = output.more.ok_or_else(|| Error::internal("missing more"))?;
-        assert_eq!(more.options.next_action, NextAction::MaxRows);
+        assert_eq!(more.options.next_action, NextAction::AdjustMaxRows);
         assert!(more.options.suggested_jsonpath.is_empty());
         assert!(
             more.hints
@@ -239,7 +239,7 @@ mod tests {
         let byte_more = More {
             truncated: true,
             options: MoreOptions {
-                next_action: NextAction::Jsonpath,
+                next_action: NextAction::AddJsonpath,
                 suggested_jsonpath: Vec::new(),
                 suggested_max_bytes: None,
             },
@@ -249,7 +249,7 @@ mod tests {
         let more = finalize_more(Some(byte_more), true, &input())
             .ok_or_else(|| Error::internal("more present"))?;
 
-        assert_eq!(more.options.next_action, NextAction::Jsonpath);
+        assert_eq!(more.options.next_action, NextAction::AddJsonpath);
         assert!(
             more.hints
                 .iter()

@@ -20,7 +20,7 @@ pub struct JsonOutputOptions {
     pub max_bytes: usize,
     pub max_allowed_bytes: usize,
     pub json_paths: Vec<String>,
-    pub transport_truncated: bool,
+    pub source_body_truncated: bool,
     pub original_bytes: Option<usize>,
     pub source_body_mode: SourceBodyMode,
 }
@@ -31,7 +31,7 @@ impl Default for JsonOutputOptions {
             max_bytes: DEFAULT_MAX_BYTES,
             max_allowed_bytes: DEFAULT_MAX_ALLOWED_BYTES,
             json_paths: Vec::new(),
-            transport_truncated: false,
+            source_body_truncated: false,
             original_bytes: None,
             source_body_mode: SourceBodyMode::RawJson,
         }
@@ -62,18 +62,18 @@ pub enum BodyState {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OmitReason {
-    OutputBytes,
-    ProjectionBytes,
-    TransportCap,
+    OutputBodyTooLarge,
+    ProjectionBodyTooLarge,
+    SourceBodyTooLarge,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum NextAction {
-    Jsonpath,
+    AddJsonpath,
     NarrowJsonpath,
     NarrowRequest,
-    MaxRows,
+    AdjustMaxRows,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -148,7 +148,7 @@ struct PreviewStat {
 pub fn build_json_output(raw: &[u8], options: JsonOutputOptions) -> Result<JsonOutput> {
     validate_json_paths(&options.json_paths)?;
     let original_bytes = options.original_bytes.unwrap_or(raw.len());
-    if options.transport_truncated {
+    if options.source_body_truncated {
         return Ok(truncated_output(
             Value::Null,
             original_bytes,
@@ -204,7 +204,7 @@ pub fn build_json_output_from_value(
     options: JsonOutputOptions,
 ) -> Result<JsonOutput> {
     validate_json_paths(&options.json_paths)?;
-    if options.transport_truncated {
+    if options.source_body_truncated {
         return Ok(truncated_output(
             Value::Null,
             options.original_bytes.unwrap_or(0),
@@ -395,25 +395,25 @@ fn truncated_output(
     original_bytes: usize,
     options: &JsonOutputOptions,
     preview: Option<Preview>,
-    transport_truncated: bool,
+    source_body_truncated: bool,
 ) -> JsonOutput {
     let more_options = truncation_options(
         options,
         preview.as_ref(),
         body_size(&body),
-        transport_truncated,
+        source_body_truncated,
     );
     JsonOutput {
         body_mode: output_body_mode(options),
         body_state: BodyState::Omitted,
-        omit_reason: Some(omit_reason(options, transport_truncated)),
+        omit_reason: Some(omit_reason(options, source_body_truncated)),
         body: Value::Null,
         original_bytes,
         returned_bytes: 0,
         truncated: true,
         more: Some(More {
             truncated: true,
-            hints: truncation_hints(options, &more_options, transport_truncated),
+            hints: truncation_hints(options, &more_options, source_body_truncated),
             options: more_options,
             preview,
         }),
@@ -437,23 +437,23 @@ impl From<SourceBodyMode> for BodyMode {
     }
 }
 
-fn next_action(options: &JsonOutputOptions, transport_truncated: bool) -> NextAction {
-    if transport_truncated {
+fn next_action(options: &JsonOutputOptions, source_body_truncated: bool) -> NextAction {
+    if source_body_truncated {
         NextAction::NarrowRequest
     } else if options.json_paths.is_empty() {
-        NextAction::Jsonpath
+        NextAction::AddJsonpath
     } else {
         NextAction::NarrowJsonpath
     }
 }
 
-fn omit_reason(options: &JsonOutputOptions, transport_truncated: bool) -> OmitReason {
-    if transport_truncated {
-        OmitReason::TransportCap
+fn omit_reason(options: &JsonOutputOptions, source_body_truncated: bool) -> OmitReason {
+    if source_body_truncated {
+        OmitReason::SourceBodyTooLarge
     } else if options.json_paths.is_empty() {
-        OmitReason::OutputBytes
+        OmitReason::OutputBodyTooLarge
     } else {
-        OmitReason::ProjectionBytes
+        OmitReason::ProjectionBodyTooLarge
     }
 }
 
@@ -461,17 +461,17 @@ fn truncation_options(
     options: &JsonOutputOptions,
     preview: Option<&Preview>,
     body_bytes: usize,
-    transport_truncated: bool,
+    source_body_truncated: bool,
 ) -> MoreOptions {
     let mut out = MoreOptions {
-        next_action: next_action(options, transport_truncated),
+        next_action: next_action(options, source_body_truncated),
         suggested_jsonpath: Vec::new(),
         suggested_max_bytes: None,
     };
     if let Some(preview) = preview {
         out.suggested_jsonpath = suggested_json_paths(preview, 3);
     }
-    if !transport_truncated && options.max_bytes < options.max_allowed_bytes {
+    if !source_body_truncated && options.max_bytes < options.max_allowed_bytes {
         out.suggested_max_bytes = Some(body_bytes.min(options.max_allowed_bytes));
     }
     out
@@ -480,11 +480,11 @@ fn truncation_options(
 fn truncation_hints(
     options: &JsonOutputOptions,
     more_options: &MoreOptions,
-    transport_truncated: bool,
+    source_body_truncated: bool,
 ) -> Vec<String> {
-    if transport_truncated {
+    if source_body_truncated {
         return vec![
-            "target response exceeded hard read cap; retry with a narrower request path/query/body"
+            "target response body is too large to read fully; retry with narrower request filters (path/query/body, time range, selectors, pagination, or limit)"
                 .to_owned(),
         ];
     }
@@ -934,10 +934,10 @@ mod tests {
         assert!(out.truncated);
         assert_eq!(out.body_mode, BodyMode::RawJson);
         assert_eq!(out.body_state, BodyState::Omitted);
-        assert_eq!(out.omit_reason, Some(OmitReason::OutputBytes));
+        assert_eq!(out.omit_reason, Some(OmitReason::OutputBodyTooLarge));
         assert_eq!(out.body, Value::Null);
         let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
-        assert_eq!(more.options.next_action, NextAction::Jsonpath);
+        assert_eq!(more.options.next_action, NextAction::AddJsonpath);
         assert!(
             more.options
                 .suggested_jsonpath
@@ -960,10 +960,35 @@ mod tests {
         )?;
         assert_eq!(out.body_mode, BodyMode::JsonpathProjection);
         assert_eq!(out.body_state, BodyState::Omitted);
-        assert_eq!(out.omit_reason, Some(OmitReason::ProjectionBytes));
+        assert_eq!(out.omit_reason, Some(OmitReason::ProjectionBodyTooLarge));
         let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
         assert_eq!(more.options.next_action, NextAction::NarrowJsonpath);
         assert!(more.preview.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn serializes_omit_reasons_and_next_actions_as_llm_terms() -> Result<()> {
+        assert_eq!(
+            serde_json::to_value(OmitReason::OutputBodyTooLarge).map_err(Error::internal)?,
+            serde_json::json!("output_body_too_large")
+        );
+        assert_eq!(
+            serde_json::to_value(OmitReason::ProjectionBodyTooLarge).map_err(Error::internal)?,
+            serde_json::json!("projection_body_too_large")
+        );
+        assert_eq!(
+            serde_json::to_value(OmitReason::SourceBodyTooLarge).map_err(Error::internal)?,
+            serde_json::json!("source_body_too_large")
+        );
+        assert_eq!(
+            serde_json::to_value(NextAction::AddJsonpath).map_err(Error::internal)?,
+            serde_json::json!("add_jsonpath")
+        );
+        assert_eq!(
+            serde_json::to_value(NextAction::AdjustMaxRows).map_err(Error::internal)?,
+            serde_json::json!("adjust_max_rows")
+        );
         Ok(())
     }
 
@@ -1149,11 +1174,11 @@ mod tests {
     }
 
     #[test]
-    fn transport_truncation_preserves_reported_original_size() -> Result<()> {
+    fn source_body_truncation_preserves_reported_original_size() -> Result<()> {
         let out = build_json_output(
             br#"{"partial":true}"#,
             JsonOutputOptions {
-                transport_truncated: true,
+                source_body_truncated: true,
                 original_bytes: Some(2048),
                 ..JsonOutputOptions::default()
             },
@@ -1161,7 +1186,7 @@ mod tests {
         assert!(out.truncated);
         assert_eq!(out.body_mode, BodyMode::RawJson);
         assert_eq!(out.body_state, BodyState::Omitted);
-        assert_eq!(out.omit_reason, Some(OmitReason::TransportCap));
+        assert_eq!(out.omit_reason, Some(OmitReason::SourceBodyTooLarge));
         assert_eq!(out.original_bytes, 2048);
         assert_eq!(out.returned_bytes, 0);
         let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
@@ -1171,12 +1196,12 @@ mod tests {
     }
 
     #[test]
-    fn transport_truncation_requires_narrow_request_even_with_jsonpath() -> Result<()> {
+    fn source_body_truncation_requires_narrow_request_even_with_jsonpath() -> Result<()> {
         let out = build_json_output(
             br#"{"partial":true}"#,
             JsonOutputOptions {
                 json_paths: vec!["$.partial".to_owned()],
-                transport_truncated: true,
+                source_body_truncated: true,
                 original_bytes: Some(2048),
                 ..JsonOutputOptions::default()
             },
@@ -1184,7 +1209,7 @@ mod tests {
 
         assert_eq!(out.body_mode, BodyMode::JsonpathProjection);
         assert_eq!(out.body_state, BodyState::Omitted);
-        assert_eq!(out.omit_reason, Some(OmitReason::TransportCap));
+        assert_eq!(out.omit_reason, Some(OmitReason::SourceBodyTooLarge));
         let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
         assert_eq!(more.options.next_action, NextAction::NarrowRequest);
         assert!(more.options.suggested_jsonpath.is_empty());

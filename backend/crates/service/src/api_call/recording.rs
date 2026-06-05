@@ -348,7 +348,7 @@ mod tests {
             headers: BTreeMap::new(),
             body_mode: crate::llm_output::BodyMode::RawJson,
             body_state: crate::llm_output::BodyState::Omitted,
-            omit_reason: Some(crate::llm_output::OmitReason::TransportCap),
+            omit_reason: Some(crate::llm_output::OmitReason::SourceBodyTooLarge),
             body: Value::Null,
             truncated: true,
             original_bytes: MAX_MAX_BYTES + 1,

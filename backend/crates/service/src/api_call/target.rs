@@ -63,7 +63,7 @@ pub(super) async fn execute_target_call(
             Error::validation("target response is not JSON"),
         ));
     }
-    let (body, original_bytes, transport_truncated) =
+    let (body, original_bytes, source_body_truncated) =
         read_capped(&mut response.response, MAX_MAX_BYTES)
             .await
             .map_err(|error| {
@@ -80,7 +80,7 @@ pub(super) async fn execute_target_call(
             max_bytes: input.max_bytes,
             max_allowed_bytes: MAX_MAX_BYTES,
             json_paths: input.jsonpath.clone(),
-            transport_truncated,
+            source_body_truncated,
             original_bytes: Some(original_bytes),
             source_body_mode: SourceBodyMode::RawJson,
         },

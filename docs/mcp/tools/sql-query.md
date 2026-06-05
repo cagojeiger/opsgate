@@ -142,7 +142,7 @@ byte budget 때문에 body를 생략하면 `omitted`가 된다. `omit_reason`은
 {
   "body_mode": "columnar_json",
   "body_state": "omitted",
-  "omit_reason": "output_bytes",
+  "omit_reason": "output_body_too_large",
   "body": null,
   "row_count": 100,
   "truncated": true,
@@ -152,7 +152,7 @@ byte budget 때문에 body를 생략하면 `omitted`가 된다. `omit_reason`은
   "more": {
     "truncated": true,
     "options": {
-      "next_action": "jsonpath",
+      "next_action": "add_jsonpath",
       "suggested_jsonpath": ["$.id", "$.status"],
       "suggested_max_bytes": 8192
     },
@@ -210,5 +210,5 @@ LLM 가이드:
   인덱스의 값들을 하나의 행으로 해석한다.
 - 특정 컬럼이나 큰 결과의 일부만 필요하면 `jsonpath`를 사용한다. 행 수는 `row_count`나
   `$.column.length()`를 사용하고, `$.column.count()`를 행 수로 해석하지 않는다.
-- `body=null`이고 `more.options.next_action=jsonpath`이면 `max_bytes`부터
+- `body=null`이고 `more.options.next_action=add_jsonpath`이면 `max_bytes`부터
   올리지 말고 `suggested_jsonpath` 또는 `more.preview.paths`로 먼저 좁힌다.
