@@ -61,7 +61,9 @@ target 재호출이 필요한 경우 LLM이 더 좁은 요청을 만들 수 있�
 ### response/output
 
 - 깨진 JSON이나 partial JSON 문자열을 반환하지 않습니다.
-- 큰 JSON은 `body=null`, `truncated=true`, `more` 힌트로 반환합니다.
+- 큰 JSON은 `body=null`, `truncated=true`, `omit_reason`, `more` 힌트로 반환합니다.
+  `source_body_too_large`는 request를 줄이고, output/projection 초과는 JSONPath로
+  output을 줄입니다.
 - `api_call`과 `sql_query`는 JSONPath projection을 지원합니다.
 - 개수 질문은 전체 배열을 반환하지 않고 `.length()`/`.count()` suffix로 작게 답할 수 있습니다.
 - `sql_query`는 행 배열을 그대로 반환하지 않고 column-oriented JSON으로 반환합니다.

@@ -11,7 +11,7 @@ credential을 안전하게 사용하는 것입니다.
 ```text
 1. denied with safe reason
 2. error with safe kind
-3. body=null + hints
+3. body=null + omit_reason + hints
 4. small valid JSON
 ```
 

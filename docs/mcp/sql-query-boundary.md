@@ -249,7 +249,7 @@ DB 결과 행렬을 LLM이 소비하기 쉬운 작은 column-oriented JSON으로
 ```text
 SQL rows -> column-oriented body
 jsonpath -> projection over the column-oriented body, with `.length()`/`.count()` for count-only answers
-max_bytes overrun -> body=null + more hints
+max_bytes overrun after bounded SQL fetch -> body=null + more hints
 ```
 
 불변조건:
@@ -258,7 +258,7 @@ max_bytes overrun -> body=null + more hints
 Postgres json/jsonb and array values return as proper JSON values
 row_count means fetched SQL rows after max_rows enforcement
 partial JSON is never returned
-max_bytes overrun returns truncated=true + more hints
+max_bytes overrun returns truncated=true + more hints after the bounded SQL rows were fetched
 returned values are not written to history/audit
 ```
 
