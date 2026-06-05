@@ -191,86 +191,50 @@ SQL의 column-oriented body에서 `$.column.count()`는 보통 배열 node 1개�
 의도는 무제한 recursive traversal을 막으면서도 LLM이 필요한 값이나 개수만 작게
 가져올 수 있게 하는 것입니다.
 
-## 큰 응답 처리 규칙
+## 큰 응답 처리
 
-Opsgate가 source body를 완전히 읽었지만 target JSON 또는 SQL 결과 JSON이
-호출자의 `max_bytes`보다 크면 전체 body를 반환하지 않습니다.
+`body_state=omitted`이면 공통 envelope은 다음 규칙을 따릅니다.
+
+```text
+body=null
+truncated=true
+returned_bytes=0
+partial JSON 문자열 반환 금지
+response body audit/history 저장 금지
+more.options.next_action으로 다음 호출 축소 방향 제공
+```
+
+생략/sidecar 상태와 `next_action`의 의미:
+
+```text
+source_body_too_large      -> narrow_request
+  source body를 완전히 못 읽었다. max_bytes/jsonpath보다 request path/query/body,
+  target-native pagination/filter/limit/selector/time range를 먼저 줄인다.
+
+output_body_too_large      -> add_jsonpath
+  source JSON은 읽혔지만 raw_json/columnar_json output이 max_bytes를 넘었다.
+  suggested_jsonpath 또는 more.preview.paths에서 1-3개를 골라 output을 좁힌다.
+
+projection_body_too_large  -> narrow_jsonpath
+  source JSON은 읽혔고 JSONPath도 수행했지만 projection output이 아직 크다.
+  expression 개수, slice 범위, filter 조건을 더 줄인다.
+
+row_limit                  -> adjust_max_rows
+  SQL row limit에 걸렸다. max_rows, WHERE, aggregate, keyset pagination을 조정한다.
+```
+
+`suggested_max_bytes`는 compact JSON body 기준이며 마지막 수단입니다. source body
+read limit 초과에는 도움이 되지 않습니다. source body read limit에 걸린 경우
+`more.preview`와 `suggested_jsonpath`는 만들지 않습니다.
+
+최소 예시:
 
 ```json
 {
-  "status_code": 200,
-  "body_mode": "raw_json",
   "body_state": "omitted",
   "omit_reason": "output_body_too_large",
   "body": null,
   "truncated": true,
-  "original_bytes": 287000,
-  "returned_bytes": 0,
-  "latency_ms": 34,
-  "more": {
-    "truncated": true,
-    "options": {
-      "next_action": "add_jsonpath",
-      "suggested_jsonpath": [
-        "$.items[*].metadata.name",
-        "$.items[*].status.phase"
-      ],
-      "suggested_max_bytes": 8192
-    },
-    "hints": [
-      "Opsgate read the full JSON, but the tool output budget is too small; retry with jsonpath using 1-3 paths from suggested_jsonpath or preview.paths"
-    ]
-  }
-}
-```
-
-규칙:
-
-```text
-body=null
-body_state=omitted
-more.truncated=true
-partial JSON 문자열 반환 금지
-response body audit/history 저장 금지
-다음 호출을 좁힐 수 있는 structured option과 hint 제공
-```
-
-target 응답 body가 source body read limit을 넘는 경우에도, 불완전한 JSON prefix를
-파싱하려고 하지 않습니다. 대신 truncated envelope을 반환합니다. 이때
-`original_bytes`는 Content-Length가 있으면 전체 크기이고, 없으면 limit을 넘었다는
-사실을 확인한 최소 크기일 수 있습니다. 이 경우 `omit_reason=source_body_too_large`,
-`more.options.next_action=narrow_request`이며 preview는 만들지 않습니다.
-
-## 점진적 호출 프로토콜
-
-`api_call`과 `sql_query`는 큰 JSON을 한 번에 많이 보여주는 도구가 아닙니다.
-LLM이 작은 호출에서 시작해서 필요한 정보만 점진적으로 가져오도록 설계합니다.
-
-`more.options.next_action`은 다음 호출의 우선 행동입니다.
-
-```text
-add_jsonpath      source JSON은 읽혔지만 output budget을 넘었으니 JSONPath로 output을 좁힌다.
-narrow_jsonpath   source JSON은 읽혔고 JSONPath도 썼지만 projection output이 아직 크니 표현식을 더 좁힌다.
-narrow_request    source body를 완전히 못 읽었으니 request 자체를 target-native pagination/filter/limit/selector/time range로 좁힌다.
-adjust_max_rows   SQL row limit에 걸렸으니 max_rows/WHERE/aggregate를 조정한다.
-```
-
-규칙:
-
-```text
-1. body=null이면 `omit_reason`과 `next_action`을 먼저 본다.
-2. next_action=add_jsonpath이면 source는 이미 읽혔으니 suggested_jsonpath에서 1-3개만 골라 output을 좁힌다.
-3. suggested_jsonpath가 없으면 more.preview.paths에서 scalar path를 고른다.
-4. next_action=narrow_jsonpath이면 expression 개수, slice 범위, filter 조건을 줄인다.
-5. next_action=narrow_request이면 max_bytes/jsonpath보다 request path/query/body나 upstream 조회 범위를 먼저 줄인다.
-6. max_bytes 증가는 projection 결과도 필요한데 여전히 큰 경우의 마지막 수단이다.
-7. source body read limit 초과 시 max_bytes 증가는 도움이 되지 않는다.
-```
-
-예시:
-
-```json
-{
   "more": {
     "truncated": true,
     "options": {
@@ -284,23 +248,6 @@ adjust_max_rows   SQL row limit에 걸렸으니 max_rows/WHERE/aggregate를 조�
   }
 }
 ```
-
-위 경우 다음 호출은 이렇게 해야 합니다.
-
-```json
-{
-  "jsonpath": [
-    "$.items[*].metadata.name",
-    "$.items[*].status.phase"
-  ],
-  "max_bytes": 4096
-}
-```
-
-`suggested_max_bytes`가 있어도 먼저 사용하지 않습니다. 이 값은 compact JSON
-body를 정말 봐야 할 때의 last resort입니다. upstream 응답의 공백까지 포함한
-raw byte 크기가 아니라, opsgate가 실제 반환할 compact/projection body 크기를
-기준으로 계산합니다.
 
 ## Preview path catalog
 
