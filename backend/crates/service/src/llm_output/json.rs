@@ -486,15 +486,15 @@ fn truncation_hints(
 ) -> Vec<String> {
     if source_body_truncated {
         return vec![
-            "target response body is too large to read fully; retry with narrower request filters (path/query/body, time range, selectors, pagination, or limit)"
+            "Opsgate could not read the full target response body; retry with target-native pagination, filters, selectors, limits, time ranges, or a narrower path/query/body"
                 .to_owned(),
         ];
     }
     if options.json_paths.is_empty() {
-        vec!["response JSON is too large; retry with jsonpath using 1-3 paths from suggested_jsonpath or preview.paths".to_owned()]
+        vec!["Opsgate read the full JSON, but the tool output budget is too small; retry with jsonpath using 1-3 paths from suggested_jsonpath or preview.paths".to_owned()]
     } else {
         vec![format!(
-            "jsonpath projection is still too large; reduce expression count/range before raising max_bytes to {:?}",
+            "Opsgate read the full JSON, but the JSONPath projection is still too large; reduce expression count, slice range, or filter scope before raising max_bytes to {:?}",
             more_options.suggested_max_bytes
         )]
     }
@@ -947,6 +947,12 @@ mod tests {
                 .any(|path| path == "$.items[*].metadata.name")
         );
         assert!(more.preview.is_some());
+        assert!(more.options.suggested_max_bytes.is_some());
+        assert!(
+            more.hints.iter().any(|hint| {
+                hint.contains("read the full JSON") && hint.contains("output budget")
+            })
+        );
         Ok(())
     }
 
@@ -966,6 +972,9 @@ mod tests {
         let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
         assert_eq!(more.options.next_action, NextAction::NarrowJsonpath);
         assert!(more.preview.is_none());
+        assert!(more.hints.iter().any(|hint| {
+            hint.contains("read the full JSON") && hint.contains("projection is still too large")
+        }));
         Ok(())
     }
 
@@ -1194,6 +1203,12 @@ mod tests {
         let more = out.more.ok_or_else(|| Error::internal("missing more"))?;
         assert_eq!(more.options.next_action, NextAction::NarrowRequest);
         assert_eq!(more.options.suggested_max_bytes, None);
+        assert!(more.options.suggested_jsonpath.is_empty());
+        assert!(more.preview.is_none());
+        assert!(more.hints.iter().any(|hint| {
+            hint.contains("could not read the full target response body")
+                && hint.contains("pagination")
+        }));
         Ok(())
     }
 

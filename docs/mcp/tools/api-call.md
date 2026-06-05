@@ -103,10 +103,20 @@
 
 Truncation:
 
-응답이 `max_bytes`를 넘거나 source body read limit에 걸리면 `body=null`이 되고, `more`가 재시도 방법을
-설명합니다. 응답에 따라 `more.options.next_action`은 `add_jsonpath`,
-`narrow_jsonpath`, `narrow_request`가 될 수 있고, projection을 narrowing하는 데
-도움이 되도록 `more.preview`에 path 메타데이터가 포함될 수 있습니다.
+응답이 `body=null`이면 `omit_reason`을 먼저 봅니다.
+
+- `source_body_too_large`: Opsgate가 target 응답 body를 완전히 읽지 못했습니다.
+  `max_bytes`나 `jsonpath`보다 target-native pagination, limit, cursor/continue,
+  selector, filter, time range, 더 좁은 `request_path`/`query`가 먼저입니다.
+- `output_body_too_large`: Opsgate는 source JSON을 완전히 읽었습니다. 다만 tool
+  output budget을 넘었으므로 `suggested_jsonpath` 또는 `more.preview.paths`로
+  output만 좁힙니다.
+- `projection_body_too_large`: Opsgate는 source JSON을 완전히 읽고 JSONPath도
+  적용했습니다. JSONPath expression 수, slice 범위, filter 조건을 더 줄입니다.
+
+`more.preview`는 source JSON을 완전히 읽었지만 output이 큰 경우에만 붙을 수
+있습니다. source body read limit에 걸린 partial JSON은 파싱하지 않으므로 preview를
+만들지 않습니다.
 
 ```json
 {
@@ -129,8 +139,7 @@ Truncation:
       "suggested_max_bytes": 8192
     },
     "hints": [
-      "retry with jsonpath=[\"$.items[*].metadata.name\",\"$.items[*].status.phase\"] using 1-3 paths from more.options.suggested_jsonpath",
-      "last resort: retry with max_bytes=8192 to fit the full body"
+      "Opsgate read the full JSON, but the tool output budget is too small; retry with jsonpath using 1-3 paths from suggested_jsonpath or preview.paths"
     ]
   }
 }
@@ -143,10 +152,16 @@ LLM 가이드:
   받지 말고 `.length()` 또는 `.count()`를 먼저 사용하세요.
 - 구조를 모르는 API라면 낮은 `max_bytes`로 시작한 뒤
   `more.options.next_action`을 따르세요.
-- `max_bytes`를 올리기 전에 `suggested_jsonpath`/`more.preview.paths`를
-  우선 사용하세요. `suggested_max_bytes`는 최후의 수단입니다.
+- `next_action=add_jsonpath`이면 source는 이미 읽혔으므로 `suggested_jsonpath`/
+  `more.preview.paths`를 우선 사용하세요. `suggested_max_bytes`는 최후의
+  수단입니다.
+- `next_action=narrow_request`이면 Opsgate가 source를 완전히 읽지 못한 것입니다.
+  target API의 pagination/filter/selector/time range로 request 자체를 줄이세요.
 - `suggested_max_bytes`는 대상 서버의 공백 포함 원본 응답 크기가 아니라
   opsgate가 반환할 compact JSON body 기준입니다.
+- JSONPath projection은 matched-node list입니다. 여러 JSONPath 결과 배열의 같은
+  index가 같은 source row라는 보장은 없습니다. optional field가 있는 row 정합성이
+  필요하면 page/filter를 줄이고 `$.items[*]`처럼 row object 자체를 projection하세요.
 - 일부 Kubernetes의 읽기성 API는 POST이며, 그래도 POST policy가 필요합니다.
 - `origin=https://k8s.example.com`, `base_path=/cluster-a`, `request_path=/api/v1/pods`이면 실제 호출 URL은 `https://k8s.example.com/cluster-a/api/v1/pods`입니다. LLM은 `origin`과 `base_path`를 직접 보지 않습니다.
 

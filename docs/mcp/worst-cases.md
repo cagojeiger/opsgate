@@ -131,12 +131,26 @@ raw dependency error 중 URL/secret이 섞일 수 있는 값
 
 ### `api_call`
 
-큰 JSON 응답:
+source body read limit 초과:
 
 ```text
 body=null
 truncated=true
-more.options.next_action=add_jsonpath, narrow_jsonpath, 또는 narrow_request
+omit_reason=source_body_too_large
+more.options.next_action=narrow_request
+request 자체를 target-native pagination/filter/limit/selector/time range로 좁힘
+partial JSON 반환 없음
+response body 저장 없음
+```
+
+source는 읽었지만 output budget 초과:
+
+```text
+body=null
+truncated=true
+omit_reason=output_body_too_large 또는 projection_body_too_large
+more.options.next_action=add_jsonpath 또는 narrow_jsonpath
+jsonpath/projection으로 output을 좁힘
 partial JSON 반환 없음
 response body 저장 없음
 ```

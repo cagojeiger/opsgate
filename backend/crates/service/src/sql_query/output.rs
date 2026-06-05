@@ -243,7 +243,9 @@ mod tests {
                 suggested_jsonpath: Vec::new(),
                 suggested_max_bytes: None,
             },
-            hints: vec!["response JSON is too large".to_owned()],
+            hints: vec![
+                "Opsgate read the full JSON, but the tool output budget is too small".to_owned(),
+            ],
             preview: None,
         };
         let more = finalize_more(Some(byte_more), true, &input())

@@ -89,6 +89,29 @@ projection_body_too_large   JSONPath projection 결과도 max_bytes를 초과
 source_body_too_large       target 응답 body가 read limit을 초과해 완전 JSON을 읽지 못함
 ```
 
+출력 결정은 두 단계로 나눕니다.
+
+```text
+1. Source Read
+   Opsgate가 target/source body를 완전히 읽었는가?
+
+2. Output Budget
+   읽은 JSON 또는 JSONPath projection 결과가 max_bytes 안에 들어가는가?
+```
+
+따라서 `body=null`의 의미는 `omit_reason`으로 구분해야 합니다.
+
+```text
+source_body_too_large
+  Opsgate가 source body를 완전히 읽지 못했다. partial JSON은 파싱하지 않는다.
+
+output_body_too_large
+  Opsgate는 source JSON을 완전히 읽었다. 다만 raw_json/columnar_json output이 max_bytes를 넘었다.
+
+projection_body_too_large
+  Opsgate는 source JSON을 완전히 읽고 JSONPath projection도 수행했다. 다만 projection output이 max_bytes를 넘었다.
+```
+
 ## Projection
 
 큰 target JSON은 `jsonpath`로 필요한 값만 뽑는 것이 기본 전략입니다.
@@ -116,6 +139,13 @@ source_body_too_large       target 응답 body가 read limit을 초과해 완전
   }
 }
 ```
+
+`jsonpath_projection`은 각 표현식의 matched-node list를 flat-keyed object로
+반환합니다. 여러 JSONPath 결과 배열의 같은 index가 같은 source row라는 보장은
+없습니다. optional field가 있는 API row 정합성이 필요하면 target-native
+pagination/filter로 page를 줄인 뒤 `$.items[*]`처럼 row object 자체를
+projection하세요. SQL `columnar_json`은 별도 로직으로 missing column을 `null`로
+padding하므로 이 API JSONPath projection 경고와 다릅니다.
 
 ## JSONPath 검증 규칙
 
@@ -163,8 +193,8 @@ SQL의 column-oriented body에서 `$.column.count()`는 보통 배열 node 1개�
 
 ## 큰 응답 처리 규칙
 
-target JSON 또는 SQL 결과 JSON이 호출자의 `max_bytes`보다 크면 전체 body를
-반환하지 않습니다.
+Opsgate가 source body를 완전히 읽었지만 target JSON 또는 SQL 결과 JSON이
+호출자의 `max_bytes`보다 크면 전체 body를 반환하지 않습니다.
 
 ```json
 {
@@ -188,9 +218,7 @@ target JSON 또는 SQL 결과 JSON이 호출자의 `max_bytes`보다 크면 전�
       "suggested_max_bytes": 8192
     },
     "hints": [
-      "retry with jsonpath=[\"$.items[*].metadata.name\",\"$.items[*].status.phase\"] using 1-3 paths from more.options.suggested_jsonpath",
-      "increase max_bytes only after projection if the projected output is still too large and policy allows it",
-      "last resort: retry with max_bytes=8192 to fit the full body"
+      "Opsgate read the full JSON, but the tool output budget is too small; retry with jsonpath using 1-3 paths from suggested_jsonpath or preview.paths"
     ]
   }
 }
@@ -221,20 +249,20 @@ LLM이 작은 호출에서 시작해서 필요한 정보만 점진적으로 가�
 `more.options.next_action`은 다음 호출의 우선 행동입니다.
 
 ```text
-add_jsonpath      projection 없이 큰 응답을 받았으니 JSONPath로 좁힌다.
-narrow_jsonpath   이미 JSONPath를 썼지만 결과가 아직 크니 표현식을 더 좁힌다.
-narrow_request    target 응답 body가 source body read limit을 넘었으니 request 자체를 좁힌다.
+add_jsonpath      source JSON은 읽혔지만 output budget을 넘었으니 JSONPath로 output을 좁힌다.
+narrow_jsonpath   source JSON은 읽혔고 JSONPath도 썼지만 projection output이 아직 크니 표현식을 더 좁힌다.
+narrow_request    source body를 완전히 못 읽었으니 request 자체를 target-native pagination/filter/limit/selector/time range로 좁힌다.
 adjust_max_rows   SQL row limit에 걸렸으니 max_rows/WHERE/aggregate를 조정한다.
 ```
 
 규칙:
 
 ```text
-1. body=null이면 max_bytes부터 올리지 않는다.
-2. next_action=add_jsonpath이면 suggested_jsonpath에서 1-3개만 골라 재호출한다.
+1. body=null이면 `omit_reason`과 `next_action`을 먼저 본다.
+2. next_action=add_jsonpath이면 source는 이미 읽혔으니 suggested_jsonpath에서 1-3개만 골라 output을 좁힌다.
 3. suggested_jsonpath가 없으면 more.preview.paths에서 scalar path를 고른다.
 4. next_action=narrow_jsonpath이면 expression 개수, slice 범위, filter 조건을 줄인다.
-5. next_action=narrow_request이면 request path/query/body나 upstream 조회 범위를 줄인다.
+5. next_action=narrow_request이면 max_bytes/jsonpath보다 request path/query/body나 upstream 조회 범위를 먼저 줄인다.
 6. max_bytes 증가는 projection 결과도 필요한데 여전히 큰 경우의 마지막 수단이다.
 7. source body read limit 초과 시 max_bytes 증가는 도움이 되지 않는다.
 ```
@@ -394,9 +422,9 @@ index cache와 함께 검토합니다.
 
 ```text
 1. more.options.next_action을 먼저 따른다.
-2. next_action=add_jsonpath이면 suggested_jsonpath에서 1-3개만 골라 재호출한다.
+2. next_action=add_jsonpath이면 source는 이미 읽혔으니 suggested_jsonpath에서 1-3개만 골라 output을 좁힌다.
 3. next_action=narrow_jsonpath이면 expression 개수, slice 범위, filter 조건을 줄인다.
-4. next_action=narrow_request이면 max_bytes/jsonpath보다 request path/query/body나 upstream 조회 범위를 줄인다.
+4. next_action=narrow_request이면 source를 완전히 못 읽은 것이므로 max_bytes/jsonpath보다 request path/query/body나 upstream 조회 범위를 줄인다.
 5. preview가 있으면 present_sampled가 높은 path부터 사용한다.
 6. 중첩 배열 path는 꼭 필요할 때만 사용한다.
 7. preview가 잘렸다면 preview를 더 보려 하지 말고 더 좁은 jsonpath를 만든다.

@@ -79,6 +79,11 @@ paid   | 900
 `max_bytes`로 `body`가 줄어들거나 `null`이 되어도, 이 값은 원본 SQL 결과의
 행 수를 의미한다.
 
+`columnar_json`은 SQL row를 기준으로 전치한다. 어떤 row에 새 column이 나타나거나
+값이 없으면 같은 row index를 유지하도록 `null`을 채운다. 따라서 SQL columnar
+body는 API `jsonpath_projection`의 matched-node list와 달리 같은 index를 같은
+row로 해석할 수 있다.
+
 ## JSONPath projection
 
 큰 결과나 특정 컬럼만 필요할 때는 `jsonpath`를 사용한다. JSONPath는 전치된
@@ -156,7 +161,7 @@ byte budget 때문에 body를 생략하면 `omitted`가 된다. `omit_reason`은
       "suggested_jsonpath": ["$.id", "$.status"],
       "suggested_max_bytes": 8192
     },
-    "hints": ["response JSON is too large; retry with jsonpath using 1-3 paths from suggested_jsonpath or preview.paths"]
+    "hints": ["Opsgate read the full JSON, but the tool output budget is too small; retry with jsonpath using 1-3 paths from suggested_jsonpath or preview.paths"]
   }
 }
 ```
@@ -169,6 +174,10 @@ byte budget 때문에 body를 생략하면 `omitted`가 된다. `omit_reason`은
 SQL 행 수가 `max_rows`를 넘은 경우에는 `row_limit` sidecar가 함께 반환될 수 있다.
 단, byte overflow로 `body=null`이 된 경우에는 `more.options.next_action`의
 byte/projection hint가 우선이다.
+
+`sql_query`는 DB 결과를 `max_rows + 1`까지만 가져온 뒤 `columnar_json`으로 만든다.
+따라서 `output_body_too_large`와 `projection_body_too_large`는 DB source를 못 읽은
+상태가 아니라, 읽은 SQL 결과를 tool output budget 안에 담지 못한 상태다.
 
 규칙:
 
@@ -206,8 +215,8 @@ LLM 가이드:
 
 - `count(*)`, 그룹 요약, 정확한 조회 조건(predicate), 명시적 컬럼 목록으로 시작한다.
 - 테이블이 작다고 확신하지 않는 한 `select *`는 피한다.
-- 결과는 컬럼별 배열이므로, 행 단위 객체가 필요하면 필요한 컬럼을 명시하고 같은
-  인덱스의 값들을 하나의 행으로 해석한다.
+- 결과는 컬럼별 배열이며 SQL row 기준으로 `null` padding된다. 행 단위 객체가
+  필요하면 필요한 컬럼을 명시하고 같은 인덱스의 값들을 하나의 행으로 해석한다.
 - 특정 컬럼이나 큰 결과의 일부만 필요하면 `jsonpath`를 사용한다. 행 수는 `row_count`나
   `$.column.length()`를 사용하고, `$.column.count()`를 행 수로 해석하지 않는다.
 - `body=null`이고 `more.options.next_action=add_jsonpath`이면 `max_bytes`부터
