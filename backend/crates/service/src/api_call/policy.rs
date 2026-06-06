@@ -5,64 +5,54 @@ use opsgate_model::credential::{
 
 use super::input::NormalizedApiCallInput;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub(super) enum ApiPolicyDenial {
-    MethodNotAllowed {
-        allowed_methods: Vec<String>,
-    },
-    RequestPathNotAllowed {
-        allowed_request_path_prefixes: Vec<String>,
-    },
-    QueryKeyDenied {
-        denied_query_keys: Vec<String>,
-    },
+    MethodNotAllowed,
+    RequestPathNotAllowed,
+    QueryKeyDenied,
     RequestHeaderBlocked,
-    RequestHeaderNotAllowed {
-        allowed_request_headers: Vec<String>,
-    },
+    RequestHeaderNotAllowed,
     SecretHeaderOverride,
 }
 
 impl ApiPolicyDenial {
     pub(super) fn kind(&self) -> &'static str {
         match self {
-            Self::MethodNotAllowed { .. } => "policy_method_not_allowed",
-            Self::RequestPathNotAllowed { .. } => "policy_request_path_not_allowed",
-            Self::QueryKeyDenied { .. } => "policy_query_key_denied",
+            Self::MethodNotAllowed => "policy_method_not_allowed",
+            Self::RequestPathNotAllowed => "policy_request_path_not_allowed",
+            Self::QueryKeyDenied => "policy_query_key_denied",
             Self::RequestHeaderBlocked => "policy_request_header_blocked",
-            Self::RequestHeaderNotAllowed { .. } => "policy_request_header_not_allowed",
+            Self::RequestHeaderNotAllowed => "policy_request_header_not_allowed",
             Self::SecretHeaderOverride => "policy_secret_header_override",
         }
     }
 
     pub(super) fn message(&self) -> &'static str {
         match self {
-            Self::MethodNotAllowed { .. } => "method not allowed by credential policy",
-            Self::RequestPathNotAllowed { .. } => "request_path not allowed by credential policy",
-            Self::QueryKeyDenied { .. } => "query key denied by credential policy",
+            Self::MethodNotAllowed => "method not allowed by credential policy",
+            Self::RequestPathNotAllowed => "request_path not allowed by credential policy",
+            Self::QueryKeyDenied => "query key denied by credential policy",
             Self::RequestHeaderBlocked => "blocked request header",
-            Self::RequestHeaderNotAllowed { .. } => {
-                "request header not allowed by credential policy"
-            }
+            Self::RequestHeaderNotAllowed => "request header not allowed by credential policy",
             Self::SecretHeaderOverride => "caller header cannot override sealed secret header",
         }
     }
 
     fn hint(&self) -> &'static str {
         match self {
-            Self::MethodNotAllowed { .. } => {
+            Self::MethodNotAllowed => {
                 "Use credential_list to inspect allowed_methods for this alias, then retry with an allowed method."
             }
-            Self::RequestPathNotAllowed { .. } => {
+            Self::RequestPathNotAllowed => {
                 "Use credential_list to inspect allowed_request_path_prefixes for this alias, then retry under an allowed prefix."
             }
-            Self::QueryKeyDenied { .. } => {
+            Self::QueryKeyDenied => {
                 "Use credential_list to inspect denied_query_keys for this alias, then remove denied query keys."
             }
             Self::RequestHeaderBlocked => {
                 "Remove blocked transport or auth headers from the request."
             }
-            Self::RequestHeaderNotAllowed { .. } => {
+            Self::RequestHeaderNotAllowed => {
                 "Use credential_list to inspect allowed_request_headers for this alias, then retry with only allowed headers."
             }
             Self::SecretHeaderOverride => {
@@ -81,9 +71,7 @@ pub(super) fn validate_policy_boundary(
     input: &NormalizedApiCallInput,
 ) -> std::result::Result<(), ApiPolicyDenial> {
     if !contains_fold(&credential.policy.allowed_methods, &input.method) {
-        return Err(ApiPolicyDenial::MethodNotAllowed {
-            allowed_methods: credential.policy.allowed_methods.clone(),
-        });
+        return Err(ApiPolicyDenial::MethodNotAllowed);
     }
     if !credential
         .policy
@@ -91,15 +79,11 @@ pub(super) fn validate_policy_boundary(
         .iter()
         .any(|prefix| request_path_matches_prefix(&input.request_path, prefix))
     {
-        return Err(ApiPolicyDenial::RequestPathNotAllowed {
-            allowed_request_path_prefixes: credential.policy.allowed_request_path_prefixes.clone(),
-        });
+        return Err(ApiPolicyDenial::RequestPathNotAllowed);
     }
     for key in input.query.keys() {
         if contains_fold(&credential.policy.denied_query_keys, key) {
-            return Err(ApiPolicyDenial::QueryKeyDenied {
-                denied_query_keys: credential.policy.denied_query_keys.clone(),
-            });
+            return Err(ApiPolicyDenial::QueryKeyDenied);
         }
     }
     for name in input.headers.keys() {
@@ -107,9 +91,7 @@ pub(super) fn validate_policy_boundary(
             return Err(ApiPolicyDenial::RequestHeaderBlocked);
         }
         if !contains_fold(&credential.policy.allowed_request_headers, name) {
-            return Err(ApiPolicyDenial::RequestHeaderNotAllowed {
-                allowed_request_headers: credential.policy.allowed_request_headers.clone(),
-            });
+            return Err(ApiPolicyDenial::RequestHeaderNotAllowed);
         }
     }
     Ok(())
