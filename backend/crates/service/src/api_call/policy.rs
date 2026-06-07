@@ -1,6 +1,6 @@
 use opsgate_core::Error;
 use opsgate_model::credential::{
-    Credential, SecretHeader, contains_fold, header_blocked, request_path_matches_prefix,
+    Credential, contains_fold, header_blocked, request_path_matches_prefix,
 };
 
 use super::input::NormalizedApiCallInput;
@@ -12,7 +12,6 @@ pub(super) enum ApiPolicyDenial {
     QueryKeyDenied,
     RequestHeaderBlocked,
     RequestHeaderNotAllowed,
-    SecretHeaderOverride,
 }
 
 impl ApiPolicyDenial {
@@ -23,7 +22,6 @@ impl ApiPolicyDenial {
             Self::QueryKeyDenied => "policy_query_key_denied",
             Self::RequestHeaderBlocked => "policy_request_header_blocked",
             Self::RequestHeaderNotAllowed => "policy_request_header_not_allowed",
-            Self::SecretHeaderOverride => "policy_secret_header_override",
         }
     }
 
@@ -34,7 +32,6 @@ impl ApiPolicyDenial {
             Self::QueryKeyDenied => "query key denied by credential policy",
             Self::RequestHeaderBlocked => "blocked request header",
             Self::RequestHeaderNotAllowed => "request header not allowed by credential policy",
-            Self::SecretHeaderOverride => "caller header cannot override sealed secret header",
         }
     }
 
@@ -54,9 +51,6 @@ impl ApiPolicyDenial {
             }
             Self::RequestHeaderNotAllowed => {
                 "Use credential_list to inspect allowed_request_headers for this alias, then retry with only allowed headers."
-            }
-            Self::SecretHeaderOverride => {
-                "Remove caller-supplied headers that are sealed on the credential."
             }
         }
     }
@@ -97,20 +91,23 @@ pub(super) fn validate_policy_boundary(
     Ok(())
 }
 
-pub(super) fn validate_no_secret_header_override(
-    secret: &[SecretHeader],
+pub(super) fn caller_overrides_secret_header<'a, I>(
+    secret_header_names: I,
     input: &NormalizedApiCallInput,
-) -> std::result::Result<(), ApiPolicyDenial> {
-    for header in secret {
+) -> bool
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    for secret_header_name in secret_header_names {
         if input
             .headers
             .keys()
-            .any(|name| name.eq_ignore_ascii_case(&header.name))
+            .any(|name| name.eq_ignore_ascii_case(secret_header_name))
         {
-            return Err(ApiPolicyDenial::SecretHeaderOverride);
+            return true;
         }
     }
-    Ok(())
+    false
 }
 
 #[cfg(test)]
@@ -118,10 +115,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use chrono::Utc;
-    use opsgate_model::credential::{
-        CredentialCategory, CredentialPolicy, CredentialTarget, SecretHeader,
-    };
-    use secrecy::SecretString;
+    use opsgate_model::credential::{CredentialCategory, CredentialPolicy, CredentialTarget};
     use uuid::Uuid;
 
     use super::super::input::{ApiCallInput, normalize_input};
@@ -259,19 +253,12 @@ mod tests {
     }
 
     #[test]
-    fn policy_boundary_rejects_secret_header_override() -> opsgate_core::Result<()> {
+    fn detects_secret_header_override_defensively() -> opsgate_core::Result<()> {
         let input = normalize_input(ApiCallInput {
             headers: BTreeMap::from([("X-Api-Key".to_owned(), "caller-value".to_owned())]),
             ..base_input()
         })?;
-        let secret = vec![SecretHeader {
-            name: "x-api-key".to_owned(),
-            value: SecretString::from("sealed-value"),
-        }];
-        assert_eq!(
-            expect_denial(validate_no_secret_header_override(&secret, &input))?.kind(),
-            "policy_secret_header_override"
-        );
+        assert!(caller_overrides_secret_header(["x-api-key"], &input));
         Ok(())
     }
 }

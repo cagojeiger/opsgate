@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use super::input::{ApiCallInput, normalize_input};
 use super::output::ApiCallOutput;
-use super::policy::{validate_no_secret_header_override, validate_policy_boundary};
+use super::policy::{ApiPolicyDenial, caller_overrides_secret_header, validate_policy_boundary};
 use super::recording::{CallRecorder, record_bad_input};
 use super::target::execute_target_call;
 
@@ -106,7 +106,9 @@ impl ApiCallService {
                     return Err(error);
                 }
             };
-        if let Err(denial) = validate_no_secret_header_override(&secret, &input) {
+        if caller_overrides_secret_header(secret.iter().map(|header| header.name.as_str()), &input)
+        {
+            let denial = ApiPolicyDenial::RequestHeaderNotAllowed;
             recorder.denied(denial.kind(), denial.message()).await;
             return Err(denial.into_error());
         }
