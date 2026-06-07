@@ -2,7 +2,9 @@ use std::ops::ControlFlow;
 
 use opsgate_core::{Error, Result};
 use opsgate_model::credential::CredentialPolicy;
-use sqlparser::ast::{Expr, ObjectName, Query, SetExpr, Statement, Visit, Visitor};
+use sqlparser::ast::{
+    Expr, ObjectName, Query, Select, SelectItem, SetExpr, Statement, Visit, Visitor,
+};
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
 
@@ -115,6 +117,42 @@ fn validate_set_expr(expr: &SetExpr) -> Result<()> {
         _ => Err(Error::validation(
             "query contains a statement type that sql_query does not allow",
         )),
+    }
+}
+
+pub(super) fn query_uses_select_wildcard(query: &str) -> bool {
+    let dialect = PostgreSqlDialect {};
+    let Ok(statements) = Parser::parse_sql(&dialect, query) else {
+        return false;
+    };
+    let mut visitor = SelectWildcardVisitor { found: false };
+    for statement in statements {
+        let _ = statement.visit(&mut visitor);
+        if visitor.found {
+            return true;
+        }
+    }
+    false
+}
+
+struct SelectWildcardVisitor {
+    found: bool,
+}
+
+impl Visitor for SelectWildcardVisitor {
+    type Break = ();
+
+    fn pre_visit_select(&mut self, select: &Select) -> ControlFlow<Self::Break> {
+        if select.projection.iter().any(|item| {
+            matches!(
+                item,
+                SelectItem::Wildcard(_) | SelectItem::QualifiedWildcard(_, _)
+            )
+        }) {
+            self.found = true;
+            return ControlFlow::Break(());
+        }
+        ControlFlow::Continue(())
     }
 }
 
@@ -303,6 +341,21 @@ mod tests {
         input.timeout_ms = 1001;
         assert!(validate_policy_boundary(&policy, &input).is_err());
         Ok(())
+    }
+
+    #[test]
+    fn detects_select_wildcard_for_output_hint() {
+        assert!(query_uses_select_wildcard("select * from payments"));
+        assert!(query_uses_select_wildcard("select p.* from payments p"));
+        assert!(query_uses_select_wildcard(
+            "with recent as (select * from payments) select id from recent"
+        ));
+        assert!(!query_uses_select_wildcard(
+            "select id, status from payments"
+        ));
+        assert!(!query_uses_select_wildcard(
+            "select '* not a projection' as literal"
+        ));
     }
 
     #[test]
