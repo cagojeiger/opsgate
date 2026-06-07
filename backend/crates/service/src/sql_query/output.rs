@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::input::{MAX_MAX_BYTES, NormalizedInput};
+use super::policy::query_uses_select_wildcard;
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct SqlQueryOutput {
@@ -25,6 +26,8 @@ pub struct SqlQueryOutput {
     pub original_bytes: usize,
     pub returned_bytes: usize,
     pub latency_ms: i64,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub hints: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub more: Option<More>,
     #[serde(skip)]
@@ -62,9 +65,21 @@ pub(super) fn build_column_output(
         original_bytes: shaped.original_bytes,
         returned_bytes: shaped.returned_bytes,
         latency_ms: 0,
+        hints: output_hints(input),
         more,
         column_names,
     })
+}
+
+const SELECT_WILDCARD_HINT: &str =
+    "Prefer explicit columns instead of SELECT * to reduce SQL output size.";
+
+fn output_hints(input: &NormalizedInput) -> Vec<String> {
+    if query_uses_select_wildcard(&input.query) {
+        vec![SELECT_WILDCARD_HINT.to_owned()]
+    } else {
+        Vec::new()
+    }
 }
 
 /// SQL-specific narrowing hint appended to byte-overflow guidance: unlike
@@ -230,6 +245,24 @@ mod tests {
         let output = build_column_output(rows, &input(), false)?;
 
         assert!(!output.truncated);
+        assert!(output.more.is_none());
+        assert!(output.hints.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn select_wildcard_output_emits_column_hint() -> Result<()> {
+        let rows = vec![serde_json::json!({"id": 1, "status": "paid"})];
+        let mut input = input();
+        input.query = "select * from payments".to_owned();
+        let output = build_column_output(rows, &input, false)?;
+
+        assert!(
+            output
+                .hints
+                .iter()
+                .any(|hint| hint.contains("explicit columns") && hint.contains("SELECT *"))
+        );
         assert!(output.more.is_none());
         Ok(())
     }
