@@ -99,7 +99,6 @@ mod tests {
             tags: Vec::new(),
             policy: CredentialPolicy::default(),
             allow_private_network: false,
-            allow_insecure_transport: false,
             tls_server_ca: String::new(),
         }
         .into_domain()

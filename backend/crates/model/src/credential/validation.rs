@@ -252,7 +252,19 @@ pub fn validate_postgres_database_url(
                 "postgres database_url sslmode=verify-full is unsupported by guarded SQL targets",
             ));
         }
-        _ if allow_private_network && allow_insecure_transport => {}
+        Some("disable" | "allow" | "prefer" | "verify-ca")
+            if allow_private_network && allow_insecure_transport => {}
+        Some("disable" | "allow" | "prefer" | "verify-ca") => {
+            return Err(Error::validation(
+                "postgres database_url requires sslmode=require unless allow_private_network=true and allow_insecure_transport=true",
+            ));
+        }
+        None if allow_private_network && allow_insecure_transport => {}
+        Some(mode) => {
+            return Err(Error::validation(format!(
+                "unsupported postgres database_url sslmode {mode:?}"
+            )));
+        }
         _ => {
             return Err(Error::validation(
                 "postgres database_url requires sslmode=require unless allow_private_network=true and allow_insecure_transport=true",
@@ -761,6 +773,10 @@ mod tests {
         assert!(
             validate_postgres_database_url("postgres://db.local/app?sslmode=require", false, false)
                 .is_ok()
+        );
+        assert!(
+            validate_postgres_database_url("postgres://db.local/app?sslmode=bogus", true, true)
+                .is_err()
         );
     }
 

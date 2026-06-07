@@ -201,7 +201,6 @@ impl RegisterCredentialInput {
                     tags: self.tags,
                     policy: self.policy,
                     allow_private_network: self.allow_private_network,
-                    allow_insecure_transport: self.allow_insecure_transport,
                     tls_server_ca: self.tls_server_ca,
                 }))
             }

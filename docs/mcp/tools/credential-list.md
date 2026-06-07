@@ -67,3 +67,4 @@ tags를 대상으로 검색합니다.
 - 다음 페이지를 요청할 때는 직전 응답의 `page.next_cursor`를 `cursor`로 넘깁니다.
 - `page.next_cursor`는 `page.has_more=true`일 때만 포함됩니다.
 - `fields`는 반환되는 metadata를 제한하지만 `alias`는 제거할 수 없습니다.
+- `allow_insecure_transport`는 SQL credential metadata로만 반환됩니다.
