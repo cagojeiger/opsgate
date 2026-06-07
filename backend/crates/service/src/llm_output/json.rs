@@ -477,7 +477,7 @@ fn truncation_hints(omit_reason: OmitReason, more_options: &MoreOptions) -> Vec<
                 .to_owned(),
         ],
         OmitReason::Output => vec![
-            "Opsgate read the full JSON, but the tool output budget is too small; retry with jsonpath using 1-3 paths from suggested_jsonpath or preview.paths".to_owned(),
+            "Opsgate read the full JSON, but the tool output budget is too small; inspect preview.paths, then retry with jsonpath using 1-3 selected paths. suggested_jsonpath is only a small shortlist.".to_owned(),
         ],
         OmitReason::Projection => vec![format!(
             "Opsgate read the full JSON, but the JSONPath projection is still too large; reduce expression count, slice range, or filter scope before raising max_bytes to {:?}",
@@ -907,7 +907,7 @@ mod tests {
     }
 
     #[test]
-    fn truncates_large_json_with_preview_and_jsonpath_hint() -> Result<()> {
+    fn truncates_large_json_with_preview_catalog_and_shortlist() -> Result<()> {
         let out = build_json_output(
             br#"{"items":[{"metadata":{"name":"api"},"status":{"phase":"Running"}},{"metadata":{"name":"worker"},"status":{"phase":"Pending"}}]}"#,
             JsonOutputOptions {
@@ -930,11 +930,9 @@ mod tests {
         );
         assert!(more.preview.is_some());
         assert!(more.options.suggested_max_bytes.is_some());
-        assert!(
-            more.hints.iter().any(|hint| {
-                hint.contains("read the full JSON") && hint.contains("output budget")
-            })
-        );
+        assert!(more.hints.iter().any(|hint| {
+            hint.contains("inspect preview.paths") && hint.contains("small shortlist")
+        }));
         Ok(())
     }
 

@@ -213,7 +213,8 @@ source_body_too_large      -> narrow_request
 
 output_body_too_large      -> add_jsonpath
   source JSON은 읽혔지만 raw_json/columnar_json output이 max_bytes를 넘었다.
-  suggested_jsonpath 또는 more.preview.paths에서 1-3개를 골라 output을 좁힌다.
+  more.preview.paths의 path/type/presence/null 정보를 보고 1-3개 JSONPath를
+  명시적으로 선택해 output을 좁힌다. suggested_jsonpath는 호환용 shortlist다.
 
 projection_body_too_large  -> narrow_jsonpath
   source JSON은 읽혔고 JSONPath도 수행했지만 projection output이 아직 크다.
@@ -252,12 +253,13 @@ read limit 초과에는 도움이 되지 않습니다. source body read limit에
 ## Preview path catalog
 
 응답이 유효한 JSON이지만 `max_bytes`보다 큰 경우, opsgate는
-`more.preview`에 제한된 preview catalog를 제공합니다.
+`more.preview`에 제한된 jq-style path catalog를 제공합니다.
 
-preview는 전체 schema가 아닙니다. LLM이 다음 `jsonpath`를 고를 수 있게
-돕는 작은 JSONPath 후보 목록과 필드 통계입니다.
+preview는 전체 schema도 추천 결과도 아닙니다. `more.preview.paths`가 canonical
+surface이며, 호출자는 path/type/presence/null 정보를 보고 다음 `jsonpath`를
+명시적으로 선택합니다. `suggested_jsonpath`는 기존 client를 위한 작은 shortlist입니다.
 
-추천 shape:
+응답 shape:
 
 ```json
 {
@@ -365,14 +367,16 @@ index cache와 함께 검토합니다.
 
 ## Preview 사용 규칙
 
-`more.preview`는 `add_jsonpath`를 돕는 첫 화면 힌트입니다. paging 인터페이스가
-아니므로 preview가 잘렸다면 preview를 더 보려 하지 말고 더 좁은 JSONPath로
-재호출합니다.
+`more.preview`는 `add_jsonpath`를 돕는 첫 화면 path catalog입니다. paging
+인터페이스가 아니므로 preview가 잘렸다면 preview를 더 보려 하지 말고 더 좁은
+JSONPath로 재호출합니다.
 
 ```text
-1. present_sampled가 높은 scalar path부터 사용한다.
-2. 중첩 배열 path는 꼭 필요할 때만 사용한다.
-3. full response가 작다는 확신이 있고 policy가 허용할 때만 max_bytes를 올린다.
+1. preview.paths에서 목적에 맞는 path를 1-3개 명시적으로 선택한다.
+2. type, present_sampled, nulls_sampled, array length, nested_expansion_stopped를
+   참고하되, suggested_jsonpath를 정답으로 취급하지 않는다.
+3. 중첩 배열 path는 꼭 필요할 때만 사용한다.
+4. full response가 작다는 확신이 있고 policy가 허용할 때만 max_bytes를 올린다.
 ```
 
 ## 현재 구현 상태
