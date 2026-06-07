@@ -243,18 +243,23 @@ pub fn validate_postgres_database_url(
                 "unsupported postgres database_url query parameter {key:?}"
             )));
         }
+        if sslmode.is_some() {
+            return Err(Error::validation(
+                "postgres database_url must not include duplicate sslmode parameters",
+            ));
+        }
         sslmode = Some(value.to_ascii_lowercase());
     }
     match sslmode.as_deref() {
         Some("require") => {}
-        Some("verify-full") => {
+        Some("verify-ca" | "verify-full") => {
             return Err(Error::validation(
-                "postgres database_url sslmode=verify-full is unsupported by guarded SQL targets",
+                "postgres database_url sslmode verify-ca/verify-full is unsupported by guarded SQL targets",
             ));
         }
-        Some("disable" | "allow" | "prefer" | "verify-ca")
+        Some("disable" | "allow" | "prefer")
             if allow_private_network && allow_insecure_transport => {}
-        Some("disable" | "allow" | "prefer" | "verify-ca") => {
+        Some("disable" | "allow" | "prefer") => {
             return Err(Error::validation(
                 "postgres database_url requires sslmode=require unless allow_private_network=true and allow_insecure_transport=true",
             ));
@@ -730,16 +735,31 @@ mod tests {
     }
 
     #[test]
-    fn rejects_postgres_verify_full_until_guarded_tls_identity_is_supported() {
+    fn rejects_postgres_verify_modes_until_guarded_tls_identity_is_supported() {
+        for sslmode in ["verify-ca", "verify-full"] {
+            let err = validate_postgres_database_url(
+                &format!("postgres://db.example.test/app?sslmode={sslmode}"),
+                true,
+                true,
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert!(err.contains("verify-ca/verify-full is unsupported"));
+        }
+    }
+
+    #[test]
+    fn rejects_duplicate_postgres_sslmode_parameters() {
         let err = validate_postgres_database_url(
-            "postgres://db.example.test/app?sslmode=verify-full",
-            false,
-            false,
+            "postgres://db.example.test/app?sslmode=require&sslmode=disable",
+            true,
+            true,
         )
         .err()
         .map(|error| error.to_string())
         .unwrap_or_default();
-        assert!(err.contains("verify-full is unsupported"));
+        assert!(err.contains("duplicate sslmode"));
     }
 
     #[test]

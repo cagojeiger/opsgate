@@ -169,7 +169,7 @@ mod tests {
         .err()
         .map(|error| error.to_string())
         .unwrap_or_default();
-        assert!(err.contains("verify-full is unsupported"));
+        assert!(err.contains("verify-ca/verify-full is unsupported"));
         assert!(!err.contains("resolve target host"));
     }
 
