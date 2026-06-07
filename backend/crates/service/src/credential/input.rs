@@ -48,7 +48,7 @@ pub struct RegisterHttpCredentialInput {
     /// Search/grouping labels.
     #[serde(default)]
     pub tags: Vec<String>,
-    /// HTTP policy: methods, request_path prefixes, query/header constraints, and budgets.
+    /// HTTP policy: methods, request_path prefixes, and query/header constraints.
     #[serde(default)]
     pub policy: CredentialPolicy,
     /// Opt in only for trusted private-network targets.

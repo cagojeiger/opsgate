@@ -94,6 +94,7 @@ fn normalize_sql_policy(policy: &mut CredentialPolicy) {
 }
 
 fn validate_http_policy(policy: &CredentialPolicy) -> Result<()> {
+    reject_sql_only_policy_fields(policy)?;
     for method in &policy.allowed_methods {
         if !matches!(method.as_str(), "GET" | "POST" | "PUT" | "PATCH" | "DELETE") {
             return Err(Error::validation(format!(
@@ -145,7 +146,71 @@ fn valid_request_path_prefix(prefix: &str) -> bool {
         && !prefix.contains("//")
 }
 
+fn reject_sql_only_policy_fields(policy: &CredentialPolicy) -> Result<()> {
+    if policy.allow_metadata {
+        return Err(Error::validation(
+            "policy.allow_metadata is only supported for sql credentials",
+        ));
+    }
+    if policy.allow_explain {
+        return Err(Error::validation(
+            "policy.allow_explain is only supported for sql credentials",
+        ));
+    }
+    if policy.allow_explain_analyze {
+        return Err(Error::validation(
+            "policy.allow_explain_analyze is only supported for sql credentials",
+        ));
+    }
+    if !policy.denied_functions.is_empty() {
+        return Err(Error::validation(
+            "policy.denied_functions is only supported for sql credentials",
+        ));
+    }
+    if policy.max_rows > 0 {
+        return Err(Error::validation(
+            "policy.max_rows is only supported for sql credentials",
+        ));
+    }
+    if policy.max_bytes > 0 {
+        return Err(Error::validation(
+            "policy.max_bytes is only supported for sql credentials",
+        ));
+    }
+    if policy.timeout_ms > 0 {
+        return Err(Error::validation(
+            "policy.timeout_ms is only supported for sql credentials",
+        ));
+    }
+    Ok(())
+}
+
+fn reject_http_only_policy_fields(policy: &CredentialPolicy) -> Result<()> {
+    if !policy.allowed_methods.is_empty() {
+        return Err(Error::validation(
+            "policy.allowed_methods is only supported for http credentials",
+        ));
+    }
+    if !policy.allowed_request_path_prefixes.is_empty() {
+        return Err(Error::validation(
+            "policy.allowed_request_path_prefixes is only supported for http credentials",
+        ));
+    }
+    if !policy.denied_query_keys.is_empty() {
+        return Err(Error::validation(
+            "policy.denied_query_keys is only supported for http credentials",
+        ));
+    }
+    if !policy.allowed_request_headers.is_empty() {
+        return Err(Error::validation(
+            "policy.allowed_request_headers is only supported for http credentials",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_sql_policy(policy: &CredentialPolicy) -> Result<()> {
+    reject_http_only_policy_fields(policy)?;
     if policy.allow_explain_analyze && !policy.allow_explain {
         return Err(Error::validation(
             "sql policy allow_explain_analyze requires allow_explain=true",
@@ -205,6 +270,109 @@ mod tests {
             CredentialCategory::Sql,
         );
         assert!(validate_policy_for_category(&policy, CredentialCategory::Sql).is_err());
+    }
+
+    #[test]
+    fn http_policy_rejects_sql_only_fields() {
+        for (policy, expected) in [
+            (
+                CredentialPolicy {
+                    allow_metadata: true,
+                    ..CredentialPolicy::default()
+                },
+                "allow_metadata",
+            ),
+            (
+                CredentialPolicy {
+                    allow_explain: true,
+                    ..CredentialPolicy::default()
+                },
+                "allow_explain",
+            ),
+            (
+                CredentialPolicy {
+                    allow_explain_analyze: true,
+                    ..CredentialPolicy::default()
+                },
+                "allow_explain_analyze",
+            ),
+            (
+                CredentialPolicy {
+                    denied_functions: vec!["version".to_owned()],
+                    ..CredentialPolicy::default()
+                },
+                "denied_functions",
+            ),
+            (
+                CredentialPolicy {
+                    max_rows: 100,
+                    ..CredentialPolicy::default()
+                },
+                "max_rows",
+            ),
+            (
+                CredentialPolicy {
+                    max_bytes: 4096,
+                    ..CredentialPolicy::default()
+                },
+                "max_bytes",
+            ),
+            (
+                CredentialPolicy {
+                    timeout_ms: 3000,
+                    ..CredentialPolicy::default()
+                },
+                "timeout_ms",
+            ),
+        ] {
+            let policy = normalize_policy_for_category(policy, CredentialCategory::Http);
+            let err = validate_policy_for_category(&policy, CredentialCategory::Http)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default();
+            assert!(err.contains(expected), "{err:?} should mention {expected}");
+        }
+    }
+
+    #[test]
+    fn sql_policy_rejects_http_only_fields() {
+        for (policy, expected) in [
+            (
+                CredentialPolicy {
+                    allowed_methods: vec!["GET".to_owned()],
+                    ..CredentialPolicy::default()
+                },
+                "allowed_methods",
+            ),
+            (
+                CredentialPolicy {
+                    allowed_request_path_prefixes: vec!["/api".to_owned()],
+                    ..CredentialPolicy::default()
+                },
+                "allowed_request_path_prefixes",
+            ),
+            (
+                CredentialPolicy {
+                    denied_query_keys: vec!["token".to_owned()],
+                    ..CredentialPolicy::default()
+                },
+                "denied_query_keys",
+            ),
+            (
+                CredentialPolicy {
+                    allowed_request_headers: vec!["X-Test".to_owned()],
+                    ..CredentialPolicy::default()
+                },
+                "allowed_request_headers",
+            ),
+        ] {
+            let policy = normalize_policy_for_category(policy, CredentialCategory::Sql);
+            let err = validate_policy_for_category(&policy, CredentialCategory::Sql)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default();
+            assert!(err.contains(expected), "{err:?} should mention {expected}");
+        }
     }
 
     #[test]
