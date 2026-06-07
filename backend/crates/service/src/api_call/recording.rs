@@ -325,8 +325,12 @@ mod tests {
             &input,
             Some(&credential),
             "denied",
-            Some(reason::POLICY_DENIED),
+            Some("policy_method_not_allowed"),
             None,
+        );
+        assert_eq!(
+            detail.get("denial_reason"),
+            Some(&serde_json::json!("policy_method_not_allowed"))
         );
         let serialized = detail.to_string();
         assert!(serialized.contains("query_keys"));

@@ -82,11 +82,9 @@ impl ApiCallService {
                 .await;
             return Err(Error::validation(reason::WRONG_CREDENTIAL_CATEGORY));
         }
-        if let Err(error) = validate_policy_boundary(&credential, &input) {
-            recorder
-                .denied(reason::POLICY_DENIED, &error.to_string())
-                .await;
-            return Err(error);
+        if let Err(denial) = validate_policy_boundary(&credential, &input) {
+            recorder.denied(denial.kind(), denial.message()).await;
+            return Err(denial.into_error());
         }
 
         let secret_ciphertext = match secret_ciphertext {
@@ -108,11 +106,9 @@ impl ApiCallService {
                     return Err(error);
                 }
             };
-        if let Err(error) = validate_no_secret_header_override(&secret, &input) {
-            recorder
-                .denied(reason::POLICY_DENIED, &error.to_string())
-                .await;
-            return Err(error);
+        if let Err(denial) = validate_no_secret_header_override(&secret, &input) {
+            recorder.denied(denial.kind(), denial.message()).await;
+            return Err(denial.into_error());
         }
 
         let output = match execute_target_call(

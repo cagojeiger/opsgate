@@ -115,6 +115,7 @@ mod tests {
             kind,
             message,
             hint,
+            ..
         } = error
         else {
             return Err("expected user-safe error".to_owned());
@@ -154,6 +155,7 @@ mod tests {
                 kind,
                 message,
                 hint,
+                ..
             } = error
             else {
                 return Err(format!("{code} should map to Error::UserSafe"));
