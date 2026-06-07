@@ -40,7 +40,10 @@
 - `database_url`
 - `username`
 - `password`
-- `policy`
+
+선택값이지만 중요한 필드:
+
+- `policy`: 생략하면 기본 policy를 사용합니다.
 
 출력:
 
@@ -68,7 +71,7 @@
 - 데이터 도달 범위는 DB role grant로 제어합니다. 하나의 credential로 여러 DB를 조회하려면 해당 role에 각 DB의 읽기 권한이 있어야 합니다.
 - SQL policy는 row/byte/timeout, metadata, EXPLAIN, denied function 동작을
   제어합니다.
-- 기본적으로 `sslmode=require`가 필요합니다. `sslmode=verify-full`은 현재 guarded SQL target에서 지원하지 않으므로 거부됩니다. 내부/비TLS 연결은 `allow_private_network=true`와 `allow_insecure_transport=true`를 둘 다 켠 경우에만 허용됩니다.
+- 기본적으로 `sslmode=require`가 필요합니다. 내부/비TLS 연결은 `allow_private_network=true`와 `allow_insecure_transport=true`를 둘 다 켠 경우에만 허용됩니다.
 - 봉인된 secret과 target `database_url`은 등록 후 변경할 수 없습니다. secret rotation이나
   데이터베이스 대상 변경은 delete 후 재등록으로 처리하며,
   `credential_update_sql`은 metadata와 policy만 수정합니다.

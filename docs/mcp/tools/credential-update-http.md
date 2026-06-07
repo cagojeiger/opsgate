@@ -64,7 +64,6 @@
 - 봉인된 시크릿 헤더
 - `tls_server_ca`
 - `allow_private_network`
-- `allow_insecure_transport`
 
 참고:
 

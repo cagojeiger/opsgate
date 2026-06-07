@@ -57,11 +57,7 @@ pub fn validate_register_input(input: &RegisterCredentialInput) -> Result<()> {
             CredentialTarget::Http { origin, base_path },
             CredentialSecret::Http { headers },
         ) => {
-            validate_http_origin(
-                origin,
-                input.allow_private_network,
-                input.allow_insecure_transport,
-            )?;
+            validate_http_origin(origin)?;
             validate_http_base_path(base_path)?;
             validate_http_secret(headers)?;
             let names = headers
@@ -170,11 +166,7 @@ pub fn validate_tags(tags: &[String]) -> Result<()> {
     Ok(())
 }
 
-pub fn validate_http_origin(
-    raw: &str,
-    allow_private_network: bool,
-    allow_insecure_transport: bool,
-) -> Result<Url> {
+pub fn validate_http_origin(raw: &str) -> Result<Url> {
     let url =
         Url::parse(raw).map_err(|error| Error::validation(format!("http origin: {error}")))?;
     if url.host_str().is_none() {
@@ -186,13 +178,7 @@ pub fn validate_http_origin(
         ));
     }
     match url.scheme() {
-        "https" => {}
-        "http" if allow_private_network && allow_insecure_transport => {}
-        "http" => {
-            return Err(Error::validation(
-                "http origin requires allow_private_network=true and allow_insecure_transport=true",
-            ));
-        }
+        "http" | "https" => {}
         _ => {
             return Err(Error::validation(
                 "http origin must use http:// or https://",
@@ -277,9 +263,6 @@ pub fn validate_postgres_database_url(
 }
 
 fn validate_http_secret(headers: &[super::SecretHeader]) -> Result<()> {
-    if headers.is_empty() {
-        return Err(Error::validation("secret.headers is required"));
-    }
     if headers.len() > MAX_SECRET_HEADERS {
         return Err(Error::validation(format!(
             "secret.headers count must be <= {MAX_SECRET_HEADERS}"
@@ -448,6 +431,30 @@ mod tests {
     }
 
     #[test]
+    fn allows_http_register_without_secret_headers() {
+        let input = normalize_register_input(RegisterCredentialInput {
+            category: CredentialCategory::Http,
+            provider: "internal-api".to_owned(),
+            alias: "health".to_owned(),
+            target: CredentialTarget::Http {
+                origin: "http://status.example.test".to_owned(),
+                base_path: String::new(),
+            },
+            secret: CredentialSecret::Http {
+                headers: Vec::new(),
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            allow_insecure_transport: false,
+            tls_server_ca: None,
+        });
+        assert!(validate_register_input(&input).is_ok());
+    }
+
+    #[test]
     fn rejects_http_origin_query_and_secret_overlap() {
         let input = normalize_register_input(RegisterCredentialInput {
             category: CredentialCategory::Http,
@@ -486,7 +493,7 @@ mod tests {
             "https://user:pass@example.com",
         ] {
             assert!(
-                validate_http_origin(origin, false, false).is_err(),
+                validate_http_origin(origin).is_err(),
                 "{origin} should be rejected"
             );
         }
@@ -732,11 +739,13 @@ mod tests {
     }
 
     #[test]
-    fn insecure_transports_require_explicit_private_opt_in() {
-        assert!(validate_http_origin("http://service.local", true, true).is_ok());
-        assert!(validate_http_origin("http://service.local", true, false).is_err());
-        assert!(validate_http_origin("http://service.local", false, true).is_err());
+    fn http_origin_allows_http_and_https_schemes() {
+        assert!(validate_http_origin("http://service.local").is_ok());
+        assert!(validate_http_origin("https://service.local").is_ok());
+    }
 
+    #[test]
+    fn sql_insecure_transport_requires_explicit_private_opt_in() {
         assert!(
             validate_postgres_database_url("postgres://db.local/app?sslmode=disable", true, true)
                 .is_ok()
@@ -756,7 +765,7 @@ mod tests {
     }
 
     #[test]
-    fn register_validation_gates_insecure_transports() {
+    fn register_validation_allows_http_without_transport_opt_in() {
         let http = RegisterCredentialInput {
             category: CredentialCategory::Http,
             provider: "k8s".to_owned(),
@@ -775,18 +784,15 @@ mod tests {
             env: String::new(),
             tags: Vec::new(),
             policy: CredentialPolicy::default(),
-            allow_private_network: true,
-            allow_insecure_transport: true,
+            allow_private_network: false,
+            allow_insecure_transport: false,
             tls_server_ca: None,
         };
-        assert!(validate_register_input(&normalize_register_input(http.clone())).is_ok());
-        let mut missing_transport = http.clone();
-        missing_transport.allow_insecure_transport = false;
-        assert!(validate_register_input(&normalize_register_input(missing_transport)).is_err());
-        let mut missing_private = http;
-        missing_private.allow_private_network = false;
-        assert!(validate_register_input(&normalize_register_input(missing_private)).is_err());
+        assert!(validate_register_input(&normalize_register_input(http)).is_ok());
+    }
 
+    #[test]
+    fn register_validation_gates_sql_insecure_transports() {
         let sql = RegisterCredentialInput {
             category: CredentialCategory::Sql,
             provider: "postgres".to_owned(),
