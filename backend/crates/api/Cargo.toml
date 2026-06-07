@@ -46,6 +46,8 @@ chrono.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
 schemars.workspace = true
+utoipa.workspace = true
+utoipa-swagger-ui.workspace = true
 time.workspace = true
 
 [dev-dependencies]

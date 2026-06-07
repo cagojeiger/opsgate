@@ -164,6 +164,7 @@ fn state_with_resource_url(
         master_key: SecretString::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
         signup: crate::config::SignupConfig::default(),
         jwks_cache_ttl: Duration::from_secs(300),
+        openapi_enabled: false,
         secure_cookies: false,
     });
     let jwt = crate::auth::jwt::JwtAuthority::from_jwks(&config, aliri_jwks()?);
@@ -186,6 +187,7 @@ fn state_with_resource_url(
     )?);
     let audit_repo = opsgate_db::AuditRepo::new(pool.clone());
     let audit = Arc::new(audit_repo.clone());
+    let reads = Arc::new(opsgate_db::ReadRepo::new(pool.clone()));
     let target_pg_pools = opsgate_service::TargetPgPools::new();
     let sql_schema = Arc::new(opsgate_service::sql_schema::SqlSchemaService::new(
         opsgate_db::CredentialRepo::new(pool.clone()),
@@ -215,6 +217,7 @@ fn state_with_resource_url(
             sql_query,
         },
         audit,
+        reads,
     })
 }
 
@@ -243,6 +246,7 @@ fn test_config(resource_url: &str) -> crate::config::Config {
         master_key: SecretString::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
         signup: crate::config::SignupConfig::default(),
         jwks_cache_ttl: Duration::from_secs(300),
+        openapi_enabled: false,
         secure_cookies: false,
     }
 }

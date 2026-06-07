@@ -336,6 +336,14 @@ async fn rest_parity_routes_require_bearer() -> Result<(), Box<dyn std::error::E
     let cases = [
         (Method::POST, "/api/v1/api/call", "{}"),
         (Method::POST, "/api/v1/sql/query", "{}"),
+        (Method::POST, "/api/v1/sql/schema", "{}"),
+        (Method::GET, "/api/v1/mcp/connect", ""),
+        (Method::GET, "/api/v1/summary", ""),
+        (Method::GET, "/api/v1/activity", ""),
+        (Method::GET, "/api/v1/audit/events", ""),
+        (Method::GET, "/api/v1/history/api-calls", ""),
+        (Method::GET, "/api/v1/history/sql-queries", ""),
+        (Method::GET, "/api/v1/history/credentials", ""),
         (Method::POST, "/api/v1/credentials", "{}"),
         (Method::GET, "/api/v1/credentials", ""),
         (Method::DELETE, "/api/v1/credentials/prod-api", "{}"),
@@ -387,6 +395,26 @@ async fn rest_parity_routes_return_validation_errors_instead_of_not_found()
         .await?;
     assert_eq!(sql_query.status(), StatusCode::BAD_REQUEST);
 
+    let sql_schema = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            "/api/v1/sql/schema",
+            r#"{"alias":"","purpose":"Inspect schema safely"}"#,
+        )?)
+        .await?;
+    assert_eq!(sql_schema.status(), StatusCode::BAD_REQUEST);
+
+    let activity = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::GET,
+            "/api/v1/activity?limit=101",
+            "",
+        )?)
+        .await?;
+    assert_eq!(activity.status(), StatusCode::BAD_REQUEST);
+
     let list = app
         .oneshot(authed_json_request(
             Method::GET,
@@ -436,6 +464,39 @@ async fn rest_parity_post_routes_do_not_require_content_type_header()
         .await?;
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    Ok(())
+}
+
+#[tokio::test]
+async fn openapi_routes_are_disabled_by_default() -> Result<(), Box<dyn std::error::Error>> {
+    let app = crate::routes::app(registered_state()?);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/openapi.json")
+                .body(Body::empty())?,
+        )
+        .await?;
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    Ok(())
+}
+
+#[tokio::test]
+async fn openapi_routes_can_be_enabled() -> Result<(), Box<dyn std::error::Error>> {
+    let mut state = registered_state()?;
+    Arc::make_mut(&mut state.config).openapi_enabled = true;
+    let response = request(
+        state,
+        Request::builder()
+            .uri("/openapi.json")
+            .body(Body::empty())?,
+    )
+    .await?;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let value = response_json(response).await?;
+    assert_eq!(value.get("openapi"), Some(&json!("3.1.0")));
     Ok(())
 }
 

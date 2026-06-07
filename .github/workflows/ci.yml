@@ -39,6 +39,11 @@ jobs:
       - name: Check
         run: cargo check --workspace
 
+      - name: OpenAPI drift check
+        run: |
+          cargo run -p opsgate-api --bin opsgate-api -- --print-openapi > /tmp/opsgate-openapi.json
+          diff -u docs/openapi.json /tmp/opsgate-openapi.json
+
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 

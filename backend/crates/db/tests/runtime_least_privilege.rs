@@ -14,9 +14,10 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{Connection, PgConnection, PgPool};
 use uuid::Uuid;
 
-const MIGRATIONS: [&str; 2] = [
+const MIGRATIONS: [&str; 3] = [
     include_str!("../migrations/0001_schema.sql"),
     include_str!("../migrations/0002_runtime_least_privilege.sql"),
+    include_str!("../migrations/0003_rest_read_grants.sql"),
 ];
 
 struct TestDb {
@@ -106,9 +107,23 @@ async fn opsgate_app_can_run_normal_runtime_operations() -> Result<(), Box<dyn s
         "SELECT count(*) FROM credential_history WHERE owner_user_id = $1 AND alias = 'runtime-api'",
     )
     .bind(user.id)
-    .fetch_one(&db.owner_pool)
+    .fetch_one(&db.runtime_pool)
     .await?;
     assert_eq!(history_count, 3);
+
+    let api_history_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM api_call_history WHERE owner_user_id = $1")
+            .bind(user.id)
+            .fetch_one(&db.runtime_pool)
+            .await?;
+    assert_eq!(api_history_count, 1);
+
+    let audit_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_logs WHERE actor_user_id = $1")
+            .bind(user.id)
+            .fetch_one(&db.runtime_pool)
+            .await?;
+    assert_eq!(audit_count, 1);
 
     db.cleanup().await;
     Ok(())

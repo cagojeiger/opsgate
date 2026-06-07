@@ -26,13 +26,14 @@ use crate::error::ApiError;
 use crate::mcp::server::{mcp_admin_handler, mcp_handler};
 use crate::state::{AppState, AuthRuntimeState};
 
-pub(crate) fn app(state: AppState) -> Router {
+pub fn app(state: AppState) -> Router {
     let x_request_id = HeaderName::from_static("x-request-id");
 
     Router::new()
         .merge(system_routes())
         .merge(auth_routes())
         .merge(metadata_routes(&state.config))
+        .merge(openapi_routes(&state.config))
         .nest("/api", rest_api_routes(state.clone()))
         .route("/mcp", any(mcp_handler))
         .route("/mcp/admin", any(mcp_admin_handler))
@@ -50,6 +51,14 @@ pub(crate) fn app(state: AppState) -> Router {
                 )
                 .layer(PropagateRequestIdLayer::new(x_request_id)),
         )
+}
+
+fn openapi_routes(config: &Config) -> Router<AppState> {
+    if config.openapi_enabled {
+        crate::openapi::routes()
+    } else {
+        Router::new()
+    }
 }
 
 fn system_routes() -> Router<AppState> {
@@ -91,8 +100,11 @@ fn rest_api_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .merge(crate::rest::api_call::routes())
         .merge(crate::rest::credentials::routes())
+        .merge(crate::rest::mcp_connect::routes())
         .merge(crate::rest::me::routes())
+        .merge(crate::rest::observability::routes())
         .merge(crate::rest::sql_query::routes())
+        .merge(crate::rest::sql_schema::routes())
         .fallback(api_not_found)
         .layer(from_fn_with_state(auth_state, require_api_bearer))
 }
