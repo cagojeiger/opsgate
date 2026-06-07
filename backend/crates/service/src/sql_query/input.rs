@@ -1,5 +1,5 @@
 use crate::llm_output::validate_json_paths;
-use opsgate_core::validation::{trim_required, validate_purpose};
+use opsgate_core::validation::{trim_required, validate_max_bytes, validate_purpose};
 use opsgate_core::{Error, Result};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -77,10 +77,12 @@ pub(super) fn normalize_input(input: SqlQueryInput) -> Result<NormalizedInput> {
     if !(1..=MAX_MAX_ROWS).contains(&max_rows) {
         return Err(Error::validation("max_rows out of range"));
     }
-    let max_bytes = input.max_bytes.unwrap_or(DEFAULT_MAX_BYTES);
-    if !(MIN_MAX_BYTES..=MAX_MAX_BYTES).contains(&max_bytes) {
-        return Err(Error::validation("max_bytes out of range"));
-    }
+    let max_bytes = validate_max_bytes(
+        input.max_bytes,
+        DEFAULT_MAX_BYTES,
+        MIN_MAX_BYTES,
+        MAX_MAX_BYTES,
+    )?;
     let timeout_ms = input.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
     if !(1..=MAX_TIMEOUT_MS).contains(&timeout_ms) {
         return Err(Error::validation("timeout_ms out of range"));
@@ -175,5 +177,19 @@ mod tests {
         input = base_input();
         input.max_rows = Some(MAX_MAX_ROWS + 1);
         assert!(normalize_input(input).is_err());
+    }
+
+    #[test]
+    fn max_bytes_error_includes_allowed_range() {
+        let mut input = base_input();
+        input.max_bytes = Some(MIN_MAX_BYTES - 1);
+        let msg = normalize_input(input)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+
+        assert!(msg.contains("max_bytes"));
+        assert!(msg.contains(&MIN_MAX_BYTES.to_string()));
+        assert!(msg.contains(&MAX_MAX_BYTES.to_string()));
     }
 }
