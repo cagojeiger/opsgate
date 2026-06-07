@@ -95,7 +95,7 @@ fn capabilities_for_toolset(toolset: McpToolset) -> Vec<Capability> {
             ),
             (
                 "credential_register_http",
-                "HTTPS API credential을 등록하고 secret header를 봉인합니다.",
+                "HTTP API credential을 등록합니다.",
             ),
             (
                 "credential_register_sql",

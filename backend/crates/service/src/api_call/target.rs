@@ -119,7 +119,6 @@ async fn send_target(
         method,
         url,
         !credential.allow_private_network,
-        credential.allow_insecure_transport,
     )?;
     let mut headers = HeaderMap::new();
     if !input
@@ -307,7 +306,7 @@ mod tests {
                 base_path: "/".to_owned(),
             };
             let url = build_target_url(&target, &input)?;
-            let err = opsgate_infra::http::ensure_url_allowed(&url, true, false)
+            let err = opsgate_infra::http::ensure_url_allowed(&url, true)
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default();
