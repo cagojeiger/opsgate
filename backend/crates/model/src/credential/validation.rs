@@ -472,6 +472,68 @@ mod tests {
     }
 
     #[test]
+    fn register_validation_rejects_http_policy_sql_fields() {
+        let input = normalize_register_input(RegisterCredentialInput {
+            category: CredentialCategory::Http,
+            provider: "internal-api".to_owned(),
+            alias: "health".to_owned(),
+            target: CredentialTarget::Http {
+                origin: "http://status.example.test".to_owned(),
+                base_path: String::new(),
+            },
+            secret: CredentialSecret::Http {
+                headers: Vec::new(),
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy {
+                allow_metadata: true,
+                ..CredentialPolicy::default()
+            },
+            allow_private_network: false,
+            allow_insecure_transport: false,
+            tls_server_ca: None,
+        });
+        let msg = validate_register_input(&input)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(msg.contains("policy.allow_metadata"));
+    }
+
+    #[test]
+    fn register_validation_rejects_sql_policy_http_fields() {
+        let input = normalize_register_input(RegisterCredentialInput {
+            category: CredentialCategory::Sql,
+            provider: "postgres".to_owned(),
+            alias: "app-db".to_owned(),
+            target: CredentialTarget::Sql {
+                database_url: "postgres://db.example.com/app?sslmode=require".to_owned(),
+            },
+            secret: CredentialSecret::Sql {
+                username: secret("user"),
+                password: secret("pass"),
+            },
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy {
+                allowed_methods: vec!["GET".to_owned()],
+                ..CredentialPolicy::default()
+            },
+            allow_private_network: false,
+            allow_insecure_transport: false,
+            tls_server_ca: None,
+        });
+        let msg = validate_register_input(&input)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(msg.contains("policy.allowed_methods"));
+    }
+
+    #[test]
     fn rejects_http_origin_query_and_secret_overlap() {
         let input = normalize_register_input(RegisterCredentialInput {
             category: CredentialCategory::Http,
