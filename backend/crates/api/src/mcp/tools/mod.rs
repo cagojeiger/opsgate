@@ -25,13 +25,18 @@ pub(crate) fn map_core_error(tool: &'static str, error: opsgate_core::Error) -> 
             kind,
             message,
             hint,
-        } => ErrorData::invalid_params(
-            message,
-            Some(json!({
-                "kind": kind,
-                "hint": hint,
-            })),
-        ),
+        } => {
+            let visible_message = hint
+                .as_ref()
+                .map_or_else(|| message.clone(), |hint| format!("{message} Hint: {hint}"));
+            ErrorData::invalid_params(
+                visible_message,
+                Some(json!({
+                    "kind": kind,
+                    "hint": hint,
+                })),
+            )
+        }
         opsgate_core::Error::Internal(message) => {
             tracing::error!(event = "mcp.tool.internal_error", tool, detail = %message);
             ErrorData::internal_error("internal server error", None)
@@ -80,7 +85,7 @@ mod tests {
         let data = error.data.ok_or_else(|| "expected error data".to_owned())?;
         assert_eq!(
             error.message,
-            "SQL references a column that does not exist."
+            "SQL references a column that does not exist. Hint: Use sql_schema first."
         );
         assert_eq!(
             data.get("kind").and_then(serde_json::Value::as_str),
