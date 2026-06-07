@@ -49,6 +49,18 @@ pub fn clamp_i64(value: Option<i64>, default: i64, min: i64, max: i64) -> i64 {
     value.unwrap_or(default).clamp(min, max)
 }
 
+pub fn validate_range<T>(field: &str, value: T, min: T, max: T) -> Result<T>
+where
+    T: Copy + PartialOrd + std::fmt::Display,
+{
+    if value < min || value > max {
+        return Err(Error::validation(format!(
+            "{field} must be in range [{min},{max}]"
+        )));
+    }
+    Ok(value)
+}
+
 pub fn validate_max_bytes(
     value: Option<usize>,
     default: usize,
@@ -56,12 +68,7 @@ pub fn validate_max_bytes(
     max: usize,
 ) -> Result<usize> {
     let value = value.unwrap_or(default);
-    if value < min || value > max {
-        return Err(Error::validation(format!(
-            "max_bytes must be in range [{min},{max}]"
-        )));
-    }
-    Ok(value)
+    validate_range("max_bytes", value, min, max)
 }
 
 pub fn validate_http_path(path: &str) -> Result<String> {

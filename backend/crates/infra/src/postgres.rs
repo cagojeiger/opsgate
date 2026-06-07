@@ -2,16 +2,15 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
 use opsgate_core::{Error, Result};
+use opsgate_model::credential::validate_postgres_database_url;
 
 use crate::network_guard::{ensure_target_ip_allowed, target_ip_is_blocked};
-use sqlx::postgres::{PgConnectOptions, PgSslMode};
+use sqlx::postgres::PgConnectOptions;
 
 #[derive(Debug, Clone)]
 pub struct GuardedPostgresTarget {
     database_url: String,
     connect_addr: SocketAddr,
-    allow_private_network: bool,
-    allow_insecure_transport: bool,
 }
 
 impl GuardedPostgresTarget {
@@ -26,11 +25,6 @@ impl GuardedPostgresTarget {
         if let Some(database) = database {
             options = options.database(database);
         }
-        validate_ssl_mode(
-            options.get_ssl_mode(),
-            self.allow_private_network,
-            self.allow_insecure_transport,
-        )?;
         let database = options.get_database().unwrap_or_default().to_owned();
         let options = options
             .host(&self.connect_addr.ip().to_string())
@@ -51,9 +45,11 @@ pub async fn prepare_postgres_target(
     allow_private_network: bool,
     allow_insecure_transport: bool,
 ) -> Result<GuardedPostgresTarget> {
-    let url = url::Url::parse(database_url)
-        .map_err(|error| Error::validation(format!("postgres database_url: {error}")))?;
-    validate_postgres_transport(&url, allow_private_network, allow_insecure_transport)?;
+    let url = validate_postgres_database_url(
+        database_url,
+        allow_private_network,
+        allow_insecure_transport,
+    )?;
     let host = url
         .host()
         .ok_or_else(|| Error::validation("postgres database_url requires host"))?;
@@ -77,51 +73,7 @@ pub async fn prepare_postgres_target(
     Ok(GuardedPostgresTarget {
         database_url: database_url.to_owned(),
         connect_addr,
-        allow_private_network,
-        allow_insecure_transport,
     })
-}
-
-fn validate_postgres_transport(
-    url: &url::Url,
-    allow_private_network: bool,
-    allow_insecure_transport: bool,
-) -> Result<()> {
-    let mut ssl_mode = None;
-    for (key, value) in url.query_pairs() {
-        if matches!(&*key, "sslmode" | "ssl-mode") {
-            let mode = PgSslMode::from_str(&value).map_err(|error| {
-                Error::validation(format!("postgres database_url sslmode: {error}"))
-            })?;
-            ssl_mode = Some(mode);
-            continue;
-        }
-        return Err(Error::validation(format!(
-            "unsupported postgres database_url query parameter {key:?}"
-        )));
-    }
-    validate_ssl_mode(
-        ssl_mode.unwrap_or(PgSslMode::Prefer),
-        allow_private_network,
-        allow_insecure_transport,
-    )
-}
-
-fn validate_ssl_mode(
-    mode: PgSslMode,
-    allow_private_network: bool,
-    allow_insecure_transport: bool,
-) -> Result<()> {
-    match mode {
-        PgSslMode::Require => Ok(()),
-        PgSslMode::VerifyFull => Err(Error::validation(
-            "postgres database_url sslmode=verify-full is unsupported by guarded SQL targets",
-        )),
-        _ if allow_private_network && allow_insecure_transport => Ok(()),
-        _ => Err(Error::validation(
-            "postgres database_url requires sslmode=require unless allow_private_network=true and allow_insecure_transport=true",
-        )),
-    }
 }
 
 fn select_postgres_addr(
@@ -222,28 +174,10 @@ mod tests {
     }
 
     #[test]
-    fn connect_options_reject_verify_full_before_ip_overwrite() {
-        let target = GuardedPostgresTarget {
-            database_url: "postgres://db.example.test:6543/app?sslmode=verify-full".to_owned(),
-            connect_addr: SocketAddr::from(([93, 184, 216, 34], 6543)),
-            allow_private_network: false,
-            allow_insecure_transport: false,
-        };
-        let err = target
-            .connect_options("user", "password", None)
-            .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
-        assert!(err.contains("verify-full is unsupported"));
-    }
-
-    #[test]
     fn connect_options_use_guarded_target_addr() -> Result<()> {
         let target = GuardedPostgresTarget {
             database_url: "postgres://db.example.test:6543/app?sslmode=require".to_owned(),
             connect_addr: SocketAddr::from(([93, 184, 216, 34], 6543)),
-            allow_private_network: false,
-            allow_insecure_transport: false,
         };
         let connect = target.connect_options("user", "password", None)?;
         assert_eq!(connect.options.get_host(), "93.184.216.34");
@@ -253,29 +187,18 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn insecure_ssl_modes_require_explicit_private_transport_opt_in() -> Result<()> {
-        let rejected = GuardedPostgresTarget {
-            database_url: "postgres://db.example.test:6543/app?sslmode=disable".to_owned(),
-            connect_addr: SocketAddr::from(([93, 184, 216, 34], 6543)),
-            allow_private_network: true,
-            allow_insecure_transport: false,
-        };
-        let err = rejected
-            .connect_options("user", "password", None)
-            .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+    #[tokio::test]
+    async fn prepare_rejects_insecure_ssl_modes_before_dns_resolution() {
+        let err = prepare_postgres_target(
+            "postgres://definitely-not-resolved.invalid/app?sslmode=disable",
+            true,
+            false,
+        )
+        .await
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
         assert!(err.contains("allow_insecure_transport"));
-
-        let allowed = GuardedPostgresTarget {
-            database_url: "postgres://db.example.test:6543/app?sslmode=disable".to_owned(),
-            connect_addr: SocketAddr::from(([93, 184, 216, 34], 6543)),
-            allow_private_network: true,
-            allow_insecure_transport: true,
-        };
-        let connect = allowed.connect_options("user", "password", None)?;
-        assert_eq!(connect.options.get_host(), "93.184.216.34");
-        Ok(())
+        assert!(!err.contains("resolve target host"));
     }
 }

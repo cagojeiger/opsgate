@@ -54,9 +54,6 @@ pub struct RegisterHttpCredentialInput {
     /// Opt in only for trusted private-network targets.
     #[serde(default)]
     pub allow_private_network: bool,
-    /// Compatibility field; HTTP origins may use http or https.
-    #[serde(default)]
-    pub allow_insecure_transport: bool,
     /// PEM CA bundle for private HTTPS servers. Leave empty for public WebPKI.
     #[serde(default)]
     pub tls_server_ca: String,
@@ -152,7 +149,7 @@ impl RegisterHttpCredentialInput {
             tags: self.tags,
             policy: self.policy,
             allow_private_network: self.allow_private_network,
-            allow_insecure_transport: self.allow_insecure_transport,
+            allow_insecure_transport: false,
             tls_server_ca: Some(self.tls_server_ca),
         }
     }

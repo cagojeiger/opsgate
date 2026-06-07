@@ -41,11 +41,10 @@ pub(super) async fn validate_register_target_ips(
     let host = url
         .host_str()
         .ok_or_else(|| Error::validation("target requires host"))?;
-    let default_port = match input.category {
-        CredentialCategory::Http => 443,
+    let port = url.port_or_known_default().unwrap_or(match input.category {
+        CredentialCategory::Http => 80,
         CredentialCategory::Sql => 5432,
-    };
-    let port = url.port().unwrap_or(default_port);
+    });
     let ips = resolver.resolve(host, port).await?;
     if ips.is_empty() {
         return Err(Error::validation("resolve target host: no IPs"));
@@ -83,7 +82,6 @@ mod tests {
             tags: Vec::new(),
             policy: CredentialPolicy::default(),
             allow_private_network,
-            allow_insecure_transport: false,
             tls_server_ca: String::new(),
         }
         .into_domain()

@@ -19,6 +19,7 @@ pub use policy::{
     validate_policy_for_category,
 };
 pub use validation::{
-    normalize_register_input, normalize_tags, validate_alias, validate_env, validate_provider,
-    validate_register_input, validate_tag, validate_tags,
+    normalize_register_input, normalize_tags, validate_alias, validate_env,
+    validate_postgres_database_url, validate_provider, validate_register_input, validate_tag,
+    validate_tags,
 };

@@ -25,8 +25,8 @@ pub struct TargetHttpClients {
 impl TargetHttpClients {
     pub fn new(timeout: Duration) -> Result<Self> {
         Ok(Self {
-            private_allowed: build_client(timeout, None, false)?,
-            guarded_no_ca: build_client(timeout, None, true)?,
+            private_allowed: build_client(timeout, None, true)?,
+            guarded_no_ca: build_client(timeout, None, false)?,
             timeout,
             cached_tls: Cache::builder().time_to_idle(CLIENT_CACHE_IDLE_TTL).build(),
         })
@@ -38,10 +38,10 @@ impl TargetHttpClients {
         tls_ca: Option<&[u8]>,
         method: reqwest::Method,
         url: &url::Url,
-        guard_private_network: bool,
+        allow_private_network: bool,
     ) -> Result<reqwest::RequestBuilder> {
-        ensure_url_allowed(url, guard_private_network)?;
-        let client = self.client_for(credential, tls_ca, guard_private_network)?;
+        ensure_url_allowed(url, allow_private_network)?;
+        let client = self.client_for(credential, tls_ca, allow_private_network)?;
         Ok(client.request(method, url.clone()))
     }
 
@@ -49,35 +49,35 @@ impl TargetHttpClients {
         &self,
         credential: &Credential,
         tls_ca: Option<&[u8]>,
-        guard_private_network: bool,
+        allow_private_network: bool,
     ) -> Result<reqwest::Client> {
         let Some(tls_ca) = tls_ca else {
-            return if guard_private_network {
-                Ok(self.guarded_no_ca.clone())
-            } else {
+            return if allow_private_network {
                 Ok(self.private_allowed.clone())
+            } else {
+                Ok(self.guarded_no_ca.clone())
             };
         };
-        self.cached_tls_client(credential.id, tls_ca, guard_private_network)
+        self.cached_tls_client(credential.id, tls_ca, allow_private_network)
     }
 
     fn cached_tls_client(
         &self,
         credential_id: Uuid,
         tls_ca: &[u8],
-        guard_private_network: bool,
+        allow_private_network: bool,
     ) -> Result<reqwest::Client> {
         let key = TlsClientKey {
             credential_id,
-            guard_private_network,
+            allow_private_network,
         };
         if let Some(client) = self.cached_tls.get(&key) {
             return Ok(client);
         }
         // Credential updates intentionally cannot mutate target URL, secret, or
-        // TLS material. A credential id plus guard mode is therefore a stable
+        // TLS material. A credential id plus private-network mode is therefore a stable
         // cache key for the lifetime of the registered target.
-        let client = build_client(self.timeout, Some(tls_ca), guard_private_network)?;
+        let client = build_client(self.timeout, Some(tls_ca), allow_private_network)?;
         self.cached_tls.insert(key, client.clone());
         Ok(client)
     }
@@ -93,19 +93,19 @@ impl TargetHttpClients {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct TlsClientKey {
     credential_id: Uuid,
-    guard_private_network: bool,
+    allow_private_network: bool,
 }
 
 fn build_client(
     timeout: Duration,
     tls_ca: Option<&[u8]>,
-    guard_private_network: bool,
+    allow_private_network: bool,
 ) -> Result<reqwest::Client> {
     let mut builder = reqwest::Client::builder()
         .timeout(timeout)
         .redirect(reqwest::redirect::Policy::none())
         .no_proxy();
-    if guard_private_network {
+    if !allow_private_network {
         builder = builder.dns_resolver(Arc::new(GuardedResolver));
     }
     if let Some(tls_ca) = tls_ca {
@@ -126,12 +126,12 @@ fn build_client(
 #[derive(Debug)]
 struct GuardedResolver;
 
-pub fn ensure_url_allowed(url: &url::Url, guard_private_network: bool) -> Result<()> {
+pub fn ensure_url_allowed(url: &url::Url, allow_private_network: bool) -> Result<()> {
     match url.scheme() {
         "http" | "https" => {}
         _ => return Err(Error::validation("target URL must use http or https")),
     }
-    if !guard_private_network {
+    if allow_private_network {
         return Ok(());
     }
     match url.host() {
@@ -229,14 +229,14 @@ mod tests {
     fn no_ca_clients_do_not_enter_tls_cache() -> Result<()> {
         let clients = TargetHttpClients::new(Duration::from_secs(1))?;
         let credential = credential(Uuid::nil(), false);
-        let _client = clients.client_for(&credential, None, false)?;
-        let _guarded_client = clients.client_for(&credential, None, true)?;
+        let _client = clients.client_for(&credential, None, true)?;
+        let _guarded_client = clients.client_for(&credential, None, false)?;
         assert_eq!(clients.cached_tls_len()?, 0);
         Ok(())
     }
 
     #[test]
-    fn tls_ca_client_cache_is_per_credential_and_guard_mode() -> Result<()> {
+    fn tls_ca_client_cache_is_per_credential_and_private_network_mode() -> Result<()> {
         let clients = TargetHttpClients::new(Duration::from_secs(1))?;
         let ca = valid_ca_pem();
         let first = credential(Uuid::from_u128(1), true);
@@ -255,7 +255,7 @@ mod tests {
     }
 
     #[test]
-    fn guarded_http_preflight_blocks_private_url_literals() -> Result<()> {
+    fn disallowed_private_network_preflight_blocks_private_url_literals() -> Result<()> {
         for raw in [
             "http://127.0.0.1/status",
             "https://127.0.0.1/status",
@@ -264,7 +264,7 @@ mod tests {
         ] {
             let url = url::Url::parse(raw)
                 .map_err(|error| Error::internal(format!("parse test URL: {error}")))?;
-            let err = ensure_url_allowed(&url, true)
+            let err = ensure_url_allowed(&url, false)
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default();
@@ -272,16 +272,16 @@ mod tests {
         }
         let public = url::Url::parse("https://93.184.216.34/status")
             .map_err(|error| Error::internal(format!("parse test URL: {error}")))?;
-        assert!(ensure_url_allowed(&public, true).is_ok());
         assert!(ensure_url_allowed(&public, false).is_ok());
+        assert!(ensure_url_allowed(&public, true).is_ok());
         Ok(())
     }
 
     #[test]
-    fn unguarded_http_allows_private_url_literals() -> Result<()> {
+    fn allowed_private_network_allows_private_url_literals() -> Result<()> {
         let url = url::Url::parse("http://10.0.0.10/status")
             .map_err(|error| Error::internal(format!("parse test URL: {error}")))?;
-        assert!(ensure_url_allowed(&url, false).is_ok());
+        assert!(ensure_url_allowed(&url, true).is_ok());
         Ok(())
     }
 

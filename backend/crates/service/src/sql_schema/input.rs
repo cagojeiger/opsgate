@@ -1,4 +1,6 @@
-use opsgate_core::validation::{trim_required, validate_max_bytes, validate_purpose};
+use opsgate_core::validation::{
+    trim_required, validate_max_bytes, validate_purpose, validate_range,
+};
 use opsgate_core::{Error, Result};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -75,20 +77,19 @@ pub(super) fn normalize_input(input: SqlSchemaInput) -> Result<NormalizedInput> 
     if !matches!(mode.as_str(), MODE_TABLES | MODE_TABLE) {
         return Err(Error::validation("mode must be tables or table"));
     }
-    let limit = input.limit.unwrap_or(DEFAULT_LIMIT);
-    if !(1..=MAX_LIMIT).contains(&limit) {
-        return Err(Error::validation("limit out of range"));
-    }
+    let limit = validate_range("limit", input.limit.unwrap_or(DEFAULT_LIMIT), 1, MAX_LIMIT)?;
     let max_bytes = validate_max_bytes(
         input.max_bytes,
         DEFAULT_MAX_BYTES,
         MIN_MAX_BYTES,
         MAX_MAX_BYTES,
     )?;
-    let timeout_ms = input.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
-    if !(1..=MAX_TIMEOUT_MS).contains(&timeout_ms) {
-        return Err(Error::validation("timeout_ms out of range"));
-    }
+    let timeout_ms = validate_range(
+        "timeout_ms",
+        input.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
+        1,
+        MAX_TIMEOUT_MS,
+    )?;
     let cursor = input.cursor.trim().to_owned();
     if cursor.contains(['\0', '\r', '\n']) {
         return Err(Error::validation("cursor must not contain NUL or CR/LF"));
@@ -208,5 +209,26 @@ mod tests {
         assert!(msg.contains("max_bytes"));
         assert!(msg.contains(&MIN_MAX_BYTES.to_string()));
         assert!(msg.contains(&MAX_MAX_BYTES.to_string()));
+    }
+
+    #[test]
+    fn limit_and_timeout_range_errors_include_allowed_ranges() {
+        let mut input = base_input();
+        input.limit = Some(MAX_LIMIT + 1);
+        let msg = normalize_input(input)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(msg.contains("limit"));
+        assert!(msg.contains(&MAX_LIMIT.to_string()));
+
+        let mut input = base_input();
+        input.timeout_ms = Some(MAX_TIMEOUT_MS + 1);
+        let msg = normalize_input(input)
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(msg.contains("timeout_ms"));
+        assert!(msg.contains(&MAX_TIMEOUT_MS.to_string()));
     }
 }

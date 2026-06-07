@@ -86,7 +86,6 @@ pub struct RegisterHttpCredentialInput {
     pub tags: Vec<String>,
     pub policy: CredentialPolicy,
     pub allow_private_network: bool,
-    pub allow_insecure_transport: bool,
     pub tls_server_ca: String,
 }
 
@@ -139,7 +138,7 @@ impl From<RegisterHttpCredentialInput> for RegisterCredentialInput {
             tags: input.tags,
             policy: input.policy,
             allow_private_network: input.allow_private_network,
-            allow_insecure_transport: input.allow_insecure_transport,
+            allow_insecure_transport: false,
             tls_server_ca: Some(input.tls_server_ca),
         }
     }

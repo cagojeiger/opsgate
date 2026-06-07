@@ -95,9 +95,10 @@ impl CredentialListOutput {
 
 impl CredentialOutput {
     pub fn from_with_fields(credential: Credential, fields: Option<&BTreeSet<String>>) -> Self {
+        let category = credential.category;
         Self {
             alias: credential.alias,
-            category: include_field(fields, "category").then_some(credential.category),
+            category: include_field(fields, "category").then_some(category),
             provider: include_field(fields, "provider").then_some(credential.provider),
             description: include_field(fields, "description").then_some(credential.description),
             env: include_field(fields, "env").then_some(credential.env),
@@ -105,8 +106,9 @@ impl CredentialOutput {
             policy: include_field(fields, "policy").then_some(credential.policy),
             allow_private_network: include_field(fields, "allow_private_network")
                 .then_some(credential.allow_private_network),
-            allow_insecure_transport: include_field(fields, "allow_insecure_transport")
-                .then_some(credential.allow_insecure_transport),
+            allow_insecure_transport: (category == CredentialCategory::Sql
+                && include_field(fields, "allow_insecure_transport"))
+            .then_some(credential.allow_insecure_transport),
         }
     }
 }
@@ -214,6 +216,14 @@ mod tests {
         assert!(output.category.is_none());
         assert!(output.policy.is_none());
         Ok(())
+    }
+
+    #[test]
+    fn http_output_hides_insecure_transport_field() {
+        let fields = BTreeSet::from(["allow_insecure_transport".to_owned()]);
+        let output = CredentialOutput::from_with_fields(credential(), Some(&fields));
+
+        assert_eq!(output.allow_insecure_transport, None);
     }
 
     #[test]
