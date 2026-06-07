@@ -81,13 +81,13 @@ impl SqlQueryService {
         }
         if let Err(error) = validate_policy_boundary(&credential.policy, &input) {
             recorder
-                .denied(reason::POLICY_DENIED, policy_denial_history_message(&error))
+                .denied(reason::POLICY_DENIED, SQL_POLICY_DENIED_MESSAGE)
                 .await;
             return Err(error);
         }
         if let Err(error) = enforce_sql_policy(&input.query, &credential.policy) {
             recorder
-                .denied(reason::POLICY_DENIED, policy_denial_history_message(&error))
+                .denied(reason::POLICY_DENIED, SQL_POLICY_DENIED_MESSAGE)
                 .await;
             return Err(error);
         }
@@ -149,24 +149,17 @@ impl SqlQueryService {
     }
 }
 
-fn policy_denial_history_message(_error: &Error) -> &'static str {
-    SQL_POLICY_DENIED_MESSAGE
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn policy_denial_history_message_does_not_echo_sql_text() {
-        let error = Error::validation(
-            "query has SQL syntax error: Expected end of statement, found: secret_table",
+        assert_eq!(
+            SQL_POLICY_DENIED_MESSAGE,
+            "sql query denied by credential policy"
         );
-
-        let message = policy_denial_history_message(&error);
-
-        assert_eq!(message, "sql query denied by credential policy");
-        assert!(!message.contains("secret_table"));
-        assert!(!message.contains("Expected"));
+        assert!(!SQL_POLICY_DENIED_MESSAGE.contains("secret_table"));
+        assert!(!SQL_POLICY_DENIED_MESSAGE.contains("Expected"));
     }
 }
