@@ -1,6 +1,6 @@
 # MCP 도구 명세
 
-opsgate `0.1.0` MCP 서피스의 인덱스 문서입니다.
+opsgate MCP 서피스의 인덱스 문서입니다.
 
 opsgate는 LLM 클라이언트를 위한 policy-gated credential broker입니다. LLM은
 credential의 alias, metadata, policy만 봅니다. opsgate는 secret과 target

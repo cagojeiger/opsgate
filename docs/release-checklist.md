@@ -1,11 +1,11 @@
-# 0.1.0 릴리스 준비 체크리스트
+# 릴리스 준비 체크리스트
 
-기준일: 2026-05-31
+기준일: 2026-06-07
 
 대상:
 
 ```text
-0.1.0 Rust 릴리스 후보 버전
+현재 VERSION 기준 Rust 릴리스 후보 버전
 ```
 
 ## 현재 상태
@@ -178,8 +178,8 @@ JWT 검증은 auth::jwt::JwtAuthority가 API/MCP 공통으로 수행합니다.
 ## 남은 릴리스 메모
 
 ```text
-첫 0.1.0 릴리스 전까지 별도 changelog는 유지하지 않습니다.
-preview pagination/cache는 0.1.0 범위 밖입니다.
+별도 changelog는 유지하지 않습니다.
+preview pagination/cache는 현재 범위 밖입니다.
 실제 target API side effect와 live Postgres query 실행은 환경 스모크 검증입니다.
 ```
 
@@ -197,18 +197,18 @@ Opsgate는 llmgate/authgate와 같은 VERSION 기반 릴리스 방식을 사용�
    - 릴리스 트리거 없음
 
 2. 실제 릴리스 PR merge
-   - PR 제목: chore(release): prepare v0.1.0
-   - VERSION 파일 내용: 0.1.0
-   - main merge 시 v0.1.0 tag, GitHub Release, GHCR image 생성
+   - PR 제목: chore(release): prepare vX.Y.Z
+   - VERSION 파일 내용: X.Y.Z
+   - main merge 시 vX.Y.Z tag, GitHub Release, GHCR image 생성
 ```
 
 릴리스 workflow가 생성하는 산출물:
 
 ```text
-git tag: v0.1.0
-GitHub Release: v0.1.0
+git tag: vX.Y.Z
+GitHub Release: vX.Y.Z
 GHCR image:
-  ghcr.io/cagojeiger/opsgate:0.1.0
+  ghcr.io/cagojeiger/opsgate:X.Y.Z
   ghcr.io/cagojeiger/opsgate:latest
 ```
 

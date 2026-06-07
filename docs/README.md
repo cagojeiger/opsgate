@@ -10,7 +10,7 @@
 - [인증 구조](architecture/auth.md)
 - [api_call boundary 모델](mcp/api-call-boundary.md)
 - [sql_query boundary 모델](mcp/sql-query-boundary.md)
-- [0.1.0 릴리스 준비 체크리스트](release-checklist.md)
+- [릴리스 준비 체크리스트](release-checklist.md)
 - [MCP 도구 최악 상황 방어 기준](mcp/worst-cases.md)
 - MCP 서피스:
   - [`/mcp` runtime](mcp/surfaces/runtime.md)

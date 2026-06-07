@@ -44,6 +44,7 @@
 - `base_path`: target origin 뒤에 항상 붙는 숨겨진 기본 경로입니다. 생략하면 `/`입니다. 예를 들어 `base_path=/cluster-a`, `api_call.request_path=/api/v1/pods`이면 실제 호출 경로는 `/cluster-a/api/v1/pods`입니다.
 - `secret_headers`: 모든 `api_call`에 붙는 봉인된 header입니다. 인증이 없는 target이면 `[]`로 둡니다.
 - `policy`: 생략하면 기본 HTTP policy를 사용합니다.
+  HTTP policy는 method, request path, query key, caller header 제어만 다룹니다.
 
 출력:
 

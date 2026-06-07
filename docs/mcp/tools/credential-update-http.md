@@ -68,6 +68,6 @@
 참고:
 
 - `policy`는 병합이 아니라 전체 교체다.
+  HTTP policy는 method, request path, query key, caller header 제어만 다룬다.
 - `reason`은 `update_reason`으로 기록된다.
-- 감사 액션은 `mcp.credential.update`이다.
 - 이력 액션은 `update`이다.
