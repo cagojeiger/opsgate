@@ -88,8 +88,7 @@
 - policy 거부는 generic `policy_denied`로 뭉개지 않고
   `policy_method_not_allowed`, `policy_request_path_not_allowed`,
   `policy_query_key_denied`, `policy_request_header_blocked`,
-  `policy_request_header_not_allowed`, `policy_secret_header_override` 중 하나로
-  분류됩니다.
+  `policy_request_header_not_allowed` 중 하나로 분류됩니다.
 - policy 거부 응답은 세부 kind와 복구 hint를 반환합니다. 정책 상세는
   `credential_list`를 다시 호출해 확인합니다. history/audit에는 세부 kind와
   safe message만 저장합니다.
