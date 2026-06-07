@@ -185,6 +185,16 @@ impl RegisterCredentialInput {
     fn into_service_input(self) -> Result<RegisterServiceInput, ApiError> {
         match self.category {
             CredentialCategory::Http => {
+                if field_present(&self.database_url) {
+                    return Err(ApiError::invalid_field(
+                        "database_url is only supported for sql credentials",
+                    ));
+                }
+                if self.allow_insecure_transport {
+                    return Err(ApiError::invalid_field(
+                        "allow_insecure_transport is only supported for sql credentials",
+                    ));
+                }
                 if !self.secret.username.trim().is_empty()
                     || !self.secret.password.trim().is_empty()
                 {
@@ -205,6 +215,21 @@ impl RegisterCredentialInput {
                 }))
             }
             CredentialCategory::Sql => {
+                if field_present(&self.origin) {
+                    return Err(ApiError::invalid_field(
+                        "origin is only supported for http credentials",
+                    ));
+                }
+                if field_present(&self.base_path) {
+                    return Err(ApiError::invalid_field(
+                        "base_path is only supported for http credentials",
+                    ));
+                }
+                if field_present(&self.tls_server_ca) {
+                    return Err(ApiError::invalid_field(
+                        "tls_server_ca is only supported for http credentials",
+                    ));
+                }
                 if !self.secret.headers.is_empty() {
                     return Err(ApiError::invalid_field(
                         "sql secret does not support headers",
@@ -226,6 +251,10 @@ impl RegisterCredentialInput {
             }
         }
     }
+}
+
+fn field_present(value: &str) -> bool {
+    !value.trim().is_empty()
 }
 
 #[derive(Debug, Deserialize)]
@@ -303,7 +332,7 @@ mod tests {
             policy: CredentialPolicy::default(),
             allow_private_network: false,
             allow_insecure_transport: false,
-            tls_server_ca: "ignored".to_owned(),
+            tls_server_ca: String::new(),
         };
 
         let input = match input
@@ -317,6 +346,91 @@ mod tests {
         assert_eq!(input.password, "secret");
         assert_eq!(input.provider, "");
         Ok(())
+    }
+
+    #[test]
+    fn unified_register_input_rejects_http_inapplicable_fields() {
+        let input = RegisterCredentialInput {
+            category: CredentialCategory::Http,
+            provider: "k8s".to_owned(),
+            alias: "prod-api".to_owned(),
+            origin: "https://api.example.test".to_owned(),
+            base_path: String::new(),
+            database_url: "postgres://db.example.test/app?sslmode=require".to_owned(),
+            secret: RegisterSecretInput::default(),
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            allow_insecure_transport: false,
+            tls_server_ca: String::new(),
+        };
+        let err = input
+            .into_service_input()
+            .err()
+            .map(|error| format!("{error:?}"))
+            .unwrap_or_default();
+        assert!(err.contains("database_url"));
+
+        let input = RegisterCredentialInput {
+            category: CredentialCategory::Http,
+            provider: "k8s".to_owned(),
+            alias: "prod-api".to_owned(),
+            origin: "https://api.example.test".to_owned(),
+            base_path: String::new(),
+            database_url: String::new(),
+            secret: RegisterSecretInput::default(),
+            description: String::new(),
+            env: String::new(),
+            tags: Vec::new(),
+            policy: CredentialPolicy::default(),
+            allow_private_network: false,
+            allow_insecure_transport: true,
+            tls_server_ca: String::new(),
+        };
+        let err = input
+            .into_service_input()
+            .err()
+            .map(|error| format!("{error:?}"))
+            .unwrap_or_default();
+        assert!(err.contains("allow_insecure_transport"));
+    }
+
+    #[test]
+    fn unified_register_input_rejects_sql_inapplicable_fields() {
+        for (origin, base_path, tls_server_ca, expected) in [
+            ("https://api.example.test", "", "", "origin"),
+            ("", "/api", "", "base_path"),
+            ("", "", "-----BEGIN CERTIFICATE-----", "tls_server_ca"),
+        ] {
+            let input = RegisterCredentialInput {
+                category: CredentialCategory::Sql,
+                provider: String::new(),
+                alias: "prod-db".to_owned(),
+                origin: origin.to_owned(),
+                base_path: base_path.to_owned(),
+                database_url: "postgres://db.example.test/app?sslmode=require".to_owned(),
+                secret: RegisterSecretInput {
+                    headers: Vec::new(),
+                    username: "app".to_owned(),
+                    password: "secret".to_owned(),
+                },
+                description: String::new(),
+                env: String::new(),
+                tags: Vec::new(),
+                policy: CredentialPolicy::default(),
+                allow_private_network: false,
+                allow_insecure_transport: false,
+                tls_server_ca: tls_server_ca.to_owned(),
+            };
+            let err = input
+                .into_service_input()
+                .err()
+                .map(|error| format!("{error:?}"))
+                .unwrap_or_default();
+            assert!(err.contains(expected), "{err:?} should mention {expected}");
+        }
     }
 
     #[test]
