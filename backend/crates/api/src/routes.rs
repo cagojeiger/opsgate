@@ -3,10 +3,11 @@
 use std::time::Duration;
 
 use crate::config::Config;
+use crate::request_context::RequestMetadata;
 use axum::extract::{FromRef, MatchedPath, State};
 use axum::http::Request;
 use axum::http::StatusCode;
-use axum::http::header::HeaderName;
+use axum::http::header::{CONTENT_LENGTH, HeaderName};
 use axum::middleware::from_fn_with_state;
 use axum::routing::{any, get};
 use axum::{Json, Router};
@@ -25,6 +26,9 @@ use crate::auth::oauth::{callback, login};
 use crate::error::ApiError;
 use crate::mcp::server::{mcp_admin_handler, mcp_handler};
 use crate::state::{AppState, AuthRuntimeState};
+
+const SERVICE_NAME: &str = "opsgate-api";
+const SERVICE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub(crate) fn app(state: AppState) -> Router {
     let x_request_id = HeaderName::from_static("x-request-id");
@@ -125,10 +129,23 @@ fn log_request_end<B>(response: &axum::http::Response<B>, latency: Duration, spa
         return;
     }
     info!(
+        log = "access",
         event = "request.end",
+        schema_version = 1_u8,
+        service = SERVICE_NAME,
+        version = SERVICE_VERSION,
         status = status.as_u16(),
-        latency_ms = latency.as_millis() as u64,
+        duration_ms = latency.as_millis() as u64,
+        bytes_out = response_content_length(response),
     );
+}
+
+fn response_content_length<B>(response: &axum::http::Response<B>) -> Option<u64> {
+    response
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse().ok())
 }
 
 fn successful_probe(span: &Span, status: StatusCode) -> bool {
@@ -146,25 +163,34 @@ fn make_request_span<B>(req: &Request<B>) -> Span {
         .get::<MatchedPath>()
         .map(MatchedPath::as_str)
         .unwrap_or("");
+    let metadata = RequestMetadata::from_headers(req.headers());
     let request_id = req
         .headers()
         .get("x-request-id")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     let request_path = req.uri().path();
+    let remote_ip = metadata.remote_ip.as_deref().unwrap_or("");
+    let user_agent = metadata.user_agent.as_deref().unwrap_or("");
     if matches!(request_path, "/health" | "/ready") {
         info_span!(
             "health-check",
             method = %req.method(),
             route,
+            path = request_path,
             request_id,
+            remote_ip,
+            user_agent,
         )
     } else {
         info_span!(
             "request",
             method = %req.method(),
             route,
+            path = request_path,
             request_id,
+            remote_ip,
+            user_agent,
         )
     }
 }
@@ -176,10 +202,11 @@ struct HealthResponse {
 
 #[cfg(test)]
 mod tests {
+    use axum::http::Response;
     use axum::http::StatusCode;
     use tracing::info_span;
 
-    use super::successful_probe;
+    use super::{response_content_length, successful_probe};
 
     #[test]
     fn successful_probe_suppresses_only_successful_health_spans() {
@@ -189,5 +216,25 @@ mod tests {
 
         let request = info_span!("request");
         assert!(!successful_probe(&request, StatusCode::OK));
+    }
+
+    #[test]
+    fn response_content_length_reads_valid_header() -> Result<(), Box<dyn std::error::Error>> {
+        let response = Response::builder()
+            .header("content-length", "42")
+            .body(())?;
+
+        assert_eq!(response_content_length(&response), Some(42));
+        Ok(())
+    }
+
+    #[test]
+    fn response_content_length_ignores_invalid_header() -> Result<(), Box<dyn std::error::Error>> {
+        let response = Response::builder()
+            .header("content-length", "not-a-number")
+            .body(())?;
+
+        assert_eq!(response_content_length(&response), None);
+        Ok(())
     }
 }
