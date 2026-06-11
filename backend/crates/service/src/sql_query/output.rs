@@ -132,6 +132,7 @@ fn build_shaped_body(body: Value, input: &NormalizedInput) -> Result<JsonOutput>
             max_bytes: input.max_bytes,
             max_allowed_bytes: MAX_MAX_BYTES,
             json_paths: input.jsonpath.clone(),
+            table: None,
             source_body_truncated: false,
             original_bytes: None,
             source_body_mode: SourceBodyMode::ColumnarJson,

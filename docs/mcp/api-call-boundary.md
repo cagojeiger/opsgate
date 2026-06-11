@@ -69,6 +69,7 @@ body
 content_type
 max_bytes
 jsonpath
+table
 ```
 
 불변조건:
@@ -240,6 +241,7 @@ multiple top-level JSON values denied
 top-level scalar JSON allowed
 UseNumber preserves large JSON numbers
 jsonpath projection returns flat-keyed object; RFC 9535-compatible filters are supported; regex filters use `search(value, pattern)` for partial search or `match(value, pattern)` for full-string match; `.length()`/`.count()` suffix may return small scalar counts
+table returns one object per row (base enumerates rows, columns paths are relative to each row, missing column is null); mutually exclusive with jsonpath; body_mode is table_projection
 source body read-limit truncation is not parsed as JSON
 top-level truncated mirrors the output truncation state
 max_bytes truncation happens only after source JSON was fully read
@@ -277,7 +279,7 @@ method
 request_path
 query key names
 caller request header names
-jsonpath projection keys (`api_call_history.projection_keys`)
+jsonpath or table keys (`api_call_history.projection_keys`)
 max_bytes
 purpose
 outcome

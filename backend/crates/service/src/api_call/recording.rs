@@ -77,7 +77,7 @@ impl<'a> CallRecorder<'a> {
             request_header_keys: serde_json::json!(
                 self.input.headers.keys().cloned().collect::<Vec<_>>()
             ),
-            projection_keys: serde_json::json!(self.input.jsonpath),
+            projection_keys: projection_keys(self.input),
             max_bytes: i32::try_from(self.input.max_bytes).unwrap_or(i32::MAX),
             purpose: Some(self.input.purpose.clone()),
             outcome: outcome.to_owned(),
@@ -144,6 +144,26 @@ pub(super) async fn record_bad_input(
     }
 }
 
+/// Safe-to-record shaping facts for history: the table base + column
+/// paths when set, otherwise the jsonpath list. Both are the same RFC 9535
+/// safe-subset strings; neither carries secrets or target URLs.
+///
+/// Always returns a JSON array: `api_call_history.projection_keys` carries a
+/// `jsonb_typeof = 'array'` CHECK constraint, so table mode is flattened to
+/// `[base, ...field paths]` rather than an object. The column-name -> path map
+/// is preserved separately in audit detail.
+fn projection_keys(input: &NormalizedApiCallInput) -> Value {
+    match &input.table {
+        Some(table) => {
+            let mut keys = Vec::with_capacity(table.columns.len() + 1);
+            keys.push(table.base.clone());
+            keys.extend(table.columns.values().cloned());
+            serde_json::json!(keys)
+        }
+        None => serde_json::json!(input.jsonpath),
+    }
+}
+
 fn audit_detail(
     input: &NormalizedApiCallInput,
     credential: Option<&CredentialSnapshot>,
@@ -172,6 +192,12 @@ fn audit_detail(
     }
     if !input.jsonpath.is_empty() {
         detail.insert("jsonpath".to_owned(), serde_json::json!(input.jsonpath));
+    }
+    if let Some(table) = &input.table {
+        detail.insert(
+            "table".to_owned(),
+            serde_json::json!({ "base": table.base, "columns": table.columns }),
+        );
     }
     if let Some(credential) = credential {
         crate::audit::runtime::insert_credential_detail(
@@ -260,7 +286,7 @@ mod tests {
     use serde_json::Value;
     use uuid::Uuid;
 
-    use super::super::input::{ApiCallInput, MAX_MAX_BYTES, normalize_input};
+    use super::super::input::{ApiCallInput, MAX_MAX_BYTES, TableInput, normalize_input};
     use super::*;
 
     fn base_input() -> ApiCallInput {
@@ -274,6 +300,7 @@ mod tests {
             body: None,
             content_type: String::new(),
             jsonpath: Vec::new(),
+            table: None,
             max_bytes: Some(4096),
         }
     }
@@ -341,6 +368,76 @@ mod tests {
         assert!(!serialized.contains("api.example.test"));
         assert!(!serialized.contains("secret"));
         assert!(!serialized.contains("\"reason\""));
+        Ok(())
+    }
+
+    #[test]
+    fn table_is_recorded_in_audit_detail_and_projection_keys() -> Result<()> {
+        let input = normalize_input(ApiCallInput {
+            table: Some(TableInput {
+                base: "$.items[*]".to_owned(),
+                columns: BTreeMap::from([("name".to_owned(), "$.metadata.name".to_owned())]),
+            }),
+            ..base_input()
+        })?;
+
+        // Audit detail carries the table facts (base + column paths).
+        let detail = audit_detail(&input, None, "ok", None, None);
+        let serialized = detail.to_string();
+        assert!(serialized.contains("table"));
+        assert!(serialized.contains("$.metadata.name"));
+
+        // History projection_keys is populated for table mode (not the empty jsonpath list).
+        let keys = projection_keys(&input);
+        let array = keys
+            .as_array()
+            .ok_or_else(|| Error::internal("projection_keys must be an array"))?;
+        assert!(array.contains(&serde_json::json!("$.items[*]")));
+        assert!(array.contains(&serde_json::json!("$.metadata.name")));
+        Ok(())
+    }
+
+    #[test]
+    fn projection_keys_is_always_a_json_array() -> Result<()> {
+        // api_call_history.projection_keys has a jsonb_typeof = 'array' CHECK
+        // constraint; both modes must serialize to an array or the INSERT fails.
+        let jsonpath_mode = normalize_input(ApiCallInput {
+            jsonpath: vec!["$.items[*].metadata.name".to_owned()],
+            ..base_input()
+        })?;
+        assert!(projection_keys(&jsonpath_mode).is_array());
+
+        let row_mode = normalize_input(ApiCallInput {
+            table: Some(TableInput {
+                base: "$.items[*]".to_owned(),
+                columns: BTreeMap::from([("name".to_owned(), "$.metadata.name".to_owned())]),
+            }),
+            ..base_input()
+        })?;
+        assert!(projection_keys(&row_mode).is_array());
+        Ok(())
+    }
+
+    #[test]
+    fn audit_detail_with_table_stores_only_safe_facts() -> Result<()> {
+        let input = normalize_input(ApiCallInput {
+            method: "POST".to_owned(),
+            query: BTreeMap::from([("token".to_owned(), "query-secret".to_owned())]),
+            body: Some(serde_json::json!({"k": "body-secret"})),
+            table: Some(TableInput {
+                base: "$.items[*]".to_owned(),
+                columns: BTreeMap::from([("name".to_owned(), "$.metadata.name".to_owned())]),
+            }),
+            ..base_input()
+        })?;
+        let credential = CredentialSnapshot::from(&http_credential(CredentialPolicy::default()));
+        let detail = audit_detail(&input, Some(&credential), "ok", None, None);
+        let serialized = detail.to_string();
+        assert!(serialized.contains("table"));
+        assert!(serialized.contains("$.metadata.name"));
+        assert!(!serialized.contains("query-secret"));
+        assert!(!serialized.contains("body-secret"));
+        assert!(!serialized.contains("api.example.test"));
         Ok(())
     }
 
