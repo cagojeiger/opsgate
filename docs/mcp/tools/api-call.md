@@ -92,8 +92,9 @@
 - policy 거부 응답은 세부 kind와 복구 hint를 반환합니다. 정책 상세는
   `credential_list`를 다시 호출해 확인합니다. history/audit에는 세부 kind와
   safe message만 저장합니다.
-- history는 JSONPath 표현식을 projected value가 아니라 `projection_keys`로
-  저장합니다.
+- history는 JSONPath 표현식 또는 table의 `base`/`columns` 경로를 projected
+  value가 아니라 `projection_keys`로 저장합니다. 둘 다 secret/URL이 없는 RFC 9535
+  경로 문자열입니다.
 - 출력 상태, truncation, JSONPath 검증은 공통
   [JSON 출력과 토큰 예산 스펙](../json-output.md)을 따릅니다.
 - `original_bytes`는 일반 응답에서는 compact 전 원본 body 크기이고, source body read limit 초과 시에는 전체 크기 또는 확인된 최소 크기입니다.
@@ -117,7 +118,8 @@ LLM 가이드:
   받지 말고 `.length()` 또는 `.count()`를 먼저 사용하세요.
 - JSONPath projection은 matched-node list입니다. 여러 JSONPath 결과 배열의 같은
   index가 같은 source row라는 보장은 없습니다. optional field가 있는 row 정합성이
-  필요하면 page/filter를 줄이고 `$.items[*]`처럼 row object 자체를 projection하세요.
+  필요하면 page/filter를 줄이고 `$.items[*]`처럼 row object 자체를 뽑거나,
+  아래 `table`로 행마다 정렬된 object 배열을 받으세요.
 - 일부 Kubernetes의 읽기성 API는 POST이며, 그래도 POST policy가 필요합니다.
 - `origin=https://k8s.example.com`, `base_path=/cluster-a`, `request_path=/api/v1/pods`이면 실제 호출 URL은 `https://k8s.example.com/cluster-a/api/v1/pods`입니다. LLM은 `origin`과 `base_path`를 직접 보지 않습니다.
 
@@ -159,5 +161,56 @@ Projection 출력:
       "worker"
     ]
   }
+}
+```
+
+## table
+
+`jsonpath`가 경로마다 배열 하나(columnar)를 주는 것과 달리, `table`은 ragged
+JSON을 **행마다 object 하나**인 배열로 재구성합니다 (SQL `JSON_TABLE`과 동일한 모델).
+`base`가 행을 열거하고, `columns`의 각 항목은 컬럼 이름 → 각 행 기준 상대 경로입니다
+(경로의 `$`는 해당 행 노드). `jsonpath`와 `table`은 상호 배타이며, 동시에
+지정하면 거부됩니다.
+
+규칙:
+
+- `columns`가 비어 있으면 거부됩니다.
+- column이 없는 행은 `null`이 됩니다.
+- column이 여러 노드와 매칭되면 배열로 담깁니다(평탄화하지 않음).
+- `base`/`columns` 경로는 `jsonpath`와 동일한 RFC 9535 안전 서브셋으로 검증됩니다.
+  table은 평평한 컬럼만 지원하므로 `base`·`columns` 경로 모두 `.count()`/`.length()`
+  집계는 쓸 수 없습니다(집계가 필요하면 `jsonpath` 모드를 사용하세요).
+- 출력 `body_mode`는 `table_projection`입니다.
+- output budget 초과 시 `next_action`은 `narrow_table_projection`이며, 복구는
+  `columns` 줄이기 / `base` 좁히기 / `max_bytes` 올리기입니다.
+
+입력:
+
+```json
+{
+  "alias": "prod-k8s",
+  "purpose": "List pod name and phase aligned per row",
+  "method": "GET",
+  "request_path": "/api/v1/pods",
+  "table": {
+    "base": "$.items[*]",
+    "columns": {
+      "name": "$.metadata.name",
+      "phase": "$.status.phase"
+    }
+  }
+}
+```
+
+출력:
+
+```json
+{
+  "body_mode": "table_projection",
+  "body_state": "returned",
+  "body": [
+    {"name": "vault-0", "phase": "Running"},
+    {"name": "vault-1", "phase": null}
+  ]
 }
 ```

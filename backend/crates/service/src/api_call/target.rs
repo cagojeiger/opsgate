@@ -80,6 +80,7 @@ pub(super) async fn execute_target_call(
             max_bytes: input.max_bytes,
             max_allowed_bytes: MAX_MAX_BYTES,
             json_paths: input.jsonpath.clone(),
+            table: input.table.clone(),
             source_body_truncated,
             original_bytes: Some(original_bytes),
             source_body_mode: SourceBodyMode::RawJson,
@@ -290,6 +291,7 @@ mod tests {
             body: None,
             content_type: String::new(),
             jsonpath: Vec::new(),
+            table: None,
             max_bytes: Some(4096),
         }
     }

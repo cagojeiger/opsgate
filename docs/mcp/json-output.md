@@ -71,7 +71,8 @@ omit_reason    body_state=omitted일 때 왜 빠졌는지 표시한다.
 ```text
 raw_json              api_call target의 원본 JSON
 columnar_json         sql_query rows를 컬럼별 배열로 전치한 JSON
-jsonpath_projection   JSONPath projection 결과
+jsonpath_projection   JSONPath projection 결과 (경로별 matched-node 배열)
+table_projection        api_call table mode (base당 row 1개 object 배열)
 ```
 
 `body_state`:
@@ -85,7 +86,7 @@ omitted
 
 ```text
 output_body_too_large       projection 없이 만든 JSON body가 max_bytes를 초과
-projection_body_too_large   JSONPath projection 결과도 max_bytes를 초과
+projection_body_too_large   JSONPath 또는 table 결과가 max_bytes를 초과
 source_body_too_large       target 응답 body가 read limit을 초과해 완전 JSON을 읽지 못함
 ```
 
@@ -146,6 +147,12 @@ projection_body_too_large
 pagination/filter로 page를 줄인 뒤 `$.items[*]`처럼 row object 자체를
 projection하세요. SQL `columnar_json`은 별도 로직으로 missing column을 `null`로
 padding하므로 이 API JSONPath projection 경고와 다릅니다.
+
+`table_projection`은 위 row 정합성 문제의 구조화된 해법입니다. `api_call`의
+`table: {base, columns}`로 ragged JSON을 행마다 object 하나인 배열로
+재구성하며(SQL `JSON_TABLE` 모델), column이 없는 행은 `null`, 여러 노드와 매칭되면
+배열로 담깁니다. `jsonpath`와 상호 배타입니다. 자세한 규칙은
+[`api_call` 스펙](tools/api-call.md)을 참고하세요.
 
 ## JSONPath 검증 규칙
 
@@ -216,9 +223,10 @@ output_body_too_large      -> add_jsonpath
   more.preview.paths의 path/type/presence/null 정보를 보고 1-3개 JSONPath를
   명시적으로 선택해 output을 좁힌다. suggested_jsonpath는 호환용 shortlist다.
 
-projection_body_too_large  -> narrow_jsonpath
-  source JSON은 읽혔고 JSONPath도 수행했지만 projection output이 아직 크다.
-  expression 개수, slice 범위, filter 조건을 더 줄인다.
+projection_body_too_large  -> narrow_jsonpath (jsonpath) / narrow_table_projection (table mode)
+  source JSON은 읽혔고 jsonpath나 table도 수행했지만 output이 아직 크다.
+  jsonpath는 expression 개수, slice 범위, filter 조건을 줄인다. table은
+  columns를 줄이거나 base를 더 좁은 row set으로 제한하거나 max_bytes를 올린다.
 
 row_limit                  -> adjust_max_rows
   SQL row limit에 걸렸다. max_rows, WHERE, aggregate, keyset pagination을 조정한다.

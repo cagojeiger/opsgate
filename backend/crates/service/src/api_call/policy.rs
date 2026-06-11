@@ -140,6 +140,7 @@ mod tests {
             body: None,
             content_type: String::new(),
             jsonpath: Vec::new(),
+            table: None,
             max_bytes: Some(4096),
         }
     }

@@ -20,6 +20,7 @@ pub struct JsonOutputOptions {
     pub max_bytes: usize,
     pub max_allowed_bytes: usize,
     pub json_paths: Vec<String>,
+    pub table: Option<TableProjection>,
     pub source_body_truncated: bool,
     pub original_bytes: Option<usize>,
     pub source_body_mode: SourceBodyMode,
@@ -31,10 +32,30 @@ impl Default for JsonOutputOptions {
             max_bytes: DEFAULT_MAX_BYTES,
             max_allowed_bytes: DEFAULT_MAX_ALLOWED_BYTES,
             json_paths: Vec::new(),
+            table: None,
             source_body_truncated: false,
             original_bytes: None,
             source_body_mode: SourceBodyMode::RawJson,
         }
+    }
+}
+
+/// Table projection over ragged JSON, mirroring the ISO SQL/JSON
+/// `JSON_TABLE` model: `base` enumerates the rows, and each `columns` entry is a
+/// column path evaluated relative to a single row (the path's `$` rebinds to the
+/// row node). The result is an array of one object per row. Every path is the
+/// same RFC 9535 safe subset enforced by [`validate_json_paths`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableProjection {
+    pub base: String,
+    pub columns: std::collections::BTreeMap<String, String>,
+}
+
+impl JsonOutputOptions {
+    /// True when the body is reshaped (keyed jsonpath or table) rather
+    /// than returned raw. Drives body mode, preview, and omit-reason selection.
+    fn is_projection(&self) -> bool {
+        !self.json_paths.is_empty() || self.table.is_some()
     }
 }
 
@@ -50,6 +71,7 @@ pub enum BodyMode {
     RawJson,
     ColumnarJson,
     JsonpathProjection,
+    TableProjection,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -74,6 +96,7 @@ pub enum OmitReason {
 pub enum NextAction {
     AddJsonpath,
     NarrowJsonpath,
+    NarrowTableProjection,
     NarrowRequest,
     AdjustMaxRows,
 }
@@ -149,6 +172,9 @@ struct PreviewStat {
 
 pub fn build_json_output(raw: &[u8], options: JsonOutputOptions) -> Result<JsonOutput> {
     validate_json_paths(&options.json_paths)?;
+    if let Some(table) = &options.table {
+        validate_table_projection(table)?;
+    }
     let original_bytes = options.original_bytes.unwrap_or(raw.len());
     if options.source_body_truncated {
         return Ok(truncated_output(
@@ -161,10 +187,10 @@ pub fn build_json_output(raw: &[u8], options: JsonOutputOptions) -> Result<JsonO
     }
 
     let parsed = decode_single_json_value(raw)?;
-    let body = if options.json_paths.is_empty() {
-        parsed
-    } else {
-        project_json_paths(&parsed, &options.json_paths)?
+    let body = match &options.table {
+        Some(table) => project_table(&parsed, table)?,
+        None if options.json_paths.is_empty() => parsed,
+        None => project_json_paths(&parsed, &options.json_paths)?,
     };
     let marshaled = compact_json_bytes(&body)?;
     if marshaled.len() <= options.max_bytes {
@@ -180,10 +206,10 @@ pub fn build_json_output(raw: &[u8], options: JsonOutputOptions) -> Result<JsonO
         });
     }
 
-    let preview = if options.json_paths.is_empty() {
-        build_preview(&body)
-    } else {
+    let preview = if options.is_projection() {
         None
+    } else {
+        build_preview(&body)
     };
     Ok(truncated_output(
         original_bytes,
@@ -206,6 +232,9 @@ pub fn build_json_output_from_value(
     options: JsonOutputOptions,
 ) -> Result<JsonOutput> {
     validate_json_paths(&options.json_paths)?;
+    if let Some(table) = &options.table {
+        validate_table_projection(table)?;
+    }
     if options.source_body_truncated {
         return Ok(truncated_output(
             options.original_bytes.unwrap_or(0),
@@ -216,7 +245,7 @@ pub fn build_json_output_from_value(
         ));
     }
 
-    if options.json_paths.is_empty() {
+    if !options.is_projection() {
         // The whole value is the body, so one serialization covers both the
         // original and returned byte counts.
         let marshaled = compact_json_bytes(&value)?;
@@ -247,7 +276,10 @@ pub fn build_json_output_from_value(
         Some(bytes) => bytes,
         None => compact_json_bytes(&value)?.len(),
     };
-    let body = project_json_paths(&value, &options.json_paths)?;
+    let body = match &options.table {
+        Some(table) => project_table(&value, table)?,
+        None => project_json_paths(&value, &options.json_paths)?,
+    };
     let marshaled = compact_json_bytes(&body)?;
     if marshaled.len() <= options.max_bytes {
         return Ok(JsonOutput {
@@ -326,6 +358,71 @@ fn project_json_paths(value: &Value, paths: &[String]) -> Result<Value> {
         Ok(Value::Null)
     } else {
         Ok(Value::Object(out))
+    }
+}
+
+/// Validate a table projection against the same RFC 9535 safe subset as keyed
+/// projections. `base` and every field path are checked together.
+pub fn validate_table_projection(table: &TableProjection) -> Result<()> {
+    if table.columns.is_empty() {
+        return Err(Error::validation("table requires at least one column"));
+    }
+    let mut paths = Vec::with_capacity(table.columns.len() + 1);
+    paths.push(table.base.clone());
+    paths.extend(table.columns.values().cloned());
+    validate_json_paths(&paths)?;
+    // Table is flat columns only: base and every column must be a plain
+    // path with no count()/length() aggregate. Rejecting here (called from
+    // normalize_input, before policy/credential/target execution) ensures an
+    // invalid table never triggers a target call, and keeps the
+    // missing-column = null contract unambiguous.
+    for path in &paths {
+        if split_jsonpath_operator(path.trim()).1.is_some() {
+            return Err(Error::validation(
+                "table paths must not use count() or length()",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Reshape ragged JSON into an array of row objects: `base` enumerates the rows
+/// and each column path is evaluated relative to a single row (its `$` rebinds to
+/// the row node). Missing columns become `null`; a column matching multiple nodes
+/// keeps them as an array. Mirrors the ISO SQL/JSON `JSON_TABLE` model.
+fn project_table(value: &Value, table: &TableProjection) -> Result<Value> {
+    // Aggregates are rejected pre-execution by validate_table_projection, so base
+    // and every field are plain RFC 9535 paths here.
+    let base = parse_json_path(table.base.trim(), table.base.trim())?;
+    // Parse every field path once, before iterating rows, so a projection over
+    // N rows with M columns parses M paths rather than N*M.
+    let mut columns = Vec::with_capacity(table.columns.len());
+    for (column, raw_path) in &table.columns {
+        let path_key = raw_path.trim();
+        columns.push((column, parse_json_path(path_key, path_key)?));
+    }
+    let rows = base.query(value).all();
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        let mut object = Map::new();
+        for (column, path) in &columns {
+            object.insert(
+                (*column).clone(),
+                collapse_field_nodes(path.query(row).all()),
+            );
+        }
+        out.push(Value::Object(object));
+    }
+    Ok(Value::Array(out))
+}
+
+/// Collapse a field's matched nodes into one column value: none -> null,
+/// one -> the value, many -> an array (no flattening).
+fn collapse_field_nodes(nodes: Vec<&Value>) -> Value {
+    match nodes.as_slice() {
+        [] => Value::Null,
+        [single] => (*single).clone(),
+        _ => Value::Array(nodes.into_iter().cloned().collect()),
     }
 }
 
@@ -410,7 +507,7 @@ fn truncated_output(
         truncated: true,
         more: Some(More {
             truncated: true,
-            hints: truncation_hints(omit_reason, &more_options),
+            hints: truncation_hints(options, omit_reason, &more_options),
             options: more_options,
             preview,
         }),
@@ -418,7 +515,9 @@ fn truncated_output(
 }
 
 fn output_body_mode(options: &JsonOutputOptions) -> BodyMode {
-    if options.json_paths.is_empty() {
+    if options.table.is_some() {
+        BodyMode::TableProjection
+    } else if options.json_paths.is_empty() {
         options.source_body_mode.into()
     } else {
         BodyMode::JsonpathProjection
@@ -435,17 +534,18 @@ impl From<SourceBodyMode> for BodyMode {
 }
 
 fn output_budget_omit_reason(options: &JsonOutputOptions) -> OmitReason {
-    if options.json_paths.is_empty() {
-        OmitReason::Output
-    } else {
+    if options.is_projection() {
         OmitReason::Projection
+    } else {
+        OmitReason::Output
     }
 }
 
-fn next_action(omit_reason: OmitReason) -> NextAction {
+fn next_action(options: &JsonOutputOptions, omit_reason: OmitReason) -> NextAction {
     match omit_reason {
         OmitReason::Source => NextAction::NarrowRequest,
         OmitReason::Output => NextAction::AddJsonpath,
+        OmitReason::Projection if options.table.is_some() => NextAction::NarrowTableProjection,
         OmitReason::Projection => NextAction::NarrowJsonpath,
     }
 }
@@ -457,7 +557,7 @@ fn truncation_options(
     omit_reason: OmitReason,
 ) -> MoreOptions {
     let mut out = MoreOptions {
-        next_action: next_action(omit_reason),
+        next_action: next_action(options, omit_reason),
         suggested_jsonpath: Vec::new(),
         suggested_max_bytes: None,
     };
@@ -470,7 +570,11 @@ fn truncation_options(
     out
 }
 
-fn truncation_hints(omit_reason: OmitReason, more_options: &MoreOptions) -> Vec<String> {
+fn truncation_hints(
+    options: &JsonOutputOptions,
+    omit_reason: OmitReason,
+    more_options: &MoreOptions,
+) -> Vec<String> {
     match omit_reason {
         OmitReason::Source => vec![
             "Opsgate could not read the full target response body; retry with target-native pagination, filters, selectors, limits, time ranges, or a narrower path/query/body"
@@ -479,6 +583,10 @@ fn truncation_hints(omit_reason: OmitReason, more_options: &MoreOptions) -> Vec<
         OmitReason::Output => vec![
             "Opsgate read the full JSON, but the tool output budget is too small; inspect preview.paths, then retry with jsonpath using 1-3 selected paths. suggested_jsonpath is only a small shortlist.".to_owned(),
         ],
+        OmitReason::Projection if options.table.is_some() => vec![format!(
+            "Opsgate read the full JSON, but the table is still too large; drop columns, narrow the base row set, or raise max_bytes to {:?}",
+            more_options.suggested_max_bytes
+        )],
         OmitReason::Projection => vec![format!(
             "Opsgate read the full JSON, but the JSONPath projection is still too large; reduce expression count, slice range, or filter scope before raising max_bytes to {:?}",
             more_options.suggested_max_bytes
@@ -690,6 +798,16 @@ mod tests {
         paths.iter().map(|path| (*path).to_owned()).collect()
     }
 
+    fn table_proj(base: &str, columns: &[(&str, &str)]) -> TableProjection {
+        TableProjection {
+            base: base.to_owned(),
+            columns: columns
+                .iter()
+                .map(|(name, path)| ((*name).to_owned(), (*path).to_owned()))
+                .collect(),
+        }
+    }
+
     fn validation_error(path: &str) -> Result<String> {
         match validate_json_paths(&[path.to_owned()]) {
             Ok(()) => Err(Error::internal(format!(
@@ -767,6 +885,87 @@ mod tests {
         assert_eq!(out.omit_reason, None);
         assert_eq!(value, Some(&serde_json::json!(["api"])));
         Ok(())
+    }
+
+    #[test]
+    fn table_reshapes_into_one_object_per_row() -> Result<()> {
+        let out = build_json_output(
+            br#"{"items":[{"metadata":{"name":"vault-0"},"status":{"phase":"Running"}},{"metadata":{"name":"vault-1"},"status":{}}]}"#,
+            JsonOutputOptions {
+                max_bytes: 4096,
+                table: Some(table_proj(
+                    "$.items[*]",
+                    &[("name", "$.metadata.name"), ("phase", "$.status.phase")],
+                )),
+                ..JsonOutputOptions::default()
+            },
+        )?;
+        assert_eq!(out.body_mode, BodyMode::TableProjection);
+        assert_eq!(out.body_state, BodyState::Returned);
+        assert_eq!(out.omit_reason, None);
+        // Row-aligned objects; the second row's missing phase becomes null.
+        assert_eq!(
+            out.body,
+            serde_json::json!([
+                {"name": "vault-0", "phase": "Running"},
+                {"name": "vault-1", "phase": null}
+            ])
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn table_keeps_multi_node_column_as_array() -> Result<()> {
+        let out = build_json_output(
+            br#"{"items":[{"spec":{"containers":[{"name":"a"},{"name":"b"}]}}]}"#,
+            JsonOutputOptions {
+                max_bytes: 4096,
+                table: Some(table_proj(
+                    "$.items[*]",
+                    &[("containers", "$.spec.containers[*].name")],
+                )),
+                ..JsonOutputOptions::default()
+            },
+        )?;
+        assert_eq!(out.body, serde_json::json!([{"containers": ["a", "b"]}]));
+        Ok(())
+    }
+
+    #[test]
+    fn table_oversize_hints_narrow_table_not_jsonpath() -> Result<()> {
+        let out = build_json_output(
+            br#"{"items":[{"metadata":{"name":"vault-0"},"status":{"phase":"Running"}},{"metadata":{"name":"vault-1"},"status":{"phase":"Pending"}}]}"#,
+            JsonOutputOptions {
+                max_bytes: 10,
+                table: Some(table_proj(
+                    "$.items[*]",
+                    &[("name", "$.metadata.name"), ("phase", "$.status.phase")],
+                )),
+                ..JsonOutputOptions::default()
+            },
+        )?;
+        assert_eq!(out.body_mode, BodyMode::TableProjection);
+        assert_eq!(out.body_state, BodyState::Omitted);
+        assert_eq!(out.omit_reason, Some(OmitReason::Projection));
+        let more = out
+            .more
+            .ok_or_else(|| Error::internal("missing more envelope"))?;
+        // Row mode must NOT tell the LLM to narrow a jsonpath it never used.
+        assert_eq!(more.options.next_action, NextAction::NarrowTableProjection);
+        assert!(more.hints.iter().any(|hint| hint.contains("table")));
+        Ok(())
+    }
+
+    #[test]
+    fn table_rejects_empty_columns_and_unsafe_paths() {
+        let empty = TableProjection {
+            base: "$.items[*]".to_owned(),
+            columns: std::collections::BTreeMap::new(),
+        };
+        assert!(validate_table_projection(&empty).is_err());
+
+        let recursive = table_proj("$.items[*]", &[("name", "$..name")]);
+        assert!(validate_table_projection(&recursive).is_err());
     }
 
     #[test]

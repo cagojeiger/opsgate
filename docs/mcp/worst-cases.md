@@ -115,6 +115,8 @@ raw dependency error 중 URL/secret이 섞일 수 있는 값
 | `api_call` source body read limit | 1 MiB |
 | `api_call.jsonpath` 최대 개수 | 16 |
 | `api_call.jsonpath` 최대 길이 | 512 |
+| `api_call.table` base+columns 경로 (jsonpath와 한도 공유) | 개수 16 / 길이 512 |
+| `api_call.table` column 이름 길이 | 1-128 (CR/LF/NUL 금지, trim 후 중복 금지) |
 | `api_call.headers` 최대 개수 | 16 |
 | `api_call.header value` 최대 길이 | 1024 |
 | `purpose` 길이 | 8-512, CR/LF 금지 |
@@ -151,8 +153,8 @@ source는 읽었지만 output budget 초과:
 body=null
 truncated=true
 omit_reason=output_body_too_large 또는 projection_body_too_large
-more.options.next_action=add_jsonpath 또는 narrow_jsonpath
-jsonpath/projection으로 output을 좁힘
+more.options.next_action=add_jsonpath 또는 narrow_jsonpath 또는 narrow_table_projection (table mode)
+jsonpath/table로 output을 좁힘
 partial JSON 반환 없음
 response body 저장 없음
 ```

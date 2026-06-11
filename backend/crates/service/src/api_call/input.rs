@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::llm_output::validate_json_paths;
+use crate::llm_output::{TableProjection, validate_json_paths, validate_table_projection};
 use opsgate_core::validation::{
     reject_crlf, trim_required, validate_count, validate_http_header_name,
     validate_http_header_value, validate_http_path, validate_max_bytes, validate_purpose,
@@ -22,6 +22,7 @@ const MAX_QUERY_VALUE_LEN: usize = 4096;
 const MAX_HEADERS: usize = 16;
 const MAX_HEADER_NAME_LEN: usize = 128;
 const MAX_HEADER_VALUE_LEN: usize = 1024;
+const MAX_TABLE_COLUMN_NAME_LEN: usize = 128;
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ApiCallInput {
@@ -48,11 +49,22 @@ pub struct ApiCallInput {
     /// Content-Type for body. Defaults to application/json when body is present.
     #[serde(default)]
     pub content_type: String,
-    /// JSONPath projections. Use RFC 9535 syntax; regex filters use search(value, pattern) for partial search or match(value, pattern) for full-string match. length()/count() suffixes are supported.
+    /// JSONPath projections returning one array per path (columnar). Use RFC 9535 syntax; regex filters use search(value, pattern) for partial search or match(value, pattern) for full-string match. length()/count() suffixes are supported. Mutually exclusive with table.
     #[serde(default)]
     pub jsonpath: Vec<String>,
+    /// Build a table from the HTTP response: base enumerates the rows, columns maps each output column name to an RFC 9535 path evaluated relative to a single row (its $ is the row). Returns an array of one object per row, like SQL JSON_TABLE. Missing columns become null. Mutually exclusive with jsonpath. Prefer this over jsonpath when you need several columns aligned per item.
+    #[serde(default)]
+    pub table: Option<TableInput>,
     /// Response byte budget after JSONPath projection. Lower values force concise output.
     pub max_bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct TableInput {
+    /// RFC 9535 path that enumerates the rows, e.g. $.items[*].
+    pub base: String,
+    /// Column name -> RFC 9535 path evaluated relative to each row (its $ is the row node), e.g. {"name": "$.metadata.name", "phase": "$.status.phase"}.
+    pub columns: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +78,7 @@ pub(super) struct NormalizedApiCallInput {
     pub(super) body: Option<Value>,
     pub(super) content_type: Option<String>,
     pub(super) jsonpath: Vec<String>,
+    pub(super) table: Option<TableProjection>,
     pub(super) max_bytes: usize,
 }
 
@@ -91,6 +104,39 @@ pub(super) fn normalize_input(input: ApiCallInput) -> Result<NormalizedApiCallIn
         MAX_MAX_BYTES,
     )?;
     validate_json_paths(&input.jsonpath)?;
+    let table = match input.table {
+        Some(table) => {
+            if !input.jsonpath.is_empty() {
+                return Err(Error::validation(
+                    "jsonpath and table are mutually exclusive",
+                ));
+            }
+            let mut columns = BTreeMap::new();
+            for (name, path) in table.columns {
+                // Field names are recorded into audit detail, so they pass the
+                // same hygiene gate as query keys (non-empty, bounded, no CR/LF/NUL).
+                let column = trim_required("table column name", &name)?;
+                reject_crlf("table column name", &column)?;
+                validate_text_len("table column name", &column, 1, MAX_TABLE_COLUMN_NAME_LEN)?;
+                if column.contains('\0') {
+                    return Err(Error::validation("table column name must not contain NUL"));
+                }
+                if columns.contains_key(&column) {
+                    return Err(Error::validation(
+                        "duplicate table column name after trimming",
+                    ));
+                }
+                columns.insert(column, path.trim().to_owned());
+            }
+            let table = TableProjection {
+                base: table.base.trim().to_owned(),
+                columns,
+            };
+            validate_table_projection(&table)?;
+            Some(table)
+        }
+        None => None,
+    };
     let query = normalize_query(input.query)?;
     validate_count("headers", input.headers.len(), MAX_HEADERS)?;
     let mut headers = BTreeMap::new();
@@ -132,6 +178,7 @@ pub(super) fn normalize_input(input: ApiCallInput) -> Result<NormalizedApiCallIn
         body: input.body,
         content_type,
         jsonpath,
+        table,
         max_bytes,
     })
 }
@@ -171,6 +218,7 @@ mod tests {
             body: None,
             content_type: String::new(),
             jsonpath: Vec::new(),
+            table: None,
             max_bytes: Some(4096),
         }
     }
@@ -256,5 +304,116 @@ mod tests {
             ..base_input()
         };
         assert!(normalize_input(input).is_err());
+    }
+
+    fn table_input(columns: &[(&str, &str)]) -> TableInput {
+        TableInput {
+            base: "$.items[*]".to_owned(),
+            columns: columns
+                .iter()
+                .map(|(name, path)| ((*name).to_owned(), (*path).to_owned()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn input_accepts_valid_table() -> Result<()> {
+        let normalized = normalize_input(ApiCallInput {
+            table: Some(table_input(&[("name", "$.metadata.name")])),
+            ..base_input()
+        })?;
+        assert!(normalized.table.is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn input_rejects_table_together_with_jsonpath() {
+        let input = ApiCallInput {
+            jsonpath: vec!["$.items[*].metadata.name".to_owned()],
+            table: Some(table_input(&[("name", "$.metadata.name")])),
+            ..base_input()
+        };
+        assert!(normalize_input(input).is_err());
+    }
+
+    #[test]
+    fn input_rejects_table_with_no_columns() {
+        let input = ApiCallInput {
+            table: Some(table_input(&[])),
+            ..base_input()
+        };
+        assert!(normalize_input(input).is_err());
+    }
+
+    #[test]
+    fn input_rejects_table_paths_with_aggregates() {
+        // A base aggregate must be rejected at input validation, before any
+        // policy/credential/target execution — never as a post-request error.
+        assert!(
+            normalize_input(ApiCallInput {
+                table: Some(TableInput {
+                    base: "$.items.length()".to_owned(),
+                    columns: BTreeMap::from([("name".to_owned(), "$.metadata.name".to_owned())]),
+                }),
+                ..base_input()
+            })
+            .is_err()
+        );
+        // Field aggregates are rejected too (table is flat columns only).
+        assert!(
+            normalize_input(ApiCallInput {
+                table: Some(table_input(&[("n", "$.spec.containers.count()")])),
+                ..base_input()
+            })
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn input_rejects_invalid_table_column_names() {
+        // empty after trim
+        assert!(
+            normalize_input(ApiCallInput {
+                table: Some(table_input(&[("  ", "$.metadata.name")])),
+                ..base_input()
+            })
+            .is_err()
+        );
+        // CR/LF
+        assert!(
+            normalize_input(ApiCallInput {
+                table: Some(table_input(&[("na\nme", "$.metadata.name")])),
+                ..base_input()
+            })
+            .is_err()
+        );
+        // NUL
+        assert!(
+            normalize_input(ApiCallInput {
+                table: Some(table_input(&[("na\0me", "$.metadata.name")])),
+                ..base_input()
+            })
+            .is_err()
+        );
+        // over the length limit
+        let long = "n".repeat(MAX_TABLE_COLUMN_NAME_LEN + 1);
+        assert!(
+            normalize_input(ApiCallInput {
+                table: Some(TableInput {
+                    base: "$.items[*]".to_owned(),
+                    columns: BTreeMap::from([(long, "$.metadata.name".to_owned())]),
+                }),
+                ..base_input()
+            })
+            .is_err()
+        );
+        // two names that collide only after trimming
+        assert!(
+            normalize_input(ApiCallInput {
+                table: Some(table_input(&[("name", "$.a"), ("name ", "$.b")])),
+                ..base_input()
+            })
+            .is_err()
+        );
     }
 }
