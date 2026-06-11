@@ -85,7 +85,7 @@ impl RuntimeMcpServer {
 
     #[tool(
         name = "api_call",
-        description = "Required: alias, purpose, request_path. Call an HTTP alias from credential_list. Send only request_path under hidden origin/base_path. For counts: length() returns array/string/object length; count() returns matched node count."
+        description = "Required: alias, purpose, request_path. Call an HTTP alias from credential_list; send only request_path under the hidden origin/base_path. To shape large JSON: jsonpath returns one array per path (columnar); table returns one object per row (base + columns, like SQL JSON_TABLE) — prefer table to align several fields per item. length()/count() suffixes return small scalar counts."
     )]
     pub async fn api_call(
         &self,
