@@ -49,8 +49,8 @@ boolean
 null
 ```
 
-JSON number는 `UseNumber`로 decode합니다. 큰 숫자 ID가 `float64`로 강제
-변환되면서 정밀도가 깨지는 것을 피하기 위한 선택입니다.
+JSON number는 float64로 강제 변환하지 않고 JSON 값으로 유지합니다. 큰 숫자
+ID의 정밀도가 깨지는 것을 피하기 위한 선택입니다.
 
 ## 출력 상태 필드
 
@@ -351,13 +351,13 @@ items[*].containers[*].env[*]
 
 ## Pagination 결정
 
-`0.1.0`에서는 preview pagination을 추가하지 않습니다.
+현재는 preview pagination을 제공하지 않습니다.
 
 이유: `api_call`은 target 실행 도구입니다. 캐시 없이 preview page를 더
 보려면 같은 target API를 다시 호출해야 합니다. 캐시를 추가하면 TTL, 권한,
 메모리 제한, response retention 정책이 따라옵니다.
 
-`0.1.0` 규칙:
+현재 규칙:
 
 ```text
 첫 preview page만 제한적으로 반환
@@ -399,7 +399,7 @@ jsonpath 입력
 JSONPath safe subset 검증
 jsonpath `.length()`/`.count()` 집계 suffix
 top-level scalar JSON 출력 지원
-UseNumber decode
+JSON number precision 보존
 more.preview path catalog
 field count sampling
 nested array expansion marker

@@ -45,7 +45,7 @@ audit / history
 ```
 
 Preview는 `response envelope` 안에서 생성되는 bounded helper입니다. 원본
-body를 저장하는 cache boundary는 아직 구현하지 않습니다. 0.1.0에서는 preview
+body를 저장하는 cache boundary는 아직 구현하지 않습니다. 현재 preview
 pagination도 제공하지 않습니다.
 
 ## 1. input boundary
@@ -239,7 +239,7 @@ Content-Type must indicate JSON
 JSON parse must succeed
 multiple top-level JSON values denied
 top-level scalar JSON allowed
-UseNumber preserves large JSON numbers
+large JSON numbers are preserved as JSON values, not coerced to float64
 jsonpath projection returns flat-keyed object; RFC 9535-compatible filters are supported; regex filters use `search(value, pattern)` for partial search or `match(value, pattern)` for full-string match; `.length()`/`.count()` suffix may return small scalar counts
 table returns one object per row (base enumerates rows, columns paths are relative to each row, missing column is null); mutually exclusive with jsonpath; body_mode is table_projection
 source body read-limit truncation is not parsed as JSON
@@ -319,7 +319,7 @@ preview pagination 미구현
 preview cache 미구현
 ```
 
-0.1.0 규칙:
+현재 규칙:
 
 ```text
 preview pagination 없음
@@ -349,10 +349,10 @@ credential/policy boundary: policy test로 닫혀 있음
 target execution boundary: guard test로 닫혀 있음
 response envelope boundary: JSON output test로 닫혀 있음
 audit/history boundary: 단위/통합 테스트로 닫혀 있으며 live 스모크도 유효함
-future cache boundary: 0.1.0 설계상 미구현
+future cache boundary: 현재 설계상 미구현
 ```
 
-현재 0.1.0 범위 밖:
+현재 범위 밖:
 
 ```text
 preview cache

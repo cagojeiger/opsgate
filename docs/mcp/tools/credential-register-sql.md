@@ -44,6 +44,8 @@
 선택값이지만 중요한 필드:
 
 - `policy`: 생략하면 기본 policy를 사용합니다.
+  SQL policy는 metadata, EXPLAIN, denied function, row/byte/time budget 제어만
+  다룹니다.
 
 출력:
 

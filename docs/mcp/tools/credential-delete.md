@@ -6,7 +6,7 @@
 /mcp/admin
 ```
 
-목적: 자격 증명을 소프트 삭제하고 봉인된 시크릿을 크립토슈레드(cryptoshred)한다.
+목적: 자격 증명을 소프트 삭제하고 봉인된 시크릿 자료를 삭제한다.
 
 입력:
 
@@ -44,6 +44,5 @@
 
 감사/이력:
 
-- 감사 액션: `mcp.credential_delete`
 - 이력 액션: `delete`
 - 상세(detail)에 `delete_reason`이 포함된다.

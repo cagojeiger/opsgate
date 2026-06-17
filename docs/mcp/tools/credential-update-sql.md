@@ -66,7 +66,8 @@
 참고:
 
 - `policy`는 병합이 아니라 전체 교체다.
+  SQL policy는 metadata, EXPLAIN, denied function, row/byte/time budget 제어만
+  다룬다.
 - 시크릿 교체나 데이터베이스 대상 변경은 삭제 후 재등록이 필요하다.
 - `reason`은 `update_reason`으로 기록된다.
-- 감사 액션은 `mcp.credential.update`이다.
 - 이력 액션은 `update`이다.
