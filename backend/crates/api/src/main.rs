@@ -17,6 +17,7 @@ mod identity;
 mod mcp;
 mod request_context;
 mod rest;
+mod retention;
 mod routes;
 mod state;
 
@@ -45,6 +46,8 @@ async fn main() -> anyhow::Result<()> {
         event = "db.ready",
         max_connections = config.db_max_connections
     );
+    let shutdown_token = CancellationToken::new();
+    let retention_worker = retention::spawn_if_enabled(&config, shutdown_token.clone()).await?;
 
     let bind_addr = config.bind_addr;
     let http = reqwest::Client::builder()
@@ -110,8 +113,7 @@ async fn main() -> anyhow::Result<()> {
     let listener = TcpListener::bind(bind_addr).await?;
     info!(event = "server.listening", addr = %bind_addr);
 
-    let http_shutdown_token = CancellationToken::new();
-    let http_shutdown = http_shutdown_token.clone().cancelled_owned();
+    let http_shutdown = shutdown_token.clone().cancelled_owned();
     let server = async move {
         axum::serve(listener, routes::app(state))
             .with_graceful_shutdown(http_shutdown)
@@ -125,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     info!(event = "server.shutting_down");
-    http_shutdown_token.cancel();
+    shutdown_token.cancel();
 
     let server_result = match server_result {
         Some(result) => result,
@@ -133,6 +135,11 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Drain the connection pool before exiting so in-flight queries finish.
+    if let Some(handle) = retention_worker
+        && let Err(error) = handle.await
+    {
+        tracing::warn!(%error, event = "retention.worker_join_failed");
+    }
     pool.close().await;
     info!(event = "shutdown.complete");
 

@@ -6,6 +6,7 @@ use sqlx::postgres::PgPoolOptions;
 pub mod api_call_history_repo;
 pub mod audit_repo;
 pub mod credential_repo;
+pub mod retention;
 pub mod sql_query_history_repo;
 pub mod user_repo;
 
@@ -14,6 +15,7 @@ pub use audit_repo::{AuditLogParams, AuditRepo};
 pub use credential_repo::{
     CredentialAuditAction, CredentialAuditParams, CredentialRepo, CredentialSummaryRows,
 };
+pub use retention::{RetentionCounts, RetentionPolicy, RetentionRun, run_retention_once};
 pub use sql_query_history_repo::{SqlQueryHistoryParams, SqlQueryHistoryRepo};
 pub use sqlx::PgPool;
 pub use user_repo::UserRepo;
@@ -33,6 +35,13 @@ pub async fn connect_migrate(database_migrate_url: &str) -> Result<PgPool> {
     connect_url(database_migrate_url, 1)
         .await
         .map_err(|e| Error::internal(format!("failed to connect to migration database: {e}")))
+}
+
+/// Build the retention worker Postgres connection pool.
+pub async fn connect_retention(database_retention_url: &str) -> Result<PgPool> {
+    connect_url(database_retention_url, 1)
+        .await
+        .map_err(|e| Error::internal(format!("failed to connect to retention database: {e}")))
 }
 
 async fn connect_url(

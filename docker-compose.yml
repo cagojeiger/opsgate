@@ -28,6 +28,15 @@ services:
       OPSGATE_DATABASE_MIGRATE_URL: postgres://opsgate:opsgate@postgres:5432/opsgate
       OPSGATE_DATABASE_URL: postgres://opsgate_app:opsgate_app@postgres:5432/opsgate
       OPSGATE_DB_MAX_CONNECTIONS: 10
+      OPSGATE_RETENTION_ENABLED: "false"
+      OPSGATE_RETENTION_DATABASE_URL: postgres://opsgate_retention:opsgate_retention@postgres:5432/opsgate
+      OPSGATE_RETENTION_RUN_INTERVAL_HOURS: 24
+      OPSGATE_RETENTION_BATCH_SIZE: 1000
+      OPSGATE_RETENTION_AUDIT_LOG_DAYS: 365
+      OPSGATE_RETENTION_API_CALL_HISTORY_DAYS: 90
+      OPSGATE_RETENTION_SQL_QUERY_HISTORY_DAYS: 90
+      OPSGATE_RETENTION_CREDENTIAL_HISTORY_DAYS: 365
+      OPSGATE_RETENTION_DELETED_CREDENTIAL_DAYS: 400
       LOG_FORMAT: json
       OPSGATE_AUTHGATE_URL: https://authgate.project-jelly.io
       OPSGATE_PUBLIC_URL: http://localhost:9091

@@ -8,6 +8,7 @@
 - [MCP 도구 이름 규칙](mcp/tool-naming.md)
 - [크레이트 경계와 의존성 설계](architecture/crate-boundaries.md)
 - [인증 구조](architecture/auth.md)
+- [데이터 리텐션 정책](architecture/data-retention.md)
 - [api_call boundary 모델](mcp/api-call-boundary.md)
 - [sql_query boundary 모델](mcp/sql-query-boundary.md)
 - [0.1.0 릴리스 준비 체크리스트](release-checklist.md)
