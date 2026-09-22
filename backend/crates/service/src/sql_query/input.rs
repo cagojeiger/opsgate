@@ -1,8 +1,8 @@
-use crate::llm_output::validate_json_paths;
 use opsgate_core::validation::{
     trim_required, validate_max_bytes, validate_purpose, validate_range,
 };
 use opsgate_core::{Error, Result};
+use opsgate_json_output::validate_json_paths;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;

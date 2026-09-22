@@ -23,6 +23,7 @@
 6. `core`는 모든 계층이 써도 되는 최소 기반만 담당합니다.
 7. 자주 바뀌는 코드가 낮은 레이어에 들어가지 않도록 합니다.
 8. 컴파일 캐시 효율을 위해 무거운 의존성은 필요한 크레이트에만 둡니다.
+9. `json-output`은 전송과 실행 흐름에 독립적인 JSON 출력 가공만 담당합니다.
 
 ## 목표 크레이트
 
@@ -30,6 +31,7 @@
 backend/crates/
 ├─ api
 ├─ service
+├─ json-output
 ├─ infra
 ├─ db
 ├─ model
@@ -84,12 +86,13 @@ JWT 검증은 `auth::jwt::JwtAuthority` 하나로 통일하고, API/MCP/Login은
 - secret seal/open 흐름
 - policy 검증 흐름
 - audit/history 기록 순서 조립
-- LLM-facing JSON output 조립
+- HTTP/SQL 결과 metadata와 공통 JSON output 조립
 
 허용 의존성:
 
 - `opsgate-db`
 - `opsgate-infra`
+- `opsgate-json-output`
 - `opsgate-model`
 - `opsgate-core`
 - `sqlparser`, `serde`, `serde_json`, `schemars`, `secrecy`
@@ -100,6 +103,34 @@ JWT 검증은 `auth::jwt::JwtAuthority` 하나로 통일하고, API/MCP/Login은
 - `rmcp`
 - `openidconnect`
 - route/extractor/cookie/session 처리
+
+### `opsgate-json-output`
+
+역할:
+
+- JSON bytes 또는 이미 파싱된 값의 출력 가공
+- JSONPath 검증과 projection, table projection
+- JSON 본문 byte budget과 생략 사유
+- 크기가 제한된 구조 preview와 다음 호출 안내
+
+허용 의존성:
+
+- `opsgate-core`의 `Error`/`Result`와 JSON Schema helper
+- `serde`, `serde_json`, `serde_json_path`, `schemars`
+
+금지:
+
+- `opsgate-api`, `opsgate-service`, `opsgate-db`, `opsgate-infra`, `opsgate-model`
+- `axum`, `rmcp`, `sqlx`, `reqwest`
+- credential 조회, 권한/정책 결정, 외부 I/O와 audit/history 기록
+
+service는 외부 호출 전에 입력과 policy를 검증하고 HTTP status/header/latency,
+SQL row limit과 query 안내를 조립합니다. SQL schema 출력은 전체 응답 크기를 재고
+schema 항목을 줄이는 별도 규칙이므로 service에 유지합니다.
+
+이 크레이트는 workspace 내부 라이브러리이며 기존 응답 필드, schema, 오류 분류와 안내
+문구를 유지합니다. `cargo test -p opsgate-json-output`으로 DB/HTTP 의존성 없이
+공통 출력 테스트를 실행할 수 있습니다.
 
 ### `opsgate-infra`
 
@@ -210,7 +241,7 @@ DDD식 풍부한 domain보다 “공통 모델과 순수 규칙”에 가까워�
 
 - `config` → `api` bootstrap/config 영역
 - `crypto` → `service`의 credential secret 영역
-- `llm_output` → `service`의 output 영역
+- `llm_output` → `json-output` 크레이트
 - `net/ssrf` → `infra` network guard
 
 현재 유지:
@@ -229,9 +260,13 @@ api
  └─ core
 
 service
+ ├─ json-output
  ├─ db
  ├─ infra
  ├─ model
+ └─ core
+
+json-output
  └─ core
 
 infra
@@ -255,6 +290,7 @@ model  -> service/db/infra/api
 db     -> service/infra/api
 infra  -> db/service/api
 service -> api
+json-output -> service/db/infra/model/api
 core   -> any internal crate
 ```
 
@@ -311,6 +347,7 @@ infra 영향 없음
 
 - `api`에는 transport/auth/bootstrap만 남습니다.
 - `service`에는 유스케이스 흐름만 남고 `axum`/`rmcp` 의존성이 없습니다.
+- `json-output`은 공통 JSON 가공만 담당하고 DB/HTTP/transport에 의존하지 않습니다.
 - `infra`는 외부 HTTP/Postgres 연결만 담당하고 `db`를 모릅니다.
 - `db`는 내부 저장소만 담당하고 외부 HTTP client를 모릅니다.
 - `model`은 순수 타입/정책/검증만 담당합니다.

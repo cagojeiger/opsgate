@@ -1,8 +1,8 @@
-use crate::llm_output::{
+use opsgate_core::{Error, Result};
+use opsgate_json_output::{
     BodyMode, BodyState, JsonOutput, JsonOutputOptions, More, MoreOptions, NextAction, OmitReason,
     SourceBodyMode, build_json_output_from_value,
 };
-use opsgate_core::{Error, Result};
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;

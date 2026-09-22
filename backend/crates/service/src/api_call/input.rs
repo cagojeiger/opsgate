@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
-use crate::llm_output::{TableProjection, validate_json_paths, validate_table_projection};
 use opsgate_core::validation::{
     reject_crlf, trim_required, validate_count, validate_http_header_name,
     validate_http_header_value, validate_http_path, validate_max_bytes, validate_purpose,
     validate_text_len,
 };
 use opsgate_core::{Error, Result};
+use opsgate_json_output::{TableProjection, validate_json_paths, validate_table_projection};
 use reqwest::header::HeaderName;
 use schemars::JsonSchema;
 use serde::Deserialize;

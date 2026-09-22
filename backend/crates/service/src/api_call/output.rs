@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::llm_output::{BodyMode, BodyState, More, OmitReason};
+use opsgate_json_output::{BodyMode, BodyState, More, OmitReason};
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
