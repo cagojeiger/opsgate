@@ -23,7 +23,7 @@ use crate::auth::metadata::{
 };
 use crate::auth::oauth::{callback, login};
 use crate::error::ApiError;
-use crate::mcp::server::{mcp_admin_handler, mcp_handler};
+use crate::mcp::transport::{mcp_admin_handler, mcp_handler};
 use crate::state::{AppState, AuthRuntimeState};
 
 pub(crate) fn app(state: AppState) -> Router {
