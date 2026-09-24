@@ -132,6 +132,20 @@ schema 항목을 줄이는 별도 규칙이므로 service에 유지합니다.
 문구를 유지합니다. `cargo test -p opsgate-json-output`으로 DB/HTTP 의존성 없이
 공통 출력 테스트를 실행할 수 있습니다.
 
+내부 모듈은 다음 책임으로 나눕니다. 공개 API는 `lib.rs`에서 재노출합니다.
+
+```text
+json-output/src/
+├─ lib.rs         공개 API
+├─ types.rs       옵션과 응답 타입
+├─ json.rs        입력 처리, byte budget, 출력과 안내 조립
+├─ projection.rs  JSONPath/table 검증과 변환
+└─ preview.rs     크기가 제한된 구조 미리보기
+```
+
+bytes와 `Value` 입력은 출력 조립을 공유합니다. 원본 크기 계산은 각 입력 경로에
+유지하며, projection 없는 `Value` 입력은 한 번의 직렬화로 크기를 계산합니다.
+
 ### `opsgate-infra`
 
 역할:

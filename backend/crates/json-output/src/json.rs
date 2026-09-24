@@ -1,174 +1,15 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
-use serde_json_path::JsonPath;
-
 use opsgate_core::{Error, Result};
+use serde::Deserialize;
+use serde_json::Value;
 
-const DEFAULT_MAX_BYTES: usize = 4096;
-const DEFAULT_MAX_ALLOWED_BYTES: usize = 1024 * 1024;
-const MAX_JSON_PATHS: usize = 16;
-const MAX_JSON_PATH_LEN: usize = 512;
-const MAX_PREVIEW_BYTES: usize = 4096;
-const MAX_PREVIEW_PATHS: usize = 20;
-const MAX_PREVIEW_DEPTH: usize = 5;
-const MAX_PREVIEW_ARRAY_SAMPLE: usize = 10;
-const MAX_PREVIEW_NESTED_ARRAY_DEPTH: usize = 1;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct JsonOutputOptions {
-    pub max_bytes: usize,
-    pub max_allowed_bytes: usize,
-    pub json_paths: Vec<String>,
-    pub table: Option<TableProjection>,
-    pub source_body_truncated: bool,
-    pub original_bytes: Option<usize>,
-    pub source_body_mode: SourceBodyMode,
-}
-
-impl Default for JsonOutputOptions {
-    fn default() -> Self {
-        Self {
-            max_bytes: DEFAULT_MAX_BYTES,
-            max_allowed_bytes: DEFAULT_MAX_ALLOWED_BYTES,
-            json_paths: Vec::new(),
-            table: None,
-            source_body_truncated: false,
-            original_bytes: None,
-            source_body_mode: SourceBodyMode::RawJson,
-        }
-    }
-}
-
-/// Table projection over ragged JSON, mirroring the ISO SQL/JSON
-/// `JSON_TABLE` model: `base` enumerates the rows, and each `columns` entry is a
-/// column path evaluated relative to a single row (the path's `$` rebinds to the
-/// row node). The result is an array of one object per row. Every path is the
-/// same RFC 9535 safe subset enforced by [`validate_json_paths`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TableProjection {
-    pub base: String,
-    pub columns: std::collections::BTreeMap<String, String>,
-}
-
-impl JsonOutputOptions {
-    /// True when the body is reshaped (keyed jsonpath or table) rather
-    /// than returned raw. Drives body mode, preview, and omit-reason selection.
-    fn is_projection(&self) -> bool {
-        !self.json_paths.is_empty() || self.table.is_some()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SourceBodyMode {
-    RawJson,
-    ColumnarJson,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum BodyMode {
-    RawJson,
-    ColumnarJson,
-    JsonpathProjection,
-    TableProjection,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum BodyState {
-    Returned,
-    Omitted,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-pub enum OmitReason {
-    #[serde(rename = "output_body_too_large")]
-    Output,
-    #[serde(rename = "projection_body_too_large")]
-    Projection,
-    #[serde(rename = "source_body_too_large")]
-    Source,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum NextAction {
-    AddJsonpath,
-    NarrowJsonpath,
-    NarrowTableProjection,
-    NarrowRequest,
-    AdjustMaxRows,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-pub struct JsonOutput {
-    pub body_mode: BodyMode,
-    pub body_state: BodyState,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub omit_reason: Option<OmitReason>,
-    #[schemars(schema_with = "opsgate_core::schema::json_value_schema")]
-    pub body: Value,
-    pub original_bytes: usize,
-    pub returned_bytes: usize,
-    pub truncated: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub more: Option<More>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-pub struct More {
-    pub truncated: bool,
-    pub options: MoreOptions,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub hints: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub preview: Option<Preview>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-pub struct MoreOptions {
-    pub next_action: NextAction,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub suggested_jsonpath: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub suggested_max_bytes: Option<usize>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-pub struct Preview {
-    pub path_count: usize,
-    pub returned_paths: usize,
-    pub truncated: bool,
-    pub paths: Vec<PreviewPath>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-pub struct PreviewPath {
-    pub path: String,
-    #[serde(rename = "type")]
-    pub value_type: String,
-    pub present_sampled: usize,
-    #[serde(skip_serializing_if = "is_zero", default)]
-    pub nulls_sampled: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub array_length_min_sampled: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub array_length_max_sampled: Option<usize>,
-    #[serde(skip_serializing_if = "is_false", default)]
-    pub nested_expansion_stopped: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PreviewStat {
-    path: String,
-    value_type: String,
-    present: usize,
-    nulls: usize,
-    array_min: Option<usize>,
-    array_max: Option<usize>,
-    nested_expansion_stopped: bool,
-}
+use super::preview::build_preview;
+use super::projection::{
+    project_json_paths, project_table, validate_json_paths, validate_table_projection,
+};
+use super::types::{
+    BodyMode, BodyState, JsonOutput, JsonOutputOptions, More, MoreOptions, NextAction, OmitReason,
+    Preview,
+};
 
 pub fn build_json_output(raw: &[u8], options: JsonOutputOptions) -> Result<JsonOutput> {
     validate_json_paths(&options.json_paths)?;
@@ -187,37 +28,7 @@ pub fn build_json_output(raw: &[u8], options: JsonOutputOptions) -> Result<JsonO
     }
 
     let parsed = decode_single_json_value(raw)?;
-    let body = match &options.table {
-        Some(table) => project_table(&parsed, table)?,
-        None if options.json_paths.is_empty() => parsed,
-        None => project_json_paths(&parsed, &options.json_paths)?,
-    };
-    let marshaled = compact_json_bytes(&body)?;
-    if marshaled.len() <= options.max_bytes {
-        return Ok(JsonOutput {
-            body_mode: output_body_mode(&options),
-            body_state: BodyState::Returned,
-            omit_reason: None,
-            body,
-            original_bytes,
-            returned_bytes: marshaled.len(),
-            truncated: false,
-            more: None,
-        });
-    }
-
-    let preview = if options.is_projection() {
-        None
-    } else {
-        build_preview(&body)
-    };
-    Ok(truncated_output(
-        original_bytes,
-        &options,
-        preview,
-        marshaled.len(),
-        output_budget_omit_reason(&options),
-    ))
+    shape_output(parsed, original_bytes, &options)
 }
 
 /// Shape an already-parsed JSON value for return, skipping the byte parse step.
@@ -248,86 +59,62 @@ pub fn build_json_output_from_value(
     if !options.is_projection() {
         // The whole value is the body, so one serialization covers both the
         // original and returned byte counts.
-        let marshaled = compact_json_bytes(&value)?;
-        let original_bytes = options.original_bytes.unwrap_or(marshaled.len());
-        if marshaled.len() <= options.max_bytes {
-            return Ok(JsonOutput {
-                body_mode: output_body_mode(&options),
-                body_state: BodyState::Returned,
-                omit_reason: None,
-                body: value,
-                original_bytes,
-                returned_bytes: marshaled.len(),
-                truncated: false,
-                more: None,
-            });
-        }
-        let preview = build_preview(&value);
-        return Ok(truncated_output(
-            original_bytes,
-            &options,
-            preview,
-            marshaled.len(),
-            output_budget_omit_reason(&options),
-        ));
+        let body_bytes = compact_json_bytes(&value)?.len();
+        let original_bytes = options.original_bytes.unwrap_or(body_bytes);
+        return Ok(finish_output(value, original_bytes, body_bytes, &options));
     }
 
     let original_bytes = match options.original_bytes {
         Some(bytes) => bytes,
         None => compact_json_bytes(&value)?.len(),
     };
+    shape_output(value, original_bytes, &options)
+}
+
+fn shape_output(
+    value: Value,
+    original_bytes: usize,
+    options: &JsonOutputOptions,
+) -> Result<JsonOutput> {
     let body = match &options.table {
         Some(table) => project_table(&value, table)?,
+        None if options.json_paths.is_empty() => value,
         None => project_json_paths(&value, &options.json_paths)?,
     };
-    let marshaled = compact_json_bytes(&body)?;
-    if marshaled.len() <= options.max_bytes {
-        return Ok(JsonOutput {
-            body_mode: output_body_mode(&options),
+    let body_bytes = compact_json_bytes(&body)?.len();
+    Ok(finish_output(body, original_bytes, body_bytes, options))
+}
+
+fn finish_output(
+    body: Value,
+    original_bytes: usize,
+    body_bytes: usize,
+    options: &JsonOutputOptions,
+) -> JsonOutput {
+    if body_bytes <= options.max_bytes {
+        return JsonOutput {
+            body_mode: output_body_mode(options),
             body_state: BodyState::Returned,
             omit_reason: None,
             body,
             original_bytes,
-            returned_bytes: marshaled.len(),
+            returned_bytes: body_bytes,
             truncated: false,
             more: None,
-        });
+        };
     }
-    Ok(truncated_output(
+    let preview = if options.is_projection() {
+        None
+    } else {
+        build_preview(&body)
+    };
+    truncated_output(
         original_bytes,
-        &options,
-        None,
-        marshaled.len(),
-        output_budget_omit_reason(&options),
-    ))
-}
-
-pub fn validate_json_paths(paths: &[String]) -> Result<()> {
-    if paths.len() > MAX_JSON_PATHS {
-        return Err(Error::validation(format!(
-            "too many jsonpath expressions ({} > {MAX_JSON_PATHS})",
-            paths.len()
-        )));
-    }
-    for path in paths {
-        let trimmed = path.trim();
-        if trimmed.is_empty() || trimmed.len() > MAX_JSON_PATH_LEN {
-            return Err(Error::validation("invalid jsonpath expression"));
-        }
-        if !trimmed.starts_with('$') {
-            return Err(Error::validation(format!(
-                "jsonpath expression {trimmed:?} must start with $"
-            )));
-        }
-        if trimmed.contains("..") {
-            return Err(Error::validation(
-                "jsonpath recursive descent is outside the safe subset",
-            ));
-        }
-        let (base_path, _operator) = split_jsonpath_operator(trimmed);
-        parse_json_path(base_path, trimmed)?;
-    }
-    Ok(())
+        options,
+        preview,
+        body_bytes,
+        output_budget_omit_reason(options),
+    )
 }
 
 fn decode_single_json_value(raw: &[u8]) -> Result<Value> {
@@ -338,155 +125,6 @@ fn decode_single_json_value(raw: &[u8]) -> Result<Value> {
         .end()
         .map_err(|error| Error::validation(format!("invalid JSON response: {error}")))?;
     Ok(value)
-}
-
-fn project_json_paths(value: &Value, paths: &[String]) -> Result<Value> {
-    let mut out = Map::new();
-    for raw_path in paths {
-        let path_key = raw_path.trim();
-        let (base_path, operator) = split_jsonpath_operator(path_key);
-        let path = parse_json_path(base_path, path_key)?;
-        let nodes = path.query(value).all();
-        let projected = match operator {
-            Some(JsonPathOperator::Count) => count_projection(nodes.len()),
-            Some(JsonPathOperator::Length) => length_projection(&nodes),
-            None => Value::Array(nodes.into_iter().cloned().collect()),
-        };
-        out.insert(path_key.to_owned(), projected);
-    }
-    if out.is_empty() {
-        Ok(Value::Null)
-    } else {
-        Ok(Value::Object(out))
-    }
-}
-
-/// Validate a table projection against the same RFC 9535 safe subset as keyed
-/// projections. `base` and every field path are checked together.
-pub fn validate_table_projection(table: &TableProjection) -> Result<()> {
-    if table.columns.is_empty() {
-        return Err(Error::validation("table requires at least one column"));
-    }
-    let mut paths = Vec::with_capacity(table.columns.len() + 1);
-    paths.push(table.base.clone());
-    paths.extend(table.columns.values().cloned());
-    validate_json_paths(&paths)?;
-    // Table is flat columns only: base and every column must be a plain
-    // path with no count()/length() aggregate. Rejecting here (called from
-    // normalize_input, before policy/credential/target execution) ensures an
-    // invalid table never triggers a target call, and keeps the
-    // missing-column = null contract unambiguous.
-    for path in &paths {
-        if split_jsonpath_operator(path.trim()).1.is_some() {
-            return Err(Error::validation(
-                "table paths must not use count() or length()",
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// Reshape ragged JSON into an array of row objects: `base` enumerates the rows
-/// and each column path is evaluated relative to a single row (its `$` rebinds to
-/// the row node). Missing columns become `null`; a column matching multiple nodes
-/// keeps them as an array. Mirrors the ISO SQL/JSON `JSON_TABLE` model.
-fn project_table(value: &Value, table: &TableProjection) -> Result<Value> {
-    // Aggregates are rejected pre-execution by validate_table_projection, so base
-    // and every field are plain RFC 9535 paths here.
-    let base = parse_json_path(table.base.trim(), table.base.trim())?;
-    // Parse every field path once, before iterating rows, so a projection over
-    // N rows with M columns parses M paths rather than N*M.
-    let mut columns = Vec::with_capacity(table.columns.len());
-    for (column, raw_path) in &table.columns {
-        let path_key = raw_path.trim();
-        columns.push((column, parse_json_path(path_key, path_key)?));
-    }
-    let rows = base.query(value).all();
-    let mut out = Vec::with_capacity(rows.len());
-    for row in rows {
-        let mut object = Map::new();
-        for (column, path) in &columns {
-            object.insert(
-                (*column).clone(),
-                collapse_field_nodes(path.query(row).all()),
-            );
-        }
-        out.push(Value::Object(object));
-    }
-    Ok(Value::Array(out))
-}
-
-/// Collapse a field's matched nodes into one column value: none -> null,
-/// one -> the value, many -> an array (no flattening).
-fn collapse_field_nodes(nodes: Vec<&Value>) -> Value {
-    match nodes.as_slice() {
-        [] => Value::Null,
-        [single] => (*single).clone(),
-        _ => Value::Array(nodes.into_iter().cloned().collect()),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum JsonPathOperator {
-    Count,
-    Length,
-}
-
-fn split_jsonpath_operator(path: &str) -> (&str, Option<JsonPathOperator>) {
-    for (suffix, operator) in [
-        (".count()", JsonPathOperator::Count),
-        (".count", JsonPathOperator::Count),
-        (".length()", JsonPathOperator::Length),
-        (".length", JsonPathOperator::Length),
-    ] {
-        if let Some(base) = path.strip_suffix(suffix)
-            && !base.is_empty()
-        {
-            return (base, Some(operator));
-        }
-    }
-    (path, None)
-}
-
-fn parse_json_path(base_path: &str, display_path: &str) -> Result<JsonPath> {
-    JsonPath::parse(base_path).map_err(|error| {
-        Error::validation(format!(
-            "invalid jsonpath expression {display_path:?}: parser reported {:?} at position {}. Use RFC 9535 JSONPath; regex filters use search(value, pattern) for partial search or match(value, pattern) for full-string match.",
-            error.message(),
-            error.position()
-        ))
-    })
-}
-
-fn count_projection(count: usize) -> Value {
-    serde_json::json!(count)
-}
-
-fn length_projection(nodes: &[&Value]) -> Value {
-    let lengths = nodes
-        .iter()
-        .map(|node| value_length(node))
-        .collect::<Vec<_>>();
-    match lengths.as_slice() {
-        [] => Value::Array(Vec::new()),
-        [Some(length)] => serde_json::json!(length),
-        [_one] => Value::Null,
-        _ => Value::Array(
-            lengths
-                .into_iter()
-                .map(|length| length.map_or(Value::Null, |length| serde_json::json!(length)))
-                .collect(),
-        ),
-    }
-}
-
-fn value_length(value: &Value) -> Option<usize> {
-    match value {
-        Value::Array(items) => Some(items.len()),
-        Value::Object(object) => Some(object.len()),
-        Value::String(value) => Some(value.chars().count()),
-        Value::Null | Value::Bool(_) | Value::Number(_) => None,
-    }
 }
 
 fn truncated_output(
@@ -521,15 +159,6 @@ fn output_body_mode(options: &JsonOutputOptions) -> BodyMode {
         options.source_body_mode.into()
     } else {
         BodyMode::JsonpathProjection
-    }
-}
-
-impl From<SourceBodyMode> for BodyMode {
-    fn from(value: SourceBodyMode) -> Self {
-        match value {
-            SourceBodyMode::RawJson => BodyMode::RawJson,
-            SourceBodyMode::ColumnarJson => BodyMode::ColumnarJson,
-        }
     }
 }
 
@@ -604,195 +233,18 @@ fn suggested_json_paths(preview: &Preview, limit: usize) -> Vec<String> {
         .collect()
 }
 
-fn build_preview(root: &Value) -> Option<Preview> {
-    let mut stats = Vec::<PreviewStat>::new();
-    collect_preview(&mut stats, "$", root, 0, 0);
-    if stats.is_empty() {
-        return None;
-    }
-    let path_count = stats.len();
-    let mut paths = stats
-        .into_iter()
-        .map(|stat| PreviewPath {
-            path: stat.path,
-            value_type: stat.value_type,
-            present_sampled: stat.present,
-            nulls_sampled: stat.nulls,
-            array_length_min_sampled: stat.array_min,
-            array_length_max_sampled: stat.array_max,
-            nested_expansion_stopped: stat.nested_expansion_stopped,
-        })
-        .collect::<Vec<_>>();
-    paths.sort_by(|left, right| {
-        score_preview_path(right)
-            .cmp(&score_preview_path(left))
-            .then_with(|| left.path.cmp(&right.path))
-    });
-
-    let mut truncated = false;
-    if paths.len() > MAX_PREVIEW_PATHS {
-        paths.truncate(MAX_PREVIEW_PATHS);
-        truncated = true;
-    }
-    while preview_json_len(&paths) > MAX_PREVIEW_BYTES && !paths.is_empty() {
-        paths.pop();
-        truncated = true;
-    }
-    Some(Preview {
-        path_count,
-        returned_paths: paths.len(),
-        truncated,
-        paths,
-    })
-}
-
-fn collect_preview(
-    stats: &mut Vec<PreviewStat>,
-    path: &str,
-    value: &Value,
-    depth: usize,
-    array_depth: usize,
-) {
-    add_preview(stats, path, value);
-    if depth >= MAX_PREVIEW_DEPTH {
-        mark_stopped(stats, path);
-        return;
-    }
-    match value {
-        Value::Object(map) => {
-            for (key, child) in map {
-                collect_preview(
-                    stats,
-                    &format!("{path}{}", jsonpath_name_segment(key)),
-                    child,
-                    depth + 1,
-                    array_depth,
-                );
-            }
-        }
-        Value::Array(items) => {
-            if array_depth >= MAX_PREVIEW_NESTED_ARRAY_DEPTH {
-                mark_stopped(stats, path);
-                return;
-            }
-            for child in items.iter().take(MAX_PREVIEW_ARRAY_SAMPLE) {
-                collect_preview(
-                    stats,
-                    &format!("{path}[*]"),
-                    child,
-                    depth + 1,
-                    array_depth + 1,
-                );
-            }
-        }
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
-    }
-}
-
-fn add_preview(stats: &mut Vec<PreviewStat>, path: &str, value: &Value) {
-    let value_type = value_type(value);
-    if let Some(stat) = stats.iter_mut().find(|stat| stat.path == path) {
-        stat.present += 1;
-        if value.is_null() {
-            stat.nulls += 1;
-        }
-        if let Value::Array(items) = value {
-            stat.array_min = Some(
-                stat.array_min
-                    .map_or(items.len(), |min| min.min(items.len())),
-            );
-            stat.array_max = Some(
-                stat.array_max
-                    .map_or(items.len(), |max| max.max(items.len())),
-            );
-        }
-        return;
-    }
-
-    let (array_min, array_max) = match value {
-        Value::Array(items) => (Some(items.len()), Some(items.len())),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
-            (None, None)
-        }
-    };
-    stats.push(PreviewStat {
-        path: path.to_owned(),
-        value_type: value_type.to_owned(),
-        present: 1,
-        nulls: usize::from(value.is_null()),
-        array_min,
-        array_max,
-        nested_expansion_stopped: false,
-    });
-}
-
-fn mark_stopped(stats: &mut [PreviewStat], path: &str) {
-    if let Some(stat) = stats.iter_mut().find(|stat| stat.path == path) {
-        stat.nested_expansion_stopped = true;
-    }
-}
-
-fn score_preview_path(path: &PreviewPath) -> isize {
-    let mut score = isize::try_from(path.present_sampled).unwrap_or(isize::MAX);
-    if path.nested_expansion_stopped {
-        score -= 1000;
-    }
-    match path.value_type.as_str() {
-        "object" => score -= 200,
-        "array" => score -= 100,
-        _ => {}
-    }
-    score
-}
-
-fn jsonpath_name_segment(name: &str) -> String {
-    if jsonpath_dot_name_allowed(name) {
-        return format!(".{name}");
-    }
-    let escaped = name.replace('\\', "\\\\").replace('\'', "\\'");
-    format!("['{escaped}']")
-}
-
-fn jsonpath_dot_name_allowed(name: &str) -> bool {
-    let mut chars = name.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    (first == '_' || first.is_ascii_alphabetic())
-        && chars.all(|char| char == '_' || char.is_ascii_alphanumeric())
-}
-
-fn value_type(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "null",
-        Value::Bool(_) => "boolean",
-        Value::Number(_) => "number",
-        Value::String(_) => "string",
-        Value::Array(_) => "array",
-        Value::Object(_) => "object",
-    }
-}
-
-fn preview_json_len(paths: &[PreviewPath]) -> usize {
-    serde_json::to_vec(paths).map_or(MAX_PREVIEW_BYTES + 1, |bytes| bytes.len())
-}
-
 fn compact_json_bytes(value: &Value) -> Result<Vec<u8>> {
     serde_json::to_vec(value)
         .map_err(|error| Error::internal(format!("serialize JSON output: {error}")))
 }
 
-fn is_zero(value: &usize) -> bool {
-    *value == 0
-}
-
-fn is_false(value: &bool) -> bool {
-    !*value
-}
-
 #[cfg(test)]
 mod tests {
+    use serde_json::Map;
+
     use super::*;
+    use crate::preview::MAX_PREVIEW_PATHS;
+    use crate::types::{SourceBodyMode, TableProjection};
 
     fn paths(paths: &[&str]) -> Vec<String> {
         paths.iter().map(|path| (*path).to_owned()).collect()
@@ -840,12 +292,77 @@ mod tests {
                 max_bytes: 16,
                 ..JsonOutputOptions::default()
             },
+            JsonOutputOptions {
+                max_bytes: 16,
+                json_paths: paths(&["$.items[*].metadata.name"]),
+                ..JsonOutputOptions::default()
+            },
+            JsonOutputOptions {
+                table: Some(table_proj("$.items[*]", &[("name", "$.metadata.name")])),
+                ..JsonOutputOptions::default()
+            },
+            JsonOutputOptions {
+                max_bytes: 16,
+                table: Some(table_proj("$.items[*]", &[("name", "$.metadata.name")])),
+                ..JsonOutputOptions::default()
+            },
+            JsonOutputOptions {
+                original_bytes: Some(2048),
+                source_body_mode: SourceBodyMode::ColumnarJson,
+                ..JsonOutputOptions::default()
+            },
+            JsonOutputOptions {
+                original_bytes: Some(2048),
+                json_paths: paths(&["$.items[*].metadata.name"]),
+                ..JsonOutputOptions::default()
+            },
+            JsonOutputOptions {
+                source_body_truncated: true,
+                original_bytes: Some(2048),
+                ..JsonOutputOptions::default()
+            },
+            JsonOutputOptions {
+                source_body_truncated: true,
+                original_bytes: Some(2048),
+                table: Some(table_proj("$.items[*]", &[("name", "$.metadata.name")])),
+                ..JsonOutputOptions::default()
+            },
         ];
         for options in cases {
             let from_bytes = build_json_output(&raw, options.clone())?;
             let from_value = build_json_output_from_value(value.clone(), options)?;
             assert_eq!(from_bytes, from_value);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn byte_input_keeps_original_spacing_in_byte_count() -> Result<()> {
+        let raw = "{ \"name\": \"한글\" }\n".as_bytes();
+        let value = serde_json::json!({"name": "한글"});
+        let compact_len = compact_json_bytes(&value)?.len();
+        let from_bytes = build_json_output(raw, JsonOutputOptions::default())?;
+        let from_value = build_json_output_from_value(value, JsonOutputOptions::default())?;
+        assert_eq!(from_bytes.original_bytes, raw.len());
+        assert_eq!(from_value.original_bytes, compact_len);
+        assert_eq!(from_bytes.returned_bytes, compact_len);
+        assert_eq!(from_bytes.body, from_value.body);
+        Ok(())
+    }
+
+    #[test]
+    fn source_truncation_keeps_entry_point_byte_defaults() -> Result<()> {
+        let raw = br#"{"partial":"#;
+        let options = JsonOutputOptions {
+            source_body_truncated: true,
+            ..JsonOutputOptions::default()
+        };
+        let from_bytes = build_json_output(raw, options.clone())?;
+        let from_value = build_json_output_from_value(Value::Null, options)?;
+        assert_eq!(from_bytes.original_bytes, raw.len());
+        assert_eq!(from_value.original_bytes, 0);
+        assert_eq!(from_bytes.omit_reason, Some(OmitReason::Source));
+        assert_eq!(from_value.omit_reason, Some(OmitReason::Source));
         Ok(())
     }
 
