@@ -45,7 +45,13 @@ pub(super) fn validate_policy_boundary(
     Ok(())
 }
 
-pub(super) fn enforce_sql_policy(query: &str, policy: &CredentialPolicy) -> Result<()> {
+#[derive(Debug, Clone, Copy)]
+pub(super) struct QueryAnalysis {
+    pub(super) is_explain: bool,
+    pub(super) uses_select_wildcard: bool,
+}
+
+pub(super) fn enforce_sql_policy(query: &str, policy: &CredentialPolicy) -> Result<QueryAnalysis> {
     let dialect = PostgreSqlDialect {};
     let statements = Parser::parse_sql(&dialect, query)
         .map_err(|error| Error::validation(format!("query has SQL syntax error: {error}")))?;
@@ -84,7 +90,11 @@ pub(super) fn enforce_sql_policy(query: &str, policy: &CredentialPolicy) -> Resu
             "query must be a single SELECT/WITH statement or policy-approved EXPLAIN",
         )),
     }?;
-    enforce_ast_policy(statement, policy)
+    enforce_ast_policy(statement, policy)?;
+    Ok(QueryAnalysis {
+        is_explain: matches!(statement, Statement::Explain { .. }),
+        uses_select_wildcard: query_uses_select_wildcard(statement),
+    })
 }
 
 fn validate_query_ast(query: &Query) -> Result<()> {
@@ -120,19 +130,10 @@ fn validate_set_expr(expr: &SetExpr) -> Result<()> {
     }
 }
 
-pub(super) fn query_uses_select_wildcard(query: &str) -> bool {
-    let dialect = PostgreSqlDialect {};
-    let Ok(statements) = Parser::parse_sql(&dialect, query) else {
-        return false;
-    };
+fn query_uses_select_wildcard(statement: &Statement) -> bool {
     let mut visitor = SelectWildcardVisitor { found: false };
-    for statement in statements {
-        let _ = statement.visit(&mut visitor);
-        if visitor.found {
-            return true;
-        }
-    }
-    false
+    let _ = statement.visit(&mut visitor);
+    visitor.found
 }
 
 struct SelectWildcardVisitor {
@@ -344,18 +345,43 @@ mod tests {
     }
 
     #[test]
-    fn detects_select_wildcard_for_output_hint() {
-        assert!(query_uses_select_wildcard("select * from payments"));
-        assert!(query_uses_select_wildcard("select p.* from payments p"));
-        assert!(query_uses_select_wildcard(
-            "with recent as (select * from payments) select id from recent"
-        ));
-        assert!(!query_uses_select_wildcard(
-            "select id, status from payments"
-        ));
-        assert!(!query_uses_select_wildcard(
-            "select '* not a projection' as literal"
-        ));
+    fn detects_select_wildcard_for_output_hint() -> Result<()> {
+        for (query, expected) in [
+            ("select * from payments", true),
+            ("select p.* from payments p", true),
+            (
+                "with recent as (select * from payments) select id from recent",
+                true,
+            ),
+            ("select id, status from payments", false),
+            ("select '* not a projection' as literal", false),
+            ("select count(*) from payments", false),
+        ] {
+            let analysis = enforce_sql_policy(query, &CredentialPolicy::default())?;
+            assert_eq!(analysis.uses_select_wildcard, expected, "{query}");
+            assert!(!analysis.is_explain, "{query}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn explain_analysis_uses_ast_and_preserves_policy_denials() -> Result<()> {
+        let policy = CredentialPolicy {
+            allow_explain: true,
+            ..CredentialPolicy::default()
+        };
+        for query in [
+            "explain select * from payments",
+            "/* caller comment */ explain select * from payments",
+            "-- caller comment\nexplain select * from payments",
+        ] {
+            let analysis = enforce_sql_policy(query, &policy)?;
+            assert!(analysis.is_explain, "{query}");
+            assert!(analysis.uses_select_wildcard, "{query}");
+            assert!(enforce_sql_policy(query, &CredentialPolicy::default()).is_err());
+        }
+        assert!(enforce_sql_policy("/* comment */ explain analyze select 1", &policy).is_err());
+        Ok(())
     }
 
     #[test]

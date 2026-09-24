@@ -7,6 +7,7 @@ use crate::sql_common::SqlSecret;
 
 use super::input::NormalizedInput;
 use super::output::{SqlQueryOutput, build_column_output};
+use super::policy::QueryAnalysis;
 
 pub(super) async fn execute_postgres(
     pools: &opsgate_infra::postgres_pool::TargetPgPools,
@@ -14,6 +15,7 @@ pub(super) async fn execute_postgres(
     target: &opsgate_infra::postgres::GuardedPostgresTarget,
     secret: &SqlSecret,
     input: &NormalizedInput,
+    analysis: QueryAnalysis,
 ) -> Result<SqlQueryOutput> {
     let mut conn = crate::sql_common::begin_read_only_connection(
         pools,
@@ -24,15 +26,10 @@ pub(super) async fn execute_postgres(
         input.timeout_ms,
     )
     .await?;
-    let result = if input
-        .query
-        .trim_start()
-        .to_ascii_lowercase()
-        .starts_with("explain")
-    {
-        load_explain_rows(&mut conn, input).await
+    let result = if analysis.is_explain {
+        load_explain_rows(&mut conn, input, analysis).await
     } else {
-        load_rows(&mut conn, input).await
+        load_rows(&mut conn, input, analysis).await
     };
     crate::sql_common::finish_read_only_result(&mut conn, result).await
 }
@@ -40,6 +37,7 @@ pub(super) async fn execute_postgres(
 async fn load_explain_rows(
     conn: &mut PgConnection,
     input: &NormalizedInput,
+    analysis: QueryAnalysis,
 ) -> Result<SqlQueryOutput> {
     let mut query = sqlx::query_scalar::<_, String>(&input.query);
     for param in &input.params {
@@ -58,10 +56,14 @@ async fn load_explain_rows(
         .into_iter()
         .map(|line| serde_json::json!({"QUERY PLAN": line}))
         .collect();
-    build_column_output(rows, input, truncated)
+    build_column_output(rows, input, truncated, analysis)
 }
 
-async fn load_rows(conn: &mut PgConnection, input: &NormalizedInput) -> Result<SqlQueryOutput> {
+async fn load_rows(
+    conn: &mut PgConnection,
+    input: &NormalizedInput,
+    analysis: QueryAnalysis,
+) -> Result<SqlQueryOutput> {
     let limit = input.max_rows + 1;
     let wrapped = format!(
         "SELECT COALESCE(json_agg(row_to_json(opsgate_limited)), '[]'::json) AS rows FROM (SELECT * FROM ({}) AS opsgate_q LIMIT {}) AS opsgate_limited",
@@ -85,7 +87,7 @@ async fn load_rows(conn: &mut PgConnection, input: &NormalizedInput) -> Result<S
         rows.truncate(usize::try_from(input.max_rows).unwrap_or(usize::MAX));
         truncated = true;
     }
-    build_column_output(rows, input, truncated)
+    build_column_output(rows, input, truncated, analysis)
 }
 
 fn bind_string_param<'q>(
@@ -142,7 +144,78 @@ fn bind_json_param<'q>(
 
 #[cfg(test)]
 mod tests {
+    use opsgate_model::credential::CredentialPolicy;
+
     use super::*;
+    use crate::sql_query::input::{SqlQueryInput, normalize_input};
+    use crate::sql_query::policy::enforce_sql_policy;
+
+    #[tokio::test]
+    async fn executes_analyzed_queries() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let database_url = match std::env::var("OPSGATE_TEST_DATABASE_MIGRATE_URL") {
+            Ok(value) if !value.trim().is_empty() => value,
+            _ if std::env::var("CI").is_ok_and(|value| value == "true") => {
+                return Err(
+                    "OPSGATE_TEST_DATABASE_MIGRATE_URL must be set for PostgreSQL tests in CI"
+                        .into(),
+                );
+            }
+            _ => {
+                eprintln!(
+                    "skipping PostgreSQL executor test; set OPSGATE_TEST_DATABASE_MIGRATE_URL to run it"
+                );
+                return Ok(());
+            }
+        };
+        let mut url = url::Url::parse(&database_url)?;
+        let secret = SqlSecret {
+            username: url.username().to_owned().into(),
+            password: url.password().unwrap_or_default().to_owned().into(),
+        };
+        url.set_password(None)
+            .map_err(|()| "invalid test database URL")?;
+        url.set_username("")
+            .map_err(|()| "invalid test database URL")?;
+        let target =
+            opsgate_infra::postgres::prepare_postgres_target(url.as_str(), true, true).await?;
+        let pools = opsgate_infra::postgres_pool::TargetPgPools::new();
+        let credential_id = uuid::Uuid::new_v4();
+        let policy = CredentialPolicy {
+            allow_explain: true,
+            ..CredentialPolicy::default()
+        };
+        for (query, column, wildcard_hint) in [
+            ("EXPLAIN SELECT 1", "QUERY PLAN", false),
+            ("/* caller comment */ EXPLAIN SELECT 1", "QUERY PLAN", false),
+            ("-- caller comment\nexplain select 1", "QUERY PLAN", false),
+            ("/* caller comment */ SELECT 1 AS id", "id", false),
+            ("SELECT * FROM (VALUES (1)) AS t(id)", "id", true),
+            (
+                "/* caller comment */ EXPLAIN SELECT * FROM (VALUES (1)) AS t(id)",
+                "QUERY PLAN",
+                true,
+            ),
+        ] {
+            let input = normalize_input(SqlQueryInput {
+                alias: "executor-test".to_owned(),
+                purpose: "Verify analyzed SQL execution".to_owned(),
+                database: None,
+                query: query.to_owned(),
+                params: Vec::new(),
+                jsonpath: Vec::new(),
+                max_rows: None,
+                max_bytes: None,
+                timeout_ms: None,
+            })?;
+            let analysis = enforce_sql_policy(&input.query, &policy)?;
+            let output =
+                execute_postgres(&pools, credential_id, &target, &secret, &input, analysis).await?;
+            assert!(output.row_count > 0, "{query}");
+            assert!(output.body.get(column).is_some(), "{query}");
+            assert_eq!(!output.hints.is_empty(), wildcard_hint, "{query}");
+        }
+        Ok(())
+    }
 
     #[test]
     fn bind_params_allow_json_array_and_object_values() -> Result<()> {

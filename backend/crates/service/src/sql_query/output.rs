@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::input::{MAX_MAX_BYTES, NormalizedInput};
-use super::policy::query_uses_select_wildcard;
+use super::policy::QueryAnalysis;
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct SqlQueryOutput {
@@ -44,6 +44,7 @@ pub(super) fn build_column_output(
     rows: Vec<Value>,
     input: &NormalizedInput,
     truncated: bool,
+    analysis: QueryAnalysis,
 ) -> Result<SqlQueryOutput> {
     let row_count = rows.len();
     let (body, column_names) = transpose_rows(rows)?;
@@ -65,7 +66,7 @@ pub(super) fn build_column_output(
         original_bytes: shaped.original_bytes,
         returned_bytes: shaped.returned_bytes,
         latency_ms: 0,
-        hints: output_hints(input),
+        hints: output_hints(analysis),
         more,
         column_names,
     })
@@ -74,8 +75,8 @@ pub(super) fn build_column_output(
 const SELECT_WILDCARD_HINT: &str =
     "Prefer explicit columns instead of SELECT * to reduce SQL output size.";
 
-fn output_hints(input: &NormalizedInput) -> Vec<String> {
-    if query_uses_select_wildcard(&input.query) {
+fn output_hints(analysis: QueryAnalysis) -> Vec<String> {
+    if analysis.uses_select_wildcard {
         vec![SELECT_WILDCARD_HINT.to_owned()]
     } else {
         Vec::new()
@@ -186,13 +187,17 @@ mod tests {
         }
     }
 
+    fn analysis(input: &NormalizedInput) -> Result<QueryAnalysis> {
+        crate::sql_query::policy::enforce_sql_policy(&input.query, &Default::default())
+    }
+
     #[test]
     fn flat_rows_become_column_oriented_body() -> Result<()> {
         let rows = vec![
             serde_json::json!({"status":"failed", "total": 42}),
             serde_json::json!({"status":"paid", "region": "us"}),
         ];
-        let output = build_column_output(rows, &input(), false)?;
+        let output = build_column_output(rows, &input(), false, analysis(&input())?)?;
 
         assert_eq!(output.row_count, 2);
         assert_eq!(output.body_mode, BodyMode::ColumnarJson);
@@ -219,7 +224,7 @@ mod tests {
         let rows = vec![serde_json::json!({"id": 1}), serde_json::json!({"id": 2})];
         let mut input = input();
         input.max_rows = 2;
-        let output = build_column_output(rows, &input, true)?;
+        let output = build_column_output(rows, &input, true, analysis(&input)?)?;
 
         assert!(output.truncated);
         assert_eq!(
@@ -243,7 +248,7 @@ mod tests {
     #[test]
     fn untruncated_output_has_no_more() -> Result<()> {
         let rows = vec![serde_json::json!({"id": 1})];
-        let output = build_column_output(rows, &input(), false)?;
+        let output = build_column_output(rows, &input(), false, analysis(&input())?)?;
 
         assert!(!output.truncated);
         assert!(output.more.is_none());
@@ -256,7 +261,7 @@ mod tests {
         let rows = vec![serde_json::json!({"id": 1, "status": "paid"})];
         let mut input = input();
         input.query = "select * from payments".to_owned();
-        let output = build_column_output(rows, &input, false)?;
+        let output = build_column_output(rows, &input, false, analysis(&input)?)?;
 
         assert!(
             output
@@ -302,7 +307,7 @@ mod tests {
         ];
         let mut input = input();
         input.jsonpath = vec!["$.status".to_owned()];
-        let output = build_column_output(rows, &input, false)?;
+        let output = build_column_output(rows, &input, false, analysis(&input)?)?;
 
         let projected = output
             .body
@@ -329,7 +334,7 @@ mod tests {
         ];
         let mut input = input();
         input.jsonpath = vec!["$.service[?search(@, '^api')]".to_owned()];
-        let output = build_column_output(rows, &input, false)?;
+        let output = build_column_output(rows, &input, false, analysis(&input)?)?;
 
         assert_eq!(
             output.body.get("$.service[?search(@, '^api')]"),

@@ -313,7 +313,8 @@ mod tests {
     fn audit_detail_stores_hash_but_not_query_params_or_values() -> Result<()> {
         let input = input();
         let rows = vec![serde_json::json!({"secret_col":"secret-value"})];
-        let output = build_column_output(rows, &input, false)?;
+        let analysis = super::super::policy::enforce_sql_policy(&input.query, &Default::default())?;
+        let output = build_column_output(rows, &input, false, analysis)?;
         let credential = CredentialSnapshot::from(&sql_credential());
         let detail = audit_detail(&input, Some(&credential), "ok", None, Some(&output));
         let serialized = detail.to_string();
