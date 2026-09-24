@@ -5,9 +5,13 @@
 //! envelope with next-step hints when it does not.
 
 mod json;
+mod preview;
+mod projection;
+mod types;
 
-pub use json::{
+pub use json::{build_json_output, build_json_output_from_value};
+pub use projection::{validate_json_paths, validate_table_projection};
+pub use types::{
     BodyMode, BodyState, JsonOutput, JsonOutputOptions, More, MoreOptions, NextAction, OmitReason,
-    SourceBodyMode, TableProjection, build_json_output, build_json_output_from_value,
-    validate_json_paths, validate_table_projection,
+    SourceBodyMode, TableProjection,
 };
