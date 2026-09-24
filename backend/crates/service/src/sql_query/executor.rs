@@ -41,7 +41,7 @@ async fn load_explain_rows(
 ) -> Result<SqlQueryOutput> {
     let mut query = sqlx::query_scalar::<_, String>(&input.query);
     for param in &input.params {
-        query = bind_string_param(query, param)?;
+        query = bind_param(query, param)?;
     }
     let mut plans = query
         .fetch_all(conn)
@@ -71,7 +71,7 @@ async fn load_rows(
     );
     let mut query = sqlx::query_scalar::<_, Value>(&wrapped);
     for param in &input.params {
-        query = bind_json_param(query, param)?;
+        query = bind_param(query, param)?;
     }
     let value = query
         .fetch_one(conn)
@@ -90,36 +90,10 @@ async fn load_rows(
     build_column_output(rows, input, truncated, analysis)
 }
 
-fn bind_string_param<'q>(
-    query: sqlx::query::QueryScalar<'q, sqlx::Postgres, String, sqlx::postgres::PgArguments>,
+fn bind_param<'q, O>(
+    query: sqlx::query::QueryScalar<'q, sqlx::Postgres, O, sqlx::postgres::PgArguments>,
     value: &Value,
-) -> Result<sqlx::query::QueryScalar<'q, sqlx::Postgres, String, sqlx::postgres::PgArguments>> {
-    let query = match value {
-        Value::Null => query.bind(Option::<String>::None),
-        Value::Bool(value) => query.bind(*value),
-        Value::Number(number) => {
-            if let Some(value) = number.as_i64() {
-                query.bind(value)
-            } else if let Some(value) = number.as_u64() {
-                let value = i64::try_from(value)
-                    .map_err(|_error| Error::validation("numeric param out of range"))?;
-                query.bind(value)
-            } else if let Some(value) = number.as_f64() {
-                query.bind(value)
-            } else {
-                return Err(Error::validation("invalid numeric param"));
-            }
-        }
-        Value::String(value) => query.bind(value.clone()),
-        Value::Array(_) | Value::Object(_) => query.bind(Json(value.clone())),
-    };
-    Ok(query)
-}
-
-fn bind_json_param<'q>(
-    query: sqlx::query::QueryScalar<'q, sqlx::Postgres, Value, sqlx::postgres::PgArguments>,
-    value: &Value,
-) -> Result<sqlx::query::QueryScalar<'q, sqlx::Postgres, Value, sqlx::postgres::PgArguments>> {
+) -> Result<sqlx::query::QueryScalar<'q, sqlx::Postgres, O, sqlx::postgres::PgArguments>> {
     let query = match value {
         Value::Null => query.bind(Option::<String>::None),
         Value::Bool(value) => query.bind(*value),
@@ -196,17 +170,7 @@ mod tests {
                 true,
             ),
         ] {
-            let input = normalize_input(SqlQueryInput {
-                alias: "executor-test".to_owned(),
-                purpose: "Verify analyzed SQL execution".to_owned(),
-                database: None,
-                query: query.to_owned(),
-                params: Vec::new(),
-                jsonpath: Vec::new(),
-                max_rows: None,
-                max_bytes: None,
-                timeout_ms: None,
-            })?;
+            let input = test_input(query, Vec::new())?;
             let analysis = enforce_sql_policy(&input.query, &policy)?;
             let output =
                 execute_postgres(&pools, credential_id, &target, &secret, &input, analysis).await?;
@@ -214,18 +178,74 @@ mod tests {
             assert!(output.body.get(column).is_some(), "{query}");
             assert_eq!(!output.hints.is_empty(), wildcard_hint, "{query}");
         }
+        for (query, param) in [
+            ("SELECT $1::text AS value", Value::Null),
+            ("SELECT $1::boolean AS value", serde_json::json!(true)),
+            ("SELECT $1::boolean AS value", serde_json::json!(false)),
+            ("SELECT $1::bigint AS value", serde_json::json!(i64::MIN)),
+            ("SELECT $1::bigint AS value", serde_json::json!(i64::MAX)),
+            (
+                "SELECT $1::double precision AS value",
+                serde_json::json!(1.25),
+            ),
+            (
+                "SELECT $1::text AS value",
+                serde_json::json!("한글 'quoted'"),
+            ),
+            (
+                "SELECT $1::jsonb AS value",
+                serde_json::json!(["paid", "failed"]),
+            ),
+            (
+                "SELECT $1::jsonb AS value",
+                serde_json::json!({"status": "paid"}),
+            ),
+        ] {
+            for prefix in ["", "EXPLAIN "] {
+                let input = test_input(&format!("{prefix}{query}"), vec![param.clone()])?;
+                let analysis = enforce_sql_policy(&input.query, &policy)?;
+                let output =
+                    execute_postgres(&pools, credential_id, &target, &secret, &input, analysis)
+                        .await?;
+                if analysis.is_explain {
+                    assert!(output.row_count > 0, "{}", input.query);
+                    assert!(output.body.get("QUERY PLAN").is_some(), "{}", input.query);
+                } else {
+                    assert_eq!(output.body, serde_json::json!({"value": [param]}));
+                }
+            }
+        }
         Ok(())
     }
 
     #[test]
-    fn bind_params_allow_json_array_and_object_values() -> Result<()> {
-        let array_param = serde_json::json!(["paid", "failed"]);
-        let object_param = serde_json::json!({"status": "paid"});
+    fn bind_params_reject_out_of_range_integers() {
+        for value in [i64::MAX as u64 + 1, u64::MAX] {
+            let param = serde_json::json!(value);
+            let query = sqlx::query_scalar::<_, Value>("select $1");
+            assert!(matches!(
+                bind_param(query, &param),
+                Err(Error::Validation(message)) if message == "numeric param out of range"
+            ));
+            let query = sqlx::query_scalar::<_, String>("explain select $1");
+            assert!(matches!(
+                bind_param(query, &param),
+                Err(Error::Validation(message)) if message == "numeric param out of range"
+            ));
+        }
+    }
 
-        let query = sqlx::query_scalar::<_, Value>("select $1");
-        assert!(bind_json_param(query, &array_param).is_ok());
-        let query = sqlx::query_scalar::<_, String>("explain select $1");
-        assert!(bind_string_param(query, &object_param).is_ok());
-        Ok(())
+    fn test_input(query: &str, params: Vec<Value>) -> Result<NormalizedInput> {
+        normalize_input(SqlQueryInput {
+            alias: "executor-test".to_owned(),
+            purpose: "Verify analyzed SQL execution".to_owned(),
+            database: None,
+            query: query.to_owned(),
+            params,
+            jsonpath: Vec::new(),
+            max_rows: None,
+            max_bytes: None,
+            timeout_ms: None,
+        })
     }
 }
