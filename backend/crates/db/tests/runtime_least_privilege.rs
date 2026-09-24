@@ -1,3 +1,5 @@
+mod common;
+
 use std::str::FromStr;
 
 use opsgate_db::{
@@ -157,23 +159,11 @@ async fn opsgate_app_cannot_modify_schema_or_protected_user_state()
 
 impl TestDb {
     async fn setup() -> Result<Option<Self>, Box<dyn std::error::Error>> {
-        let owner_url = match std::env::var("OPSGATE_TEST_DATABASE_MIGRATE_URL") {
-            Ok(value) if !value.trim().is_empty() => value,
-            _ => {
-                eprintln!(
-                    "skipping runtime least-privilege tests; set OPSGATE_TEST_DATABASE_MIGRATE_URL and OPSGATE_TEST_DATABASE_URL"
-                );
-                return Ok(None);
-            }
+        let Some(owner_url) = common::database_url("OPSGATE_TEST_DATABASE_MIGRATE_URL")? else {
+            return Ok(None);
         };
-        let runtime_url = match std::env::var("OPSGATE_TEST_DATABASE_URL") {
-            Ok(value) if !value.trim().is_empty() => value,
-            _ => {
-                eprintln!(
-                    "skipping runtime least-privilege tests; set OPSGATE_TEST_DATABASE_MIGRATE_URL and OPSGATE_TEST_DATABASE_URL"
-                );
-                return Ok(None);
-            }
+        let Some(runtime_url) = common::database_url("OPSGATE_TEST_DATABASE_URL")? else {
+            return Ok(None);
         };
 
         let schema = format!("opsgate_runtime_lp_{}", Uuid::new_v4().simple());
