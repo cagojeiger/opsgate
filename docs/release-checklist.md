@@ -40,7 +40,7 @@ workspace는 `rust-toolchain.toml`로 Rust 1.95.0에 고정되어 있습니다. 
 
 ## Postgres 통합 테스트
 
-GitHub CI의 Rust job은 disposable PostgreSQL 17에서 DB 통합 테스트 9개를 포함한
+GitHub CI의 Rust job은 disposable PostgreSQL 17에서 DB 통합 테스트 10개(db 9개, SQL 실행기 1개)를 포함한
 `cargo test --workspace`를 실행합니다. `CI=true`에서는 필요한 DB URL이 없거나
 비어 있으면 테스트가 실패합니다. 로컬에서는 설정되지 않은 DB 테스트를 건너뛸 수 있습니다.
 
@@ -59,7 +59,7 @@ docker compose up -d postgres
 CI=true \
 OPSGATE_TEST_DATABASE_MIGRATE_URL=postgres://opsgate:opsgate@localhost:5432/opsgate \
 OPSGATE_TEST_DATABASE_URL=postgres://opsgate_app:opsgate_app@localhost:5432/opsgate \
-cargo test -p opsgate-db --tests -- --nocapture
+cargo test --workspace -- --nocapture
 ```
 
 runtime 최소 권한 분리를 따로 검증할 때:

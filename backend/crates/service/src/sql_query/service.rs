@@ -85,12 +85,15 @@ impl SqlQueryService {
                 .await;
             return Err(error);
         }
-        if let Err(error) = enforce_sql_policy(&input.query, &credential.policy) {
-            recorder
-                .denied(reason::POLICY_DENIED, SQL_POLICY_DENIED_MESSAGE)
-                .await;
-            return Err(error);
-        }
+        let analysis = match enforce_sql_policy(&input.query, &credential.policy) {
+            Ok(analysis) => analysis,
+            Err(error) => {
+                recorder
+                    .denied(reason::POLICY_DENIED, SQL_POLICY_DENIED_MESSAGE)
+                    .await;
+                return Err(error);
+            }
+        };
         let secret_ciphertext = match material.secret_ciphertext {
             Some(secret_ciphertext) => secret_ciphertext,
             None => {
@@ -130,19 +133,27 @@ impl SqlQueryService {
         };
 
         let started = Instant::now();
-        let mut output =
-            match execute_postgres(&self.pools, credential.id, &target, &secret, &input).await {
-                Ok(output) => output,
-                Err(error) => {
-                    let (kind, message) = crate::sql_common::safe_error_record(
-                        &error,
-                        reason::QUERY_FAILED,
-                        "sql query failed",
-                    );
-                    recorder.err(kind, &message).await;
-                    return Err(error);
-                }
-            };
+        let mut output = match execute_postgres(
+            &self.pools,
+            credential.id,
+            &target,
+            &secret,
+            &input,
+            analysis,
+        )
+        .await
+        {
+            Ok(output) => output,
+            Err(error) => {
+                let (kind, message) = crate::sql_common::safe_error_record(
+                    &error,
+                    reason::QUERY_FAILED,
+                    "sql query failed",
+                );
+                recorder.err(kind, &message).await;
+                return Err(error);
+            }
+        };
         output.latency_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
         recorder.ok(&output).await;
         Ok(output)
