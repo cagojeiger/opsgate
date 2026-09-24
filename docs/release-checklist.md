@@ -38,28 +38,42 @@ workspace는 `rust-toolchain.toml`로 Rust 1.95.0에 고정되어 있습니다. 
 포맷, 타입 검사, 단위/통합 테스트, strict clippy/all-features, 릴리스 바이너리 빌드,
 공백 안전 diff를 확인합니다.
 
-## Postgres 기반 선택 검증
+## Postgres 통합 테스트
 
-DB 테스트 일부는 `OPSGATE_TEST_DATABASE_URL`이 없으면 self-skip합니다. 마이그레이션,
-runtime grant, audit 저장을 확인할 때 로컬 Postgres로 실행합니다.
+GitHub CI의 Rust job은 disposable PostgreSQL 17에서 DB 통합 테스트 9개를 포함한
+`cargo test --workspace`를 실행합니다. `CI=true`에서는 필요한 DB URL이 없거나
+비어 있으면 테스트가 실패합니다. 로컬에서는 설정되지 않은 DB 테스트를 건너뛸 수 있습니다.
+
+두 URL의 역할은 모든 테스트에서 같습니다.
+
+- `OPSGATE_TEST_DATABASE_MIGRATE_URL`: 테스트 스키마 생성/삭제와 migration을 수행하는 owner 계정
+- `OPSGATE_TEST_DATABASE_URL`: 최소 권한 검증에 사용하는 `opsgate_app` runtime 계정
+
+credential/audit 저장소 테스트도 스키마를 생성하므로 migration URL을 사용합니다.
+기존에 owner URL을 `OPSGATE_TEST_DATABASE_URL`에 지정했다면 migration 변수로 옮깁니다.
+전체 DB 테스트를 로컬 Postgres에서 실행하려면:
 
 ```sh
 docker compose up -d postgres
 
-OPSGATE_TEST_DATABASE_URL=postgres://opsgate:opsgate@localhost:5432/opsgate \
-cargo test -p opsgate-db --tests
+CI=true \
+OPSGATE_TEST_DATABASE_MIGRATE_URL=postgres://opsgate:opsgate@localhost:5432/opsgate \
+OPSGATE_TEST_DATABASE_URL=postgres://opsgate_app:opsgate_app@localhost:5432/opsgate \
+cargo test -p opsgate-db --tests -- --nocapture
 ```
 
 runtime 최소 권한 분리를 따로 검증할 때:
 
 ```sh
+CI=true \
 OPSGATE_TEST_DATABASE_MIGRATE_URL=postgres://opsgate:opsgate@localhost:5432/opsgate \
 OPSGATE_TEST_DATABASE_URL=postgres://opsgate_app:opsgate_app@localhost:5432/opsgate \
 cargo test -p opsgate-db --test runtime_least_privilege -- --nocapture
 ```
 
-`opsgate_app` role은 owner/migration URL이 migration을 한 번 적용한 뒤 생성됩니다.
-runtime URL을 `opsgate_app`으로 먼저 연결하면 안 됩니다.
+각 테스트는 고유한 임시 스키마를 사용하고 정상 완료 시 삭제합니다. 최소 권한 테스트는
+owner URL로 migration을 적용해 `opsgate_app` role을 만든 뒤 runtime URL에 연결합니다.
+애플리케이션을 먼저 실행하거나 실제 운영 DB를 사용할 필요가 없습니다.
 
 ## 신규 DB compose 스모크 검증
 

@@ -1,3 +1,5 @@
+mod common;
+
 use std::str::FromStr;
 
 use opsgate_db::{AuditLogParams, AuditRepo};
@@ -116,14 +118,8 @@ async fn append_persists_browser_signup_denial_without_secret_fields()
 
 impl TestDb {
     async fn setup() -> Result<Option<Self>, Box<dyn std::error::Error>> {
-        let database_url = match std::env::var("OPSGATE_TEST_DATABASE_URL") {
-            Ok(value) if !value.trim().is_empty() => value,
-            _ => {
-                eprintln!(
-                    "skipping Postgres audit repo tests; set OPSGATE_TEST_DATABASE_URL to run them"
-                );
-                return Ok(None);
-            }
+        let Some(database_url) = common::database_url("OPSGATE_TEST_DATABASE_MIGRATE_URL")? else {
+            return Ok(None);
         };
         let schema = format!("opsgate_audit_repo_{}", Uuid::new_v4().simple());
         let mut admin = sqlx::PgConnection::connect(&database_url).await?;

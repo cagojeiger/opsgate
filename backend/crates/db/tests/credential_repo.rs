@@ -1,3 +1,5 @@
+mod common;
+
 use std::str::FromStr;
 
 use opsgate_db::{CredentialAuditAction, CredentialAuditParams, CredentialRepo};
@@ -305,14 +307,8 @@ async fn duplicate_alias_maps_to_validation_error() -> Result<(), Box<dyn std::e
 
 impl TestDb {
     async fn setup() -> Result<Option<Self>, Box<dyn std::error::Error>> {
-        let database_url = match std::env::var("OPSGATE_TEST_DATABASE_URL") {
-            Ok(value) if !value.trim().is_empty() => value,
-            _ => {
-                eprintln!(
-                    "skipping Postgres credential repo tests; set OPSGATE_TEST_DATABASE_URL to run them"
-                );
-                return Ok(None);
-            }
+        let Some(database_url) = common::database_url("OPSGATE_TEST_DATABASE_MIGRATE_URL")? else {
+            return Ok(None);
         };
         let schema = format!("opsgate_credential_repo_{}", Uuid::new_v4().simple());
         let mut admin = sqlx::PgConnection::connect(&database_url).await?;
