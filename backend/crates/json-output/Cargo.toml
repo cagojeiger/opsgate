@@ -1,0 +1,17 @@
+[package]
+name = "opsgate-json-output"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+opsgate-core.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+serde_json_path.workspace = true
+schemars.workspace = true
+
+[lints]
+workspace = true

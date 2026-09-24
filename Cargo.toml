@@ -14,6 +14,7 @@ repository = "https://github.com/cagojeiger/opsgate"
 opsgate-core = { path = "backend/crates/core" }
 opsgate-db = { path = "backend/crates/db" }
 opsgate-infra = { path = "backend/crates/infra" }
+opsgate-json-output = { path = "backend/crates/json-output" }
 opsgate-model = { path = "backend/crates/model" }
 opsgate-service = { path = "backend/crates/service" }
 

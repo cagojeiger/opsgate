@@ -447,9 +447,9 @@ mod tests {
         let output = ApiCallOutput {
             status_code: 200,
             headers: BTreeMap::new(),
-            body_mode: crate::llm_output::BodyMode::RawJson,
-            body_state: crate::llm_output::BodyState::Omitted,
-            omit_reason: Some(crate::llm_output::OmitReason::Source),
+            body_mode: opsgate_json_output::BodyMode::RawJson,
+            body_state: opsgate_json_output::BodyState::Omitted,
+            omit_reason: Some(opsgate_json_output::OmitReason::Source),
             body: Value::Null,
             truncated: true,
             original_bytes: MAX_MAX_BYTES + 1,

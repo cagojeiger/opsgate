@@ -12,6 +12,7 @@ opsgate/
 ├─ backend/crates/
 │  ├─ api/                 # Axum 서버, REST/MCP adapter, auth/login/bootstrap
 │  ├─ service/             # credential/api.call/sql.query/sql.schema 유스케이스
+│  ├─ json-output/         # 공통 JSON projection, 출력 예산, preview와 다음 호출 안내
 │  ├─ infra/               # 외부 HTTP/Postgres target client/cache/guard
 │  ├─ db/                  # 내부 Postgres repo + migration
 │  ├─ model/               # 공통 타입과 순수 validation/policy

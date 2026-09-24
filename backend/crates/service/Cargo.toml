@@ -9,11 +9,11 @@ license.workspace = true
 opsgate-core.workspace = true
 opsgate-db.workspace = true
 opsgate-infra.workspace = true
+opsgate-json-output.workspace = true
 opsgate-model.workspace = true
 
 serde.workspace = true
 serde_json.workspace = true
-serde_json_path.workspace = true
 schemars.workspace = true
 secrecy.workspace = true
 sqlparser.workspace = true

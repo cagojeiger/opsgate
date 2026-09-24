@@ -1846,6 +1846,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "opsgate-json-output"
+version = "0.1.0"
+dependencies = [
+ "opsgate-core",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "serde_json_path",
+]
+
+[[package]]
 name = "opsgate-model"
 version = "0.1.0"
 dependencies = [
@@ -1871,13 +1882,13 @@ dependencies = [
  "opsgate-core",
  "opsgate-db",
  "opsgate-infra",
+ "opsgate-json-output",
  "opsgate-model",
  "reqwest",
  "schemars 1.2.1",
  "secrecy",
  "serde",
  "serde_json",
- "serde_json_path",
  "sha2",
  "sqlparser",
  "sqlx",
