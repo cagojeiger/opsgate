@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde_json::Value;
 
 use super::types::{Preview, PreviewPath};
@@ -10,7 +12,6 @@ const MAX_PREVIEW_NESTED_ARRAY_DEPTH: usize = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PreviewStat {
-    path: String,
     value_type: String,
     present: usize,
     nulls: usize,
@@ -20,7 +21,7 @@ struct PreviewStat {
 }
 
 pub(super) fn build_preview(root: &Value) -> Option<Preview> {
-    let mut stats = Vec::<PreviewStat>::new();
+    let mut stats = HashMap::<String, PreviewStat>::new();
     collect_preview(&mut stats, "$", root, 0, 0);
     if stats.is_empty() {
         return None;
@@ -28,8 +29,8 @@ pub(super) fn build_preview(root: &Value) -> Option<Preview> {
     let path_count = stats.len();
     let mut paths = stats
         .into_iter()
-        .map(|stat| PreviewPath {
-            path: stat.path,
+        .map(|(path, stat)| PreviewPath {
+            path,
             value_type: stat.value_type,
             present_sampled: stat.present,
             nulls_sampled: stat.nulls,
@@ -62,7 +63,7 @@ pub(super) fn build_preview(root: &Value) -> Option<Preview> {
 }
 
 fn collect_preview(
-    stats: &mut Vec<PreviewStat>,
+    stats: &mut HashMap<String, PreviewStat>,
     path: &str,
     value: &Value,
     depth: usize,
@@ -104,9 +105,9 @@ fn collect_preview(
     }
 }
 
-fn add_preview(stats: &mut Vec<PreviewStat>, path: &str, value: &Value) {
+fn add_preview(stats: &mut HashMap<String, PreviewStat>, path: &str, value: &Value) {
     let value_type = value_type(value);
-    if let Some(stat) = stats.iter_mut().find(|stat| stat.path == path) {
+    if let Some(stat) = stats.get_mut(path) {
         stat.present += 1;
         if value.is_null() {
             stat.nulls += 1;
@@ -130,19 +131,21 @@ fn add_preview(stats: &mut Vec<PreviewStat>, path: &str, value: &Value) {
             (None, None)
         }
     };
-    stats.push(PreviewStat {
-        path: path.to_owned(),
-        value_type: value_type.to_owned(),
-        present: 1,
-        nulls: usize::from(value.is_null()),
-        array_min,
-        array_max,
-        nested_expansion_stopped: false,
-    });
+    stats.insert(
+        path.to_owned(),
+        PreviewStat {
+            value_type: value_type.to_owned(),
+            present: 1,
+            nulls: usize::from(value.is_null()),
+            array_min,
+            array_max,
+            nested_expansion_stopped: false,
+        },
+    );
 }
 
-fn mark_stopped(stats: &mut [PreviewStat], path: &str) {
-    if let Some(stat) = stats.iter_mut().find(|stat| stat.path == path) {
+fn mark_stopped(stats: &mut HashMap<String, PreviewStat>, path: &str) {
+    if let Some(stat) = stats.get_mut(path) {
         stat.nested_expansion_stopped = true;
     }
 }
@@ -190,4 +193,39 @@ fn value_type(value: &Value) -> &'static str {
 
 fn preview_json_len(paths: &[PreviewPath]) -> usize {
     serde_json::to_vec(paths).map_or(MAX_PREVIEW_BYTES + 1, |bytes| bytes.len())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_paths_keep_sample_counts_and_ranked_order() -> opsgate_core::Result<()> {
+        let value = serde_json::json!({
+            "items": [{"x": 1, "y": null}, {"x": 2, "y": 3}]
+        });
+        let preview = build_preview(&value)
+            .ok_or_else(|| opsgate_core::Error::internal("missing preview"))?;
+        let paths = preview
+            .paths
+            .iter()
+            .map(|path| path.path.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(preview.path_count, 5);
+        assert_eq!(
+            paths,
+            ["$.items[*].x", "$.items[*].y", "$.items", "$.items[*]", "$"]
+        );
+        assert_eq!(
+            preview.paths.first().map(|path| path.present_sampled),
+            Some(2)
+        );
+        assert_eq!(
+            preview.paths.get(1).map(|path| path.present_sampled),
+            Some(2)
+        );
+        assert_eq!(preview.paths.get(1).map(|path| path.nulls_sampled), Some(1));
+        Ok(())
+    }
 }
