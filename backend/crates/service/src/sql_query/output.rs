@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use opsgate_core::{Error, Result};
 use opsgate_json_output::{
     BodyMode, BodyState, JsonOutput, JsonOutputOptions, More, MoreOptions, NextAction, OmitReason,
@@ -142,6 +144,7 @@ fn build_shaped_body(body: Value, input: &NormalizedInput) -> Result<JsonOutput>
 }
 
 fn transpose_rows(rows: Vec<Value>) -> Result<(Value, Vec<String>)> {
+    let mut seen_columns = HashSet::<String>::new();
     let mut column_names = Vec::<String>::new();
     let mut column_values = Vec::<Vec<Value>>::new();
 
@@ -151,7 +154,8 @@ fn transpose_rows(rows: Vec<Value>) -> Result<(Value, Vec<String>)> {
             _ => return Err(Error::internal("sql result row is not an object")),
         };
         for key in object.keys() {
-            if !column_names.iter().any(|name| name == key) {
+            if !seen_columns.contains(key) {
+                seen_columns.insert(key.clone());
                 column_names.push(key.clone());
                 column_values.push(vec![Value::Null; row_index]);
             }
