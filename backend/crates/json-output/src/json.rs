@@ -37,7 +37,7 @@ pub fn build_json_output(raw: &[u8], options: JsonOutputOptions) -> Result<JsonO
 /// would otherwise serialize to bytes only for [`build_json_output`] to parse
 /// them straight back. This applies the same JSONPath projection, byte cap, and
 /// truncation guidance directly on the owned value, matching `build_json_output`
-/// byte-for-byte (`compact_json_bytes` is `serde_json::to_vec`).
+/// byte-for-byte (`compact_json_len` uses the same compact serializer).
 pub fn build_json_output_from_value(
     value: Value,
     options: JsonOutputOptions,
@@ -59,14 +59,14 @@ pub fn build_json_output_from_value(
     if !options.is_projection() {
         // The whole value is the body, so one serialization covers both the
         // original and returned byte counts.
-        let body_bytes = compact_json_bytes(&value)?.len();
+        let body_bytes = compact_json_len(&value)?;
         let original_bytes = options.original_bytes.unwrap_or(body_bytes);
         return Ok(finish_output(value, original_bytes, body_bytes, &options));
     }
 
     let original_bytes = match options.original_bytes {
         Some(bytes) => bytes,
-        None => compact_json_bytes(&value)?.len(),
+        None => compact_json_len(&value)?,
     };
     shape_output(value, original_bytes, &options)
 }
@@ -81,7 +81,7 @@ fn shape_output(
         None if options.json_paths.is_empty() => value,
         None => project_json_paths(&value, &options.json_paths)?,
     };
-    let body_bytes = compact_json_bytes(&body)?.len();
+    let body_bytes = compact_json_len(&body)?;
     Ok(finish_output(body, original_bytes, body_bytes, options))
 }
 
@@ -233,9 +233,24 @@ fn suggested_json_paths(preview: &Preview, limit: usize) -> Vec<String> {
         .collect()
 }
 
-fn compact_json_bytes(value: &Value) -> Result<Vec<u8>> {
-    serde_json::to_vec(value)
-        .map_err(|error| Error::internal(format!("serialize JSON output: {error}")))
+fn compact_json_len(value: &Value) -> Result<usize> {
+    struct ByteCounter(usize);
+
+    impl std::io::Write for ByteCounter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 += bytes.len();
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut counter = ByteCounter(0);
+    serde_json::to_writer(&mut counter, value)
+        .map_err(|error| Error::internal(format!("serialize JSON output: {error}")))?;
+    Ok(counter.0)
 }
 
 #[cfg(test)]
@@ -340,13 +355,30 @@ mod tests {
     fn byte_input_keeps_original_spacing_in_byte_count() -> Result<()> {
         let raw = "{ \"name\": \"한글\" }\n".as_bytes();
         let value = serde_json::json!({"name": "한글"});
-        let compact_len = compact_json_bytes(&value)?.len();
+        let compact_len = serde_json::to_vec(&value)
+            .map_err(|error| Error::internal(error.to_string()))?
+            .len();
         let from_bytes = build_json_output(raw, JsonOutputOptions::default())?;
         let from_value = build_json_output_from_value(value, JsonOutputOptions::default())?;
         assert_eq!(from_bytes.original_bytes, raw.len());
         assert_eq!(from_value.original_bytes, compact_len);
         assert_eq!(from_bytes.returned_bytes, compact_len);
         assert_eq!(from_bytes.body, from_value.body);
+        Ok(())
+    }
+
+    #[test]
+    fn compact_length_matches_serialized_bytes() -> Result<()> {
+        for value in [
+            serde_json::json!(null),
+            serde_json::json!({"escaped": "quote: \" newline: \n slash: \\ 한글"}),
+            serde_json::json!([{"items": [true, 123, null]}, {"data": "x".repeat(8192)}]),
+        ] {
+            let expected = serde_json::to_vec(&value)
+                .map_err(|error| Error::internal(error.to_string()))?
+                .len();
+            assert_eq!(compact_json_len(&value)?, expected);
+        }
         Ok(())
     }
 
@@ -526,7 +558,12 @@ mod tests {
             Some(&serde_json::json!(2))
         );
         assert_eq!(out.body.get("$.name.length"), Some(&serde_json::json!(4)));
-        assert_eq!(out.returned_bytes, compact_json_bytes(&out.body)?.len());
+        assert_eq!(
+            out.returned_bytes,
+            serde_json::to_vec(&out.body)
+                .map_err(|error| Error::internal(error.to_string()))?
+                .len()
+        );
         Ok(())
     }
 
