@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use opsgate_core::{Error, Result};
 use opsgate_json_output::{
@@ -144,30 +144,35 @@ fn build_shaped_body(body: Value, input: &NormalizedInput) -> Result<JsonOutput>
 }
 
 fn transpose_rows(rows: Vec<Value>) -> Result<(Value, Vec<String>)> {
-    let mut seen_columns = HashSet::<String>::new();
+    let row_count = rows.len();
     let mut column_names = Vec::<String>::new();
-    let mut column_values = Vec::<Vec<Value>>::new();
+    let mut columns = HashMap::<String, Vec<Value>>::new();
 
     for (row_index, row) in rows.into_iter().enumerate() {
-        let mut object = match row {
+        let object = match row {
             Value::Object(object) => object,
             _ => return Err(Error::internal("sql result row is not an object")),
         };
-        for key in object.keys() {
-            if !seen_columns.contains(key) {
-                seen_columns.insert(key.clone());
-                column_names.push(key.clone());
-                column_values.push(vec![Value::Null; row_index]);
+        for (name, value) in object {
+            if let Some(values) = columns.get_mut(&name) {
+                values.resize(row_index, Value::Null);
+                values.push(value);
+            } else {
+                column_names.push(name.clone());
+                let mut values = vec![Value::Null; row_index];
+                values.push(value);
+                columns.insert(name, values);
             }
-        }
-        for (name, values) in column_names.iter().zip(column_values.iter_mut()) {
-            values.push(object.remove(name).unwrap_or(Value::Null));
         }
     }
 
     let mut object = serde_json::Map::new();
-    for (name, values) in column_names.iter().cloned().zip(column_values) {
-        object.insert(name, Value::Array(values));
+    for name in &column_names {
+        let mut values = columns
+            .remove(name)
+            .ok_or_else(|| Error::internal("missing transposed column"))?;
+        values.resize(row_count, Value::Null);
+        object.insert(name.clone(), Value::Array(values));
     }
     Ok((Value::Object(object), column_names))
 }
@@ -218,6 +223,27 @@ mod tests {
                 "status": ["failed", "paid"],
                 "total": [42, null],
                 "region": [null, "us"]
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn ragged_rows_keep_column_order_and_null_padding() -> Result<()> {
+        let rows = vec![
+            serde_json::json!({"b": 1, "a": 2}),
+            serde_json::json!({}),
+            serde_json::json!({"c": 3, "b": 4}),
+            serde_json::json!({"a": 5}),
+        ];
+        let (body, column_names) = transpose_rows(rows)?;
+        assert_eq!(column_names, ["a", "b", "c"]);
+        assert_eq!(
+            body,
+            serde_json::json!({
+                "a": [2, null, null, 5],
+                "b": [1, null, 4, null],
+                "c": [null, null, 3, null]
             })
         );
         Ok(())
