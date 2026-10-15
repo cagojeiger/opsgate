@@ -102,9 +102,10 @@ Callback의 ID token에서 일치하는 키가 없거나 서명이 맞지 않으
 다시 교환하지 않습니다. 갱신 후에도 issuer, audience, nonce, 만료, `at_hash`와 UserInfo
 subject 검증을 모두 적용합니다. 다른 claim 오류는 키 재조회를 유발하지 않습니다.
 JWKS 갱신은 discovery TTL을 연장하지 않으며, 실패하면 기존 cache를 보존하고 해당
-callback은 실패합니다. 동시 요청은 discovery와 JWKS 조회를 직렬화하고 같은 조회 시도의
-성공 또는 실패를 공유합니다. Bearer의 300초 기본 갱신 주기와 unknown-`kid` 처리는
-독립적입니다.
+callback은 실패합니다. 동시 요청은 discovery와 JWKS 조회를 직렬화합니다. 다른 요청의
+조회가 이미 끝났으면, 마지막 조회의 실패 여부와 관계없이 현재 보존된 snapshot으로 같은
+ID token을 다시 검증합니다. Cache 자체가 없으면 실패합니다. Bearer의 300초 기본 갱신
+주기와 unknown-`kid` 처리는 독립적입니다.
 
 `/api`, `/mcp`, `/mcp/admin`은 사용자를 생성하지 않습니다. 인증된 authgate 계정이
 opsgate에 아직 등록되어 있지 않으면 `not_registered`로 거부하며, 사용자는 `/login`을

@@ -147,9 +147,8 @@ impl OidcProvider {
         let _refresh = self.refresh.lock().await;
         let current = self.cache.read().await.clone();
         if current.attempt != observed.attempt {
-            if let Some(error) = current.failure {
-                return Err(opsgate_core::Error::internal(error));
-            }
+            // A later failed refresh can still leave newer, usable keys cached.
+            // Verify this token with that snapshot rather than replaying its error.
             return self.build_client(snapshot(current)?.cached.metadata);
         }
 

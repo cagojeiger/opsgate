@@ -117,6 +117,7 @@ struct Responses {
     discovery_gate: Option<Arc<Gate>>,
     jwks_gate: Option<Arc<Gate>>,
     token_barrier: Option<Arc<Barrier>>,
+    token_gate: Option<Arc<Gate>>,
 }
 
 #[derive(Clone)]
@@ -222,10 +223,17 @@ async fn keys(State(mock): State<Mock>) -> Response {
 
 async fn token(State(mock): State<Mock>) -> Json<Value> {
     mock.token_calls.fetch_add(1, Ordering::SeqCst);
-    let (token, barrier) = {
+    let (token, barrier, gate) = {
         let responses = mock.responses.read().await;
-        (responses.token.clone(), responses.token_barrier.clone())
+        (
+            responses.token.clone(),
+            responses.token_barrier.clone(),
+            responses.token_gate.clone(),
+        )
     };
+    if let Some(gate) = gate {
+        gate.wait().await;
+    }
     if let Some(barrier) = barrier {
         barrier.wait().await;
     }
@@ -250,6 +258,7 @@ async fn fixture() -> TestResult<Fixture> {
             discovery_gate: None,
             jwks_gate: None,
             token_barrier: None,
+            token_gate: None,
         })),
         issuer: issuer.clone(),
         discovery_calls: Arc::new(AtomicUsize::new(0)),
@@ -495,6 +504,50 @@ async fn concurrent_callbacks_share_successful_and_failed_refresh_attempts() -> 
         assert_eq!(calls(&f.mock.token_calls), count);
         assert_eq!(calls(&f.mock.discovery_calls), 1);
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn delayed_callback_uses_newer_keys_after_later_discovery_failure() -> TestResult {
+    let f = fixture().await?;
+    f.provider.client().await?;
+    assert_eq!(f.provider.cache.read().await.attempt, 1);
+
+    let gate = Gate::new();
+    {
+        let mut responses = f.mock.responses.write().await;
+        responses.jwks = jwks(KEY_B, "key-b")?;
+        responses.token = id_token(&f.mock.issuer, KEY_B, "key-b", json!({}))?;
+        responses.token_gate = Some(gate.clone());
+    }
+    // C captures A/epoch 1, then waits for its B-signed token response.
+    let provider = f.provider.clone();
+    let delayed = tokio::spawn(async move { exchange(&provider).await });
+    tokio::time::timeout(Duration::from_secs(5), gate.started.notified()).await?;
+    f.mock.responses.write().await.token_gate = None;
+
+    // Another real callback publishes B/epoch 2 while C is still in flight.
+    assert_eq!(exchange(&f.provider).await?.sub, "user-1");
+    assert_eq!(f.provider.cache.read().await.attempt, 2);
+    expire(&f.provider).await;
+    f.mock.responses.write().await.discovery_status = StatusCode::SERVICE_UNAVAILABLE;
+    f.provider.client().await?;
+    {
+        let cache = f.provider.cache.read().await;
+        assert_eq!(cache.attempt, 3);
+        assert!(cache.failure.is_some());
+        assert!(cache.cached.is_some());
+    }
+
+    // C must retry with the preserved B keys, not the epoch-3 discovery error.
+    gate.release.add_permits(1);
+    let user = tokio::time::timeout(Duration::from_secs(5), delayed).await???;
+    assert_eq!(user.sub, "user-1");
+    assert_eq!(calls(&f.mock.token_calls), 2);
+    assert_eq!(calls(&f.mock.userinfo_calls), 2);
+    assert_eq!(calls(&f.mock.discovery_calls), 2);
+    assert_eq!(calls(&f.mock.jwks_calls), 2);
+    assert_eq!(f.provider.cache.read().await.attempt, 3);
     Ok(())
 }
 
