@@ -197,6 +197,30 @@ preview pagination/cache는 0.1.0 범위 밖입니다.
 실제 target API side effect와 live Postgres query 실행은 환경 스모크 검증입니다.
 ```
 
+## Runtime 이미지 검증
+
+Runtime은 digest로 고정한 distroless `cc-debian13:nonroot`를 사용합니다. `/app`,
+`/usr/local/bin/opsgate-api` exec entrypoint, 9091 포트와 CA bundle 경로를 유지합니다.
+UID/GID `10001:10001`뿐 아니라 `appuser`/`app` passwd/group 항목도 보존합니다.
+Postgres DSN이 username을 생략하면 SQLx가 OS username을 사용하기 때문입니다.
+
+Native Linux amd64/arm64 runner에서 PR은 build/load한 local image ID를 기록하고,
+Release는 실제 실행 child manifest를 검사합니다.
+
+```sh
+bash deploy/ci/smoke-runtime.sh ghcr.io/cagojeiger/opsgate@sha256:CHILD_DIGEST
+```
+
+스크립트는 전용 Docker network와 PostgreSQL 17 fixture를 생성하고 자기 자원만
+정리합니다. Read-only root filesystem과 `/app/config` mount, username 생략 DSN의
+`appuser` 연결, 실제 UID/GID, `/health`·`/ready` 200, SIGTERM 후 exit 0을 확인합니다.
+CA bundle 존재/형식도 검사하며 외부 HTTPS 서비스에는 의존하지 않습니다.
+결과는 `reports/smoke-runtime.json`, 실패 로그는 같은 디렉터리에 기록합니다.
+
+Runtime-image CI와 Release workflow는 같은 이미지에 smoke와 HIGH/CRITICAL image scan을
+적용합니다. Source `Cargo.lock` 검사는 dev/target 의존성까지 포함하는 별도 근거이며,
+base image 단독 검사만으로 최종 애플리케이션 이미지 검증을 대신하지 않습니다.
+
 ## GitHub 릴리스 절차
 
 Opsgate는 llmgate/authgate와 같은 VERSION 기반 릴리스 방식을 사용합니다.

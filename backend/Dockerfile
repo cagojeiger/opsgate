@@ -70,24 +70,26 @@ RUN --mount=type=cache,id=opsgate-cargo-registry,target=/usr/local/cargo/registr
     cargo build --release --locked --bin opsgate-api \
     && cp /app/target/release/opsgate-api /usr/local/bin/opsgate-api
 
-# Stage 4: minimal runtime image.
-#
-# The final image contains only Debian slim, the CA bundle, a non-root user,
-# and the compiled binary. Rust/Cargo/build caches stay behind in builder
-# stages and are not shipped.
-FROM debian:bookworm-slim AS runtime
+# The GNU Rust binary needs glibc, libm and libgcc_s. Distroless cc supplies
+# these libraries and /etc/ssl/certs/ca-certificates.crt without a runtime shell.
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2 AS runtime-base
 
-# Runtime only needs a CA bundle for outbound HTTPS. Copy it from the build
-# image instead of apt-installing ca-certificates, which would also pull
-# openssl packages into the final image.
-COPY --from=chef /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-RUN groupadd --gid 10001 app \
-    && useradd --uid 10001 --gid app --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin appuser
+# Keep the existing passwd/group identity: SQLx uses the OS username when a
+# Postgres DSN omits it. Prepare the text files in a stage that has a shell.
+FROM chef AS runtime-identity
+COPY --from=runtime-base /etc/passwd /tmp/runtime-passwd
+COPY --from=runtime-base /etc/group /tmp/runtime-group
+RUN printf '%s\n' 'appuser:x:10001:10001::/nonexistent:/usr/sbin/nologin' >> /tmp/runtime-passwd \
+    && printf '%s\n' 'app:x:10001:' >> /tmp/runtime-group
+
+FROM runtime-base AS runtime
+COPY --from=runtime-identity /tmp/runtime-passwd /etc/passwd
+COPY --from=runtime-identity /tmp/runtime-group /etc/group
 WORKDIR /app
 COPY --from=builder /usr/local/bin/opsgate-api /usr/local/bin/opsgate-api
 
 ENV OPSGATE_BIND_ADDR=0.0.0.0:9091
 EXPOSE 9091
 
-USER appuser
+USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/opsgate-api"]
