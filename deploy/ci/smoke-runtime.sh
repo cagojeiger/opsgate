@@ -138,7 +138,7 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 [ "$app_ready" = true ] || { echo 'runtime HTTP probes did not become ready' >&2; exit 1; }
-docker top "$app_id" -eo uid,gid > "$scratch/process-identity.txt"
+docker top "$app_id" -eo pid,uid,gid > "$scratch/process-identity.txt"
 database_user="$(docker exec "$postgres_id" psql -U appuser -d opsgate_smoke -Atc \
   "SELECT DISTINCT usename FROM pg_stat_activity WHERE datname = 'opsgate_smoke' AND client_addr IS NOT NULL AND pid <> pg_backend_pid();")"
 [ "$database_user" = appuser ] || { echo 'username-omitted DSN did not connect as appuser' >&2; exit 1; }
@@ -158,7 +158,7 @@ assert container['HostConfig']['ReadonlyRootfs'] is True
 assert any(mount['Destination'] == '/app/config' and mount['RW'] is False
            for mount in container['Mounts'])
 processes = [line.split() for line in (root / 'process-identity.txt').read_text().splitlines()[1:]]
-assert processes and all(row == ['10001', '10001'] for row in processes)
+assert processes and all(len(row) == 3 and row[1:] == ['10001', '10001'] for row in processes)
 Path(report).write_text(json.dumps({
     'image': image, 'image_id': image_id, 'platform': 'linux/' + arch,
     'uid': 10001, 'gid': 10001,
