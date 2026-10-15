@@ -1,0 +1,83 @@
+name: Runtime Image
+
+on:
+  pull_request:
+    paths:
+      - backend/Dockerfile
+      - deploy/ci/smoke-runtime.sh
+      - .github/workflows/runtime-image.yml
+      - .github/workflows/release.yml
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    name: Runtime Image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    env:
+      RUNTIME_IMAGE: opsgate-runtime-test:${{ github.sha }}-${{ matrix.arch }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build native runtime image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: backend/Dockerfile
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: ${{ env.RUNTIME_IMAGE }}
+          cache-from: |
+            type=gha,scope=opsgate-release-${{ matrix.arch }}
+            type=gha,scope=opsgate-runtime-pr-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=opsgate-runtime-pr-${{ matrix.arch }}
+
+      - name: Record image identity
+        run: |
+          mkdir -p reports
+          docker image inspect "$RUNTIME_IMAGE" --format '{{.Id}}' > reports/image-id.txt
+
+      - name: Smoke test the runtime image
+        run: bash deploy/ci/smoke-runtime.sh "$RUNTIME_IMAGE"
+
+      - name: Scan the runtime image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_IMAGE_SRC: docker
+        with:
+          version: v0.74.0
+          scan-type: image
+          image-ref: ${{ env.RUNTIME_IMAGE }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          format: json
+          output: reports/trivy.json
+          exit-code: '1'
+          timeout: 10m
+          cache: false
+
+      - name: Retain runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: runtime-pr-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 30

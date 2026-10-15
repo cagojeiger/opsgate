@@ -19,6 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: read
   contents: write
   packages: write
 
@@ -98,6 +99,50 @@ jobs:
           cache-to: type=gha,mode=max,scope=opsgate-release-${{ matrix.arch }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
+      - name: Resolve executable image manifest
+        id: runtime
+        env:
+          BUILT_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          docker buildx imagetools inspect "$BUILT_IMAGE" --raw > reports/index.json
+          digest=$(jq -er --arg arch "$ARCH" '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest] | if length == 1 then .[0] else error("Expected one executable image manifest") end' reports/index.json)
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          image="${REGISTRY}/${IMAGE}@${digest}"
+          printf 'image=%s\n' "$image" >> "$GITHUB_OUTPUT"
+          printf 'index=%s\nplatform=linux/%s\ntarget=%s\n' "$BUILT_IMAGE" "$ARCH" "$image" > reports/target.txt
+
+      - name: Smoke test the executable image
+        env:
+          RUNTIME_IMAGE: ${{ steps.runtime.outputs.image }}
+        run: bash deploy/ci/smoke-runtime.sh "$RUNTIME_IMAGE"
+
+      - name: Scan the executable image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.74.0
+          scan-type: image
+          image-ref: ${{ steps.runtime.outputs.image }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          format: json
+          output: reports/trivy.json
+          exit-code: '1'
+          timeout: 10m
+          cache: false
+
+      - name: Retain runtime security evidence
+        if: ${{ always() && steps.runtime.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: runtime-security-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Export digest
         run: |
           mkdir -p /tmp/digests
@@ -138,6 +183,16 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify current source and successful main CI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          current=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          [[ "$current" == "$GITHUB_SHA" ]]
+          successful=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&event=push&per_page=100" --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .head_branch == "main" and .event == "push" and .conclusion == "success")] | length')
+          (( successful > 0 ))
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
