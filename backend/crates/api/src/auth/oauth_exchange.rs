@@ -1,7 +1,7 @@
 use openidconnect::core::CoreUserInfoClaims;
 use openidconnect::{
-    AccessTokenHash, AuthorizationCode, Nonce, OAuth2TokenResponse, PkceCodeVerifier,
-    TokenResponse as OidcTokenResponse,
+    AccessTokenHash, AuthorizationCode, ClaimsVerificationError, Nonce, OAuth2TokenResponse,
+    PkceCodeVerifier, SignatureVerificationError, TokenResponse as OidcTokenResponse,
 };
 use serde::{Deserialize, Serialize};
 
@@ -22,7 +22,7 @@ pub(super) async fn exchange_code_for_userinfo(
     verifier: &str,
     nonce: &str,
 ) -> opsgate_core::Result<UserInfo> {
-    let client = oidc.client().await?;
+    let (client, snapshot) = oidc.client_with_snapshot().await?;
     let token_response = client
         .exchange_code(AuthorizationCode::new(code.to_owned()))
         .map_err(|error| {
@@ -38,12 +38,28 @@ pub(super) async fn exchange_code_for_userinfo(
     let id_token = token_response
         .id_token()
         .ok_or_else(|| opsgate_core::Error::internal("openid token response missing id_token"))?;
-    let id_token_verifier = client.id_token_verifier();
-    let claims = id_token
-        .claims(&id_token_verifier, &Nonce::new(nonce.to_owned()))
-        .map_err(|error| {
-            opsgate_core::Error::internal(format!("id_token verification failed: {error}"))
-        })?;
+    let initial_verifier = client.id_token_verifier();
+    let nonce = Nonce::new(nonce.to_owned());
+    let refreshed_client;
+    let refreshed_verifier;
+    let (client, id_token_verifier, claims) = match id_token.claims(&initial_verifier, &nonce) {
+        Err(ClaimsVerificationError::SignatureVerification(
+            SignatureVerificationError::NoMatchingKey | SignatureVerificationError::CryptoError(_),
+        )) => {
+            // The code is single use: retry only verification of this response.
+            refreshed_client = oidc.refresh_jwks(&snapshot).await?;
+            refreshed_verifier = refreshed_client.id_token_verifier();
+            (
+                &refreshed_client,
+                &refreshed_verifier,
+                id_token.claims(&refreshed_verifier, &nonce),
+            )
+        }
+        result => (&client, &initial_verifier, result),
+    };
+    let claims = claims.map_err(|error| {
+        opsgate_core::Error::internal(format!("id_token verification failed: {error}"))
+    })?;
 
     if let Some(expected_access_token_hash) = claims.access_token_hash() {
         let actual_access_token_hash = AccessTokenHash::from_token(
@@ -51,7 +67,7 @@ pub(super) async fn exchange_code_for_userinfo(
             id_token.signing_alg().map_err(|error| {
                 opsgate_core::Error::internal(format!("id_token signing alg failed: {error}"))
             })?,
-            id_token.signing_key(&id_token_verifier).map_err(|error| {
+            id_token.signing_key(id_token_verifier).map_err(|error| {
                 opsgate_core::Error::internal(format!("id_token signing key failed: {error}"))
             })?,
         )
