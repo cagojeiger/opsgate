@@ -20,7 +20,7 @@ backend/crates/api/src/auth/
 ├─ mcp.rs       # /mcp, /mcp/admin 인증 adapter
 ├─ bearer/      # Bearer extractor와 공통 AuthError/response
 ├─ oauth.rs     # /login, /callback 브라우저 OAuth 흐름
-├─ oidc.rs      # authgate OIDC metadata/client cache
+├─ oidc.rs      # authgate OIDC metadata/JWKS snapshot cache
 └─ metadata.rs  # OAuth protected-resource / authorization-server metadata
 ```
 
@@ -91,6 +91,20 @@ MCP 인증 실패 응답은 MCP client가 재인증할 수 있도록 scoped Bear
 → resolve_browser(attrs)
 → users row upsert
 ```
+
+브라우저 검증은 Bearer 검증과 별도의 discovery/JWKS snapshot을 사용합니다.
+Discovery TTL은 3600초이며, 만료 후 조회에 실패하면 기존 snapshot을 유지합니다.
+처음부터 snapshot이 없고 조회에 실패하면 로그인도 실패합니다. 이 TTL은 오래된 키를
+반드시 제거하는 최대 수명 제한이 아닙니다.
+
+Callback의 ID token에서 일치하는 키가 없거나 서명이 맞지 않으면, 검증된 discovery의
+`jwks_uri`에서 키를 한 번 갱신하고 같은 ID token을 재검증합니다. Authorization code는
+다시 교환하지 않습니다. 갱신 후에도 issuer, audience, nonce, 만료, `at_hash`와 UserInfo
+subject 검증을 모두 적용합니다. 다른 claim 오류는 키 재조회를 유발하지 않습니다.
+JWKS 갱신은 discovery TTL을 연장하지 않으며, 실패하면 기존 cache를 보존하고 해당
+callback은 실패합니다. 동시 요청은 discovery와 JWKS 조회를 직렬화하고 같은 조회 시도의
+성공 또는 실패를 공유합니다. Bearer의 300초 기본 갱신 주기와 unknown-`kid` 처리는
+독립적입니다.
 
 `/api`, `/mcp`, `/mcp/admin`은 사용자를 생성하지 않습니다. 인증된 authgate 계정이
 opsgate에 아직 등록되어 있지 않으면 `not_registered`로 거부하며, 사용자는 `/login`을
